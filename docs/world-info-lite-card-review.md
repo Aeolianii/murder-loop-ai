@@ -2,6 +2,12 @@
 
 这份文档是人工校验清单，不是运行时规则来源。确认后的内容再回填到 `packages/content/src/worldInfo.ts`。
 
+## Confirmed Updates
+
+- `npc.linYue`: 林越已确认是主角的前男友。
+- Added to runtime manual cards: `rule.phone_visibility`, `rule.object_creation_boundary`, `style.no_player_mind_reading`.
+- Not added by request: `rule.evidence_backup`.
+
 ## 校验等级
 
 - `必须人工校验`: 会影响规则边界、凶手知识、警察/结局相关判断。

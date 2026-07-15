@@ -6,6 +6,10 @@ import { getWorldInfoCards, selectWorldInfoCards } from './worldInfo';
   assert(cards.some((card) => card.id === 'object.front_door'));
   assert(cards.some((card) => card.id === 'clue.wrong_package'));
   assert(cards.some((card) => card.id === 'rule.killer_visibility'));
+  assert(cards.some((card) => card.id === 'rule.phone_visibility'));
+  assert(cards.some((card) => card.id === 'rule.object_creation_boundary'));
+  assert(cards.some((card) => card.id === 'style.no_player_mind_reading'));
+  assert(!cards.some((card) => card.id === 'rule.evidence_backup'));
 }
 
 {

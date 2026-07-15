@@ -69,6 +69,36 @@ const manualRuleCards: WorldInfoCard[] = [
     priority: 8,
     source: 'manual',
   },
+  {
+    id: 'rule.phone_visibility',
+    title: 'Phone activity visibility',
+    tags: ['rule', 'phone', 'visibility', 'killer', 'communication'],
+    triggerKeywords: ['phone', 'screen', 'button', 'call', 'message', 'record', 'photo', 'hide', 'linyue'],
+    visibleToAgents: ['parser', 'rule', 'killer', 'narrator', 'director'],
+    content: 'Phone screen light, button sounds, and call audio may be externally noticed, but who the player contacted, what was sent, and where the phone was hidden are private by default.',
+    priority: 10,
+    source: 'manual',
+  },
+  {
+    id: 'rule.object_creation_boundary',
+    title: 'No unconfirmed object or route creation',
+    tags: ['rule', 'objects', 'rooms', 'routes', 'npc', 'hallucination'],
+    triggerKeywords: ['vent', 'weapon', 'exit', 'neighbor', 'route', 'object', 'room', 'npc', 'escape'],
+    visibleToAgents: CORE_AGENTS,
+    content: 'AI must not invent vents, weapons, exits, neighbor routes, new NPCs, or room objects that are not represented by project content, current state, or confirmed rule events.',
+    priority: 10,
+    source: 'manual',
+  },
+  {
+    id: 'style.no_player_mind_reading',
+    title: 'Do not write player thoughts',
+    tags: ['style', 'narration', 'player', 'mind_reading', 'limited_view'],
+    triggerKeywords: ['realize', 'afraid', 'decide', 'feel', 'think', 'narrate', 'describe'],
+    visibleToAgents: ['narrator', 'director'],
+    content: 'Narration must not write that the player realized, feared, decided, felt, or understood something. It may only describe observable player actions and external feedback.',
+    priority: 9,
+    source: 'manual',
+  },
 ];
 
 export function getWorldInfoCards(): WorldInfoCard[] {
