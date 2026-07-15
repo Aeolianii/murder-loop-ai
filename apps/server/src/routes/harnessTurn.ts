@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { ActionPlanSchema, KillerStrategySchema, NarrationSchema, NpcReplySchema } from '@murder-loop-ai/ai-contracts';
 import { clueBook } from '@murder-loop-ai/content';
 import {
-  createHarness, createInitialGameState, normalizeLoopMemory, resolveTurnHarness,
+  buildKillerContext, buildParserContext, createHarness, createInitialGameState, normalizeLoopMemory, resolveTurnHarness,
   type AiAdapters,
 } from '@murder-loop-ai/game-core';
 import {
@@ -258,10 +258,11 @@ async function directPlot(state: GameState): Promise<PlotGuidance | null> {
 
 async function parseActionAi(input: string, state: GameState): Promise<ActionPlan> {
   const blackboard = createTurnBlackboard(input, state);
+  const parserContext = buildParserContext(input, state);
   const { buildParseSystemPrompt } = await import('../ai/parserPrompt');
   const ai = await completeRoleJson('parse',
     buildParseSystemPrompt({ combatWeapons: true }),
-    { input, state },
+    { input, state, parserContext },
     { temperature: 0.25 },
   );
   if (!ai) throw new Error('parse AI returned null');
@@ -271,8 +272,7 @@ async function parseActionAi(input: string, state: GameState): Promise<ActionPla
 }
 
 async function killerStrategyAi(state: GameState, plan?: ActionPlan, playerResult?: RuleResult): Promise<KillerStrategy> {
-  const { projectKillerVisibleState } = await import('@murder-loop-ai/game-core');
-  const visible = projectKillerVisibleState(state);
+  const killerContext = buildKillerContext(state, { plan, playerResult });
   const plotCtx = buildPlotContext(state, plan);
   const killerStatusNote = state.killerStatus !== 'alive'
     ? `【重要】陈怀民当前状态：${state.killerStatus}。${state.killerStatus === 'injured' ? '他已受伤，策略应更加绝望或选择撤退。' : state.killerStatus === 'dead' ? '他已死亡，无法采取任何行动。选择 retreat。' : ''}`
@@ -299,7 +299,7 @@ async function killerStrategyAi(state: GameState, plan?: ActionPlan, playerResul
     '玩家连续闲置→直接 spare_key_entry 或 window_route。玩家在回复消息→优先 message_reply。',
     '只输出一个裸 JSON 对象，不要包在 strategy/killerStrategy/result 字段里。',
     '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"可选，若是短信/对话则写他发来的具体话","visibleToPlayer":true,"risk":"low|medium|high"}',
-  ].join('\n'), { visibleState: visible, plan, playerResult }, { temperature: 0.7 });
+  ].join('\n'), { killerContext, visibleState: killerContext.visibleState, plan, playerResult }, { temperature: 0.7 });
   if (!ai) throw new Error('killer AI returned null');
   const parsed = KillerStrategySchema.safeParse(unwrapJsonObject(ai));
   if (!parsed.success) throw new Error(`killer schema: ${parsed.error.message}`);

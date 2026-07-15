@@ -15,6 +15,7 @@ import {
   sanitizeNarration,
 } from '../narration/fallbackNarration';
 import { buildNarrationContext } from '../narration/buildNarrationContext';
+import { buildDirectorContext, buildNarratorContext } from '../context/ContextBuilder';
 import { advanceAmbientTurn } from '../ambient/advanceAmbientTurn';
 import { GameEventBus } from '../events/EventBus';
 import { AgentRegistry } from '../events/AgentRegistry';
@@ -222,7 +223,13 @@ export function createHarness(aiAdapters?: AiAdapters) {
           throw new Error('no narrate adapter provided');
         }
         const ctx = payload as TurnContext;
-        const context = ctx.narrationContext ?? buildNarrationContext(ctx.playerResult!, ctx.killerResult!, ctx.plan?.summary ?? '', ctx.input);
+        const context = ctx.narrationContext ?? buildNarratorContext({
+          state: ctx.state,
+          playerResult: ctx.playerResult!,
+          killerResult: ctx.killerResult!,
+          playerActionSummary: ctx.plan?.summary ?? '',
+          playerInput: ctx.input,
+        });
         // 并行调用两个叙事 AI，任一个失败即抛错误让 dispatcher fallback
         const [actionNarration, ambientNarration] = await Promise.all([
           actionNarrator
@@ -368,7 +375,13 @@ export async function resolveTurnHarness(
   const killerLogId = ctx.state.ending ? undefined : ctx.state.log[ctx.state.log.length - 1]?.id;
 
   // Step 5: 叙事生成
-  const narrationContext = buildNarrationContext(playerResult, killerResult, plan.summary, ctx.input);
+  const narrationContext = buildNarratorContext({
+    state: ctx.state,
+    playerResult,
+    killerResult,
+    playerActionSummary: plan.summary,
+    playerInput: ctx.input,
+  });
   ctx.narrationContext = narrationContext;
 
   const narrationPair = await harness.dispatcher.runCommand('NarrationRequested', {
@@ -396,6 +409,15 @@ export async function resolveTurnHarness(
     narrationContext,
     playerResult,
     killerResult,
+    directorContext: buildDirectorContext({
+      state: ctx.state,
+      narration: actionNarration,
+      actionNarration,
+      ambientNarration,
+      playerResult,
+      killerResult,
+      agentTrace: [...harness.dispatcher.getAgentTrace()],
+    }),
   };
   const directorResult = {
     score: { pacing: 7, infoLeak: 8, ruleConsistency: 8, prose: 7 },

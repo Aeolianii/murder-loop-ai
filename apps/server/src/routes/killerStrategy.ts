@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { KillerStrategySchema } from '@murder-loop-ai/ai-contracts';
-import { chooseFallbackKillerStrategy, projectKillerVisibleState } from '@murder-loop-ai/game-core';
+import { buildKillerContext, chooseFallbackKillerStrategy } from '@murder-loop-ai/game-core';
 import type { GameState } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
 import { unwrapJsonObject } from '../ai/unwrapJsonObject';
@@ -8,7 +8,7 @@ import { unwrapJsonObject } from '../ai/unwrapJsonObject';
 export async function killerStrategyRoute(app: FastifyInstance) {
   app.post('/api/killer-strategy', async (request) => {
     const body = request.body as { state: GameState };
-    const visible = projectKillerVisibleState(body.state);
+    const killerContext = buildKillerContext(body.state);
     const fallback = chooseFallbackKillerStrategy(body.state);
 
     const ai = await completeRoleJson(
@@ -24,7 +24,7 @@ export async function killerStrategyRoute(app: FastifyInstance) {
         '只输出一个裸 JSON 对象，不要 Markdown，不要解释，不要包在 strategy/killerStrategy/result 字段里。',
         '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"可选，若是短信/对话则写他发来的具体话","visibleToPlayer":true,"risk":"low|medium|high"}',
       ].join('\n'),
-      { visibleState: visible },
+      { killerContext, visibleState: killerContext.visibleState },
       { temperature: 0.55 },
     ).catch(() => null);
 

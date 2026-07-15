@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { ActionPlanSchema, KillerStrategySchema, NarrationSchema } from '@murder-loop-ai/ai-contracts';
 import { clueBook } from '@murder-loop-ai/content';
-import { chooseFallbackKillerStrategy, createFallbackActionNarration, createFallbackAmbientNarration, createHarness, createInitialGameState, fallbackParseAction, projectKillerVisibleState, resolveTurnHarness } from '@murder-loop-ai/game-core';
+import { buildKillerContext, buildParserContext, chooseFallbackKillerStrategy, createFallbackActionNarration, createFallbackAmbientNarration, createHarness, createInitialGameState, fallbackParseAction, resolveTurnHarness } from '@murder-loop-ai/game-core';
 import type { AiAdapters } from '@murder-loop-ai/game-core';
 import { minuteLabel, type ActionPlan, type GameState, type KillerStrategy, type Narration, type NarrationContext, type RuleResult, type StoryLogEntry } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
@@ -79,10 +79,11 @@ async function parseActionForFrontend(input: string, state: GameState, blackboar
   const fallback = fallbackParseAction(input);
   try {
     const { buildParseSystemPrompt } = await import('../ai/parserPrompt');
+    const parserContext = buildParserContext(input, state);
     const ai = await completeRoleJson(
       'parse',
       buildParseSystemPrompt(),
-      { input, state },
+      { input, state, parserContext },
       { temperature: 0.25 },
     );
   const parsed = ActionPlanSchema.safeParse(normalizeActionPlanJson(ai));
@@ -118,7 +119,7 @@ function ambientOnlyContext(context: NarrationContext, killerResult: RuleResult)
 }
 
 async function chooseKillerStrategyForFrontend(state: GameState, plan?: ActionPlan, playerResult?: RuleResult, blackboard = createTurnBlackboard('', state)): Promise<KillerStrategy> {
-  const visible = projectKillerVisibleState(state);
+  const killerContext = buildKillerContext(state, { plan, playerResult });
   const fallback = chooseFallbackKillerStrategy(state);
   try {
     const ai = await completeRoleJson(
@@ -137,7 +138,7 @@ async function chooseKillerStrategyForFrontend(state: GameState, plan?: ActionPl
       '只输出一个裸 JSON 对象，不要包在 strategy/killerStrategy/result 字段里。',
       '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"可选，若是短信/对话则写他发来的具体话","visibleToPlayer":true,"risk":"low|medium|high"}',
     ].join('\n'),
-    { visibleState: visible, plan, playerResult },
+    { killerContext, visibleState: killerContext.visibleState, plan, playerResult },
     { temperature: 0.55 },
   );
   const parsed = KillerStrategySchema.safeParse(unwrapJsonObject(ai));

@@ -267,6 +267,7 @@ export const DirectorAgentInputSchema = z.object({
   narrationContext: NarrationContextSchema.optional(),
   playerResult: RuleResultSchema.optional(),
   killerResult: RuleResultSchema.optional(),
+  directorContext: z.unknown().optional(),
 });
 
 export const DirectorOutputSchema = z.object({
