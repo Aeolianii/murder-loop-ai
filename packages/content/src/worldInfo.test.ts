@@ -9,7 +9,12 @@ import { getWorldInfoCards, selectWorldInfoCards } from './worldInfo';
   assert(cards.some((card) => card.id === 'rule.phone_visibility'));
   assert(cards.some((card) => card.id === 'rule.object_creation_boundary'));
   assert(cards.some((card) => card.id === 'style.no_player_mind_reading'));
+  assert(cards.some((card) => card.id === 'rule.narrator_no_rule_change'));
+  assert(cards.some((card) => card.id === 'rule.world_info_not_authority'));
   assert(!cards.some((card) => card.id === 'rule.evidence_backup'));
+  assert(cards.find((card) => card.id === 'object.phone')?.content.includes('手机可用于拍照'));
+  assert(cards.find((card) => card.id === 'clue.package_photo')?.content.includes('消耗一定电量'));
+  assert(cards.find((card) => card.id === 'npc.linYue')?.content.includes('主角的前男友'));
 }
 
 {
