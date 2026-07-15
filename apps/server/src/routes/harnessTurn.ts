@@ -16,6 +16,12 @@ import { buildKillerPromptPayload } from '../ai/killerPrompt';
 import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObject';
 import { selectPrimaryActionAudioCue } from '../ai/audioCueSelector';
 import { formatWorldInfoPromptBlock } from '../ai/worldInfoPrompt';
+import {
+  buildSidebarPayload,
+  toFrontendClues,
+  toFrontendNode,
+  type FrontendStoryNode,
+} from '../presenters/frontendTurnPresenter';
 
 interface HarnessTurnRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -128,13 +134,6 @@ function applyNarrationOutcomeHints(
   }
 
   return warnings;
-}
-
-async function buildSidebarPayload(harness: ReturnType<typeof createHarness>, finalState: GameState, runTurnCompleted = false) {
-  if (runTurnCompleted) {
-    await harness.dispatcher.runCommand('TurnCompleted', { finalState, moodSignal: undefined });
-  }
-  return harness.dispatcher.getLatestArtifact('sidebar', 'TurnCompleted') ?? null;
 }
 
 // ============================================================================
@@ -523,21 +522,6 @@ function createAiHarness() {
 // 前端数据转换
 // ============================================================================
 
-interface FrontendStoryNode {
-  id: string; type: 'narrative' | 'action_result' | 'system' | 'player_input';
-  content: string; timestamp?: string;
-}
-
-function toFrontendClues(state: GameState) {
-  return state.clues.map((clue, i) => ({
-    id: clue.id,
-    name: clue.title,
-    description: clue.detail,
-    status: (i === state.clues.length - 1 ? 'new' : 'known') as 'new' | 'known',
-    source: clue.source,
-  }));
-}
-
 function coerceClues(rawClues: unknown, fallback: GameState): GameState['clues'] {
   if (!Array.isArray(rawClues)) return fallback.clues;
   return rawClues.flatMap((clue, index) => {
@@ -706,14 +690,6 @@ function addTurnDynamicClues(resolution: TurnResolution, visibleEntries: StoryLo
     ...resolution.playerResult.events,
     ...resolution.killerResult.events,
   ], visibleFactCorpus);
-}
-
-function toFrontendNode(entry: StoryLogEntry): FrontendStoryNode {
-  if (entry.channel === 'action')
-    return { id: entry.id, type: 'action_result', content: `${entry.title ? `${entry.title}: ` : ''}${entry.text}`, timestamp: minuteLabel(entry.minute) };
-  if (entry.tone === 'system')
-    return { id: entry.id, type: 'system', content: entry.title || entry.text, timestamp: minuteLabel(entry.minute) };
-  return { id: entry.id, type: 'narrative', content: entry.text, timestamp: minuteLabel(entry.minute) };
 }
 
 // ============================================================================
