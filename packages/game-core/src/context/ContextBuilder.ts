@@ -98,18 +98,20 @@ export function buildKillerContext(
   const observableEvents = (input.playerResult?.events ?? [])
     .filter((event) => event.visibility === 'killer')
     .map(toObservableEvent);
+  const observableSummary = observableEvents.map((event) => event.summary).join(' | ');
   const hiddenCount = (input.playerResult?.events ?? []).filter((event) => event.visibility === 'hidden').length;
+  const visibleRuleEvents = (input.playerResult?.events ?? []).filter((event) => event.visibility === 'killer');
 
   return {
     visibleState: projectKillerVisibleState(state),
-    planSummary: input.plan?.summary,
+    planSummary: observableSummary || undefined,
     observableEvents,
     recentKillerMemory: buildVisibleMemoryForAgent(normalizeLoopMemory(state.memory), 'killer'),
     worldInfo: selectWorldInfoCards({
       agent: 'killer',
-      input: input.plan?.raw ?? input.plan?.summary,
+      input: observableSummary || undefined,
       state,
-      events: input.playerResult?.events,
+      events: visibleRuleEvents,
       limit: 6,
     }),
     uncertainty: [

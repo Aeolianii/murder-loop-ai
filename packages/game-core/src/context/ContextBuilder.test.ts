@@ -95,6 +95,7 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
 
   assert(context.visibleState.knowledge);
   assert.deepEqual(context.observableEvents.map((item) => item.subject), ['phone_screen_lit']);
+  assert.equal(context.planSummary, 'phone_screen_lit summary');
   assert(context.recentKillerMemory.some((line) => line.includes('killer noticed door')));
   assert(!context.recentKillerMemory.some((line) => line.includes('player-death-memory')));
   assert(context.worldInfo.some((card) => card.id === 'rule.killer_visibility'));

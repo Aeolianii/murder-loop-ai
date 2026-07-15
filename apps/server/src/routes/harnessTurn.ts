@@ -12,6 +12,7 @@ import {
 } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from '../ai/turnCoordinator';
+import { buildKillerPromptPayload } from '../ai/killerPrompt';
 import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObject';
 import { selectPrimaryActionAudioCue } from '../ai/audioCueSelector';
 import { formatWorldInfoPromptBlock } from '../ai/worldInfoPrompt';
@@ -285,7 +286,7 @@ async function killerStrategyAi(state: GameState, plan?: ActionPlan, playerResul
     '',
     'You are the killer-side narrative analyst. First infer what the player just did, what the rule events confirmed, and what Chen Huaimin can reasonably know.',
     'Do not map a single clue to a canned strategy. Photo, upload, or social posting does not automatically mean framing_pressure; consider who saw it, whether it is public, and whether Chen knows.',
-    'Director feasibility rule: the strategy must be supported by visibleState, playerResult.events, and plan. If Chen cannot know the photo was shared, he cannot directly accuse the player of hiding contraband.',
+    'Director feasibility rule: the strategy must be supported by killerContext.visibleState and killerContext.observableEvents. If Chen cannot observe a fact, do not use it.',
     '你是暗线导演，负责陈怀民与楼道环境的下一步压力推进。',
     '陈怀民是一个谨慎但越来越焦虑的现实罪犯。包裹证据足以毁掉他的转运链。',
     '',
@@ -300,7 +301,7 @@ async function killerStrategyAi(state: GameState, plan?: ActionPlan, playerResul
     '玩家连续闲置→直接 spare_key_entry 或 window_route。玩家在回复消息→优先 message_reply。',
     '只输出一个裸 JSON 对象，不要包在 strategy/killerStrategy/result 字段里。',
     '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"可选，若是短信/对话则写他发来的具体话","visibleToPlayer":true,"risk":"low|medium|high"}',
-  ].join('\n') + '\n' + formatWorldInfoPromptBlock(killerContext.worldInfo, 'killer'), { killerContext, visibleState: killerContext.visibleState, plan, playerResult }, { temperature: 0.7 });
+  ].join('\n') + '\n' + formatWorldInfoPromptBlock(killerContext.worldInfo, 'killer'), buildKillerPromptPayload(killerContext), { temperature: 0.7 });
   if (!ai) throw new Error('killer AI returned null');
   const parsed = KillerStrategySchema.safeParse(unwrapJsonObject(ai));
   if (!parsed.success) throw new Error(`killer schema: ${parsed.error.message}`);
