@@ -35,6 +35,34 @@ interface HarnessTurnRouteOptions {
   }) => Promise<ActionAudioCue | null>;
 }
 
+interface HarnessResponseTraceEntry {
+  taskId: string;
+  agentId: string;
+  source: string;
+  warnings: string[];
+  durationMs: number;
+}
+
+function buildAgentTimingSummary(trace: HarnessResponseTraceEntry[]) {
+  const entries = trace.map((entry) => ({
+    taskId: entry.taskId,
+    agentId: entry.agentId,
+    source: entry.source,
+    durationMs: entry.durationMs,
+  }));
+  const totalMs = entries.reduce((sum, entry) => sum + entry.durationMs, 0);
+  const slowest = entries.reduce<typeof entries[number] | null>(
+    (current, entry) => (!current || entry.durationMs > current.durationMs ? entry : current),
+    null,
+  );
+
+  return {
+    totalMs,
+    slowest,
+    entries,
+  };
+}
+
 function generateRecap(state: GameState): string {
   const memories = normalizeLoopMemory(state.memory).crossRun;
 
@@ -360,7 +388,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         sidebar,
         storyLog: [] satisfies FrontendStoryNode[],
         agentTrace: [],
-        coordination: { warnings: [], trace: [], judgements: {} },
+        coordination: { warnings: [], trace: [], agentTiming: buildAgentTimingSummary([]), judgements: {} },
       };
     }
 
@@ -404,6 +432,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const trace = harness.dispatcher.getTrace().map(e => ({
       taskId: e.eventType, agentId: e.agentId, source: e.source, warnings: e.warnings, durationMs: e.durationMs,
     }));
+    const agentTiming = buildAgentTimingSummary(trace);
     const agentTrace = harness.dispatcher.getAgentTrace();
     const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
 
@@ -422,7 +451,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       ] satisfies FrontendStoryNode[],
       turn: { plan: resolution.plan, killerStrategy: resolution.killerStrategy, actionNarration: resolution.actionNarration ?? resolution.narration, ambientNarration: resolution.ambientNarration ?? null },
       agentTrace,
-      coordination: { warnings: [...routeWarnings, ...trace.flatMap(t => t.warnings)], trace, judgements: routeJudgements },
+      coordination: { warnings: [...routeWarnings, ...trace.flatMap(t => t.warnings)], trace, agentTiming, judgements: routeJudgements },
       sidebar,
     };
   });

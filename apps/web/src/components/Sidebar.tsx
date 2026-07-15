@@ -32,6 +32,10 @@ function scoreColor(total: number) {
   return 'text-emerald-300';
 }
 
+function timingSourceLabel(source: string) {
+  return source === 'ai' ? 'AI' : source === 'fallback' ? 'FB' : source;
+}
+
 export function NewBadge() {
   return (
     <span className="shrink-0 rounded border border-amber-300/20 bg-amber-300/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-200">
@@ -99,6 +103,7 @@ export function InventoryItem({ sidebar }: InventoryItemProps) {
 
 export function Sidebar({ clues, coordination, recap, sidebar, readClues = {}, onClueSelect }: SidebarProps) {
   const directorScores = coordination?.directorScores ?? [];
+  const agentTiming = coordination?.agentTiming;
   const [showMemories, setShowMemories] = useState(false);
 
   return (
@@ -185,6 +190,30 @@ export function Sidebar({ clues, coordination, recap, sidebar, readClues = {}, o
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {agentTiming && agentTiming.entries.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                <Gauge className="h-3.5 w-3.5 text-zinc-600" />
+                <h3 className="font-mono text-xs uppercase text-zinc-600">Agent 耗时</h3>
+                <span className="ml-auto font-mono text-[10px] text-zinc-600">{agentTiming.totalMs}ms</span>
+              </div>
+              <div className="space-y-1 font-mono text-[10px] text-zinc-500">
+                {agentTiming.entries.map((entry, index) => (
+                  <div key={`${entry.taskId}-${entry.agentId}-${index}`} className="flex items-center gap-2 rounded border border-white/5 bg-zinc-900/30 px-2 py-1">
+                    <span className="min-w-0 flex-1 truncate text-zinc-400">{entry.agentId}:{entry.taskId}</span>
+                    <span className="rounded border border-white/10 px-1 text-zinc-600">{timingSourceLabel(entry.source)}</span>
+                    <span className={entry.durationMs >= 1000 ? 'text-amber-300' : 'text-zinc-500'}>{entry.durationMs}ms</span>
+                  </div>
+                ))}
+                {agentTiming.slowest && (
+                  <p className="pt-1 text-[10px] text-zinc-600">
+                    最慢：{agentTiming.slowest.agentId}:{agentTiming.slowest.taskId} · {agentTiming.slowest.durationMs}ms
+                  </p>
+                )}
               </div>
             </div>
           )}

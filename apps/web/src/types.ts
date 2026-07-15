@@ -66,11 +66,27 @@ export interface CoordinationState {
   directorScores?: DirectorScore[];
   trace?: Array<{
     taskId: string;
+    agentId?: string;
     source: string;
     decision?: string;
     warnings: string[];
     durationMs: number;
   }>;
+  agentTiming?: {
+    totalMs: number;
+    slowest: {
+      taskId: string;
+      agentId: string;
+      source: string;
+      durationMs: number;
+    } | null;
+    entries: Array<{
+      taskId: string;
+      agentId: string;
+      source: string;
+      durationMs: number;
+    }>;
+  };
   judgements?: Record<string, unknown>;
 }
 

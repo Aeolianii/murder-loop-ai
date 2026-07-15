@@ -10,11 +10,27 @@ type HarnessTurnResolution = TurnResolution & {
     warnings: string[];
     trace: Array<{
       taskId: string;
+      agentId: string;
       source: string;
       decision?: string;
       warnings: string[];
       durationMs: number;
     }>;
+    agentTiming: {
+      totalMs: number;
+      slowest: {
+        taskId: string;
+        agentId: string;
+        source: string;
+        durationMs: number;
+      } | null;
+      entries: Array<{
+        taskId: string;
+        agentId: string;
+        source: string;
+        durationMs: number;
+      }>;
+    };
     judgements: Record<string, unknown>;
   };
 };
@@ -94,11 +110,29 @@ const resolution = {
     trace: [
       {
         taskId: 'PlayerActionSubmitted',
+        agentId: 'parser',
         source: 'game-core-harness',
         warnings: [],
         durationMs: 1,
       },
     ],
+    agentTiming: {
+      totalMs: 1,
+      slowest: {
+        taskId: 'PlayerActionSubmitted',
+        agentId: 'parser',
+        source: 'game-core-harness',
+        durationMs: 1,
+      },
+      entries: [
+        {
+          taskId: 'PlayerActionSubmitted',
+          agentId: 'parser',
+          source: 'game-core-harness',
+          durationMs: 1,
+        },
+      ],
+    },
     judgements: {},
   },
 } satisfies HarnessTurnResolution;
@@ -151,6 +185,11 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
   assert.equal(body.storyLog[0].type, 'player_input');
   assert.equal(body.storyLog[1].type, 'action_result');
   assert.equal(body.coordination.trace[0].taskId, 'PlayerActionSubmitted');
+  assert.equal(body.coordination.agentTiming.entries[0].agentId, 'parser');
+  assert.equal(body.coordination.agentTiming.entries[0].taskId, 'PlayerActionSubmitted');
+  assert.equal(typeof body.coordination.agentTiming.totalMs, 'number');
+  assert.ok(body.coordination.agentTiming.totalMs >= body.coordination.agentTiming.entries[0].durationMs);
+  assert.ok(body.coordination.agentTiming.slowest);
   assert.equal(body.agentTrace[0].agent, 'parser');
   assert.equal(body.agentTrace[0].mode, 'ai');
   assert.equal(body.agentTrace[0].validation.valid, true);
