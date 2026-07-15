@@ -9,7 +9,7 @@
     "start": "tsx src/index.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/routes/harnessTurn.test.ts && tsx src/routes/frontendAdapter.test.ts"
+    "test": "tsx src/ai/worldInfoPrompt.test.ts && tsx src/routes/harnessTurn.test.ts && tsx src/routes/frontendAdapter.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

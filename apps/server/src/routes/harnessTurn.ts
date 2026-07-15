@@ -14,6 +14,7 @@ import { completeRoleJson } from '../ai/openaiClient';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from '../ai/turnCoordinator';
 import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObject';
 import { selectPrimaryActionAudioCue } from '../ai/audioCueSelector';
+import { formatWorldInfoPromptBlock } from '../ai/worldInfoPrompt';
 
 interface HarnessTurnRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -299,7 +300,7 @@ async function killerStrategyAi(state: GameState, plan?: ActionPlan, playerResul
     '玩家连续闲置→直接 spare_key_entry 或 window_route。玩家在回复消息→优先 message_reply。',
     '只输出一个裸 JSON 对象，不要包在 strategy/killerStrategy/result 字段里。',
     '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"可选，若是短信/对话则写他发来的具体话","visibleToPlayer":true,"risk":"low|medium|high"}',
-  ].join('\n'), { killerContext, visibleState: killerContext.visibleState, plan, playerResult }, { temperature: 0.7 });
+  ].join('\n') + '\n' + formatWorldInfoPromptBlock(killerContext.worldInfo, 'killer'), { killerContext, visibleState: killerContext.visibleState, plan, playerResult }, { temperature: 0.7 });
   if (!ai) throw new Error('killer AI returned null');
   const parsed = KillerStrategySchema.safeParse(unwrapJsonObject(ai));
   if (!parsed.success) throw new Error(`killer schema: ${parsed.error.message}`);
@@ -386,7 +387,7 @@ async function narrateActionAi(
     `8.5. 【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造 23:06 这类当前上下文里不存在的时间。`,
     '9. 文风：第一人称限知视角，写可观察事实（声音/光线/距离/动作），不写"我害怕"。',
     '   220-520 中文字符。只输出 JSON：{"title":"...","text":"..."}；如果本段自然产生关键新信息，可以额外带 1 个 clue 字段：{"id":"dyn_xxx","title":"线索标题","detail":"具体情报","weight":6}。',
-  ].join('\n');
+  ].join('\n') + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
   const ai = await completeRoleJson('narrator', system,
     { narrationContext: context, playerResult, state }, { temperature: 0.75 });
   if (!ai) throw new Error('action narration AI returned null');
@@ -440,7 +441,7 @@ async function narrateAmbientAi(
     '   只描述外部现象：脚步声位置/节奏变化、门外对话碎片、楼道灯光/气味/声音异常。',
     '',
     ambientContext,
-  ].join('\n');
+  ].join('\n') + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
   const ai = await completeRoleJson('narrator', system,
     { narrationContext: context, killerResult, state }, { temperature: 0.85 });
   if (!ai) throw new Error('ambient narration AI returned null');
