@@ -14,7 +14,8 @@ POST /api/harness/turn
 
 ```txt
 apps/web/src/App.tsx
-  -> fetch('/api/harness/turn')
+  -> apps/web/src/api/harnessTurnClient.ts
+  -> POST /api/harness/turn
 ```
 
 服务端主路由位于：
@@ -35,9 +36,10 @@ packages/game-core/src/loop/resolveTurn.ts
 
 ```txt
 apps/web
+  -> apps/web/src/api/harnessTurnClient.ts
   -> POST /api/harness/turn
   -> apps/server/src/routes/harnessTurn.ts
-  -> createAiHarness()
+  -> apps/server/src/ai/harnessAiAdapters.ts:createAiHarness()
   -> packages/game-core/createHarness()
   -> packages/game-core/resolveTurnHarness()
      -> PlayerActionSubmitted
@@ -54,7 +56,7 @@ apps/web
         -> DirectorAgent
      -> TurnCompleted
         -> SidebarAgent / UIAdapterAgent
-  -> server presenter payload
+  -> apps/server/src/presenters/frontendTurnPresenter.ts
   -> apps/web renders story, clues, sidebar, audio cue, trace/debug info
 ```
 
@@ -68,13 +70,14 @@ apps/web
 
 - 展示剧情文本、线索、侧边栏、音效和过场动画。
 - 收集玩家自然语言输入。
-- 调用 `/api/harness/turn`。
+- 通过 `src/api/harnessTurnClient.ts` 调用 `/api/harness/turn`。
 - 保存前端展示状态和 `coreState`。
 
 当前注意点：
 
-- `App.tsx` 直接维护主要 UI 状态并直接请求 `/api/harness/turn`。
-- `src/store/gameStore.ts` 也存在 Zustand 状态和 harness 请求逻辑，但当前主界面没有统一使用它。
+- `App.tsx` 仍直接维护主要 UI 状态，但不再直接 `fetch('/api/harness/turn')`。
+- `src/api/harnessTurnClient.ts` 是当前 Web 侧 harness turn 请求入口。
+- `src/store/gameStore.ts` 也存在 Zustand 状态和 harness 请求逻辑，并复用同一个 harness turn client；但当前主界面还没有统一迁入 store。
 - `src/api/aiClient.ts` 仍保留旧单 Agent API client，主要应视为 legacy/debug 辅助。
 
 ### apps/server
@@ -89,7 +92,11 @@ apps/web
 
 当前注意点：
 
-- `routes/harnessTurn.ts` 是正式主路由，但文件较胖，混合了 route、AI adapter、plot guidance、状态兼容、动态线索、audio cue、sidebar 和前端 payload 转换。
+- `routes/harnessTurn.ts` 是正式主路由，当前主要负责请求处理、复活/回合编排、动态线索、audio cue、sidebar 与最终响应组装。
+- `ai/harnessAiAdapters.ts` 负责 `createAiHarness()` 以及 Parser / Killer / Narrator / Director / NPC 的 AI adapter。
+- `state/coerceGameState.ts` 负责旧状态和旧线索兼容。
+- `presenters/frontendTurnPresenter.ts` 负责前端 story/clue/sidebar 派生展示转换。
+- `index.ts` 已按 core/debug/legacy 分组注册路由。
 - `routes/frontendAdapter.ts` 是较早的前端聚合入口，当前应视为 legacy。
 - 单 Agent 路由仍存在，适合 debug，不应再作为正式游戏回合主路径。
 
@@ -166,7 +173,9 @@ GET  /health
 POST /api/harness/turn
 ```
 
-### Debug / Legacy 接口
+它们在 `apps/server/src/index.ts` 中通过 `registerCoreRoutes()` 注册。
+
+### Debug 接口
 
 ```txt
 POST /api/parse-action
@@ -176,29 +185,40 @@ POST /api/narrate-action
 POST /api/narrate-ambient
 POST /api/npc-reply
 POST /api/score-run
+```
+
+这些接口在 `registerDebugRoutes()` 中注册，可以暂时保留用于调试和回归测试，但后续新增正式玩法时不应默认接入这些接口。
+
+### Legacy 接口
+
+```txt
 POST /api/frontend/resolve-action
 ```
 
-这些接口可以暂时保留用于调试、回归测试或兼容旧路径，但后续新增正式玩法时不应默认接入这些接口。
+该接口在 `registerLegacyRoutes()` 中注册，用于兼容较早的前端聚合路径。
 
 ## 5. 当前主要臃肿点
 
-### 5.1 `harnessTurn.ts` 职责过多
+### 5.1 `harnessTurn.ts` 已完成第一轮减脂
 
-当前 `apps/server/src/routes/harnessTurn.ts` 同时承担：
+`apps/server/src/routes/harnessTurn.ts` 已经抽出以下职责：
+
+```txt
+apps/server/src/presenters/frontendTurnPresenter.ts
+apps/server/src/state/coerceGameState.ts
+apps/server/src/ai/harnessAiAdapters.ts
+```
+
+它当前仍承担：
 
 - Fastify route。
-- AI harness adapter factory。
-- Parser / Killer / Narrator / Director prompt 调用。
+- 死亡状态自动回退入口。
 - plot guidance 异步缓存。
-- 旧状态和旧线索兼容。
 - 动态线索提取。
-- audio cue 选择。
-- sidebar payload 构建。
-- frontend response presenter。
-- trace / coordination 汇总。
+- audio cue / sidebar 并发附加工作调度。
+- 最终 response 组装和 coordination 汇总。
 
-建议后续优先拆分，但每次只移动一类纯函数，避免一次性大改。
+后续如果继续拆，应优先考虑 `plotGuidance` 或 `dynamicClues`，仍保持一次只移动一类职责。
 
 ### 5.2 前端状态双轨
 
@@ -209,7 +229,7 @@ apps/web/src/App.tsx
 apps/web/src/store/gameStore.ts
 ```
 
-两者都包含对游戏状态或 `/api/harness/turn` 的处理。后续需要选择一个正式状态入口。
+两者都包含游戏状态处理。`/api/harness/turn` 请求已经集中到 `apps/web/src/api/harnessTurnClient.ts`，但状态源仍未统一。后续需要选择一个正式状态入口。
 
 建议方向：
 
@@ -220,7 +240,7 @@ gameStore.ts -> game state, submitAction, rewind, reset, lastDebug
 
 ### 5.3 旧 API 与新 harness 并存
 
-旧单 Agent API 仍然注册在 server index 中。它们短期可以用于 debug，但长期需要明确是否：
+旧单 Agent API 仍然注册在 server index 的 `registerDebugRoutes()` 中。它们短期可以用于 debug，但长期需要明确是否：
 
 - 保留为 debug-only；
 - 用环境变量控制注册；
@@ -246,12 +266,17 @@ gameStore.ts -> game state, submitAction, rewind, reset, lastDebug
 建议按以下顺序推进，每一步保持行为不变并单独验证：
 
 ```txt
+Done:
 1. Extract frontend presenter helpers from harnessTurn.ts
 2. Extract game state coercion helpers from harnessTurn.ts
 3. Extract AI harness adapter factory from harnessTurn.ts
-4. Mark legacy/debug routes in docs and server registration
-5. Centralize web harness requests in one frontend state layer
-6. Add stronger Killer information-boundary regression tests
+4. Group core/debug/legacy routes in server registration
+5. Extract web harness turn client
+
+Recommended next:
+1. Decide whether App.tsx or gameStore.ts is the canonical frontend state owner
+2. Add stronger Killer information-boundary regression tests
+3. Optionally extract plotGuidance or dynamicClues from harnessTurn.ts
 ```
 
 每一步完成后至少运行：
@@ -275,4 +300,3 @@ npm run typecheck
 - Narrator 可以表达规则结果，但不能制造规则结果。
 - World Info 是设定上下文，不是裁判。
 - Trace 可以记录 World Info 摘要，但普通玩家 UI 不应默认展示 World Info 正文。
-
