@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { ActionPlanSchema, KillerStrategySchema, NarrationSchema, NpcReplySchema } from '@murder-loop-ai/ai-contracts';
 import { clueBook } from '@murder-loop-ai/content';
 import {
-  createHarness, createInitialGameState, resolveTurnHarness,
+  createHarness, createInitialGameState, normalizeLoopMemory, resolveTurnHarness,
   type AiAdapters,
 } from '@murder-loop-ai/game-core';
 import {
@@ -51,7 +51,7 @@ function buildPlotContext(state: GameState, plan?: ActionPlan): string {
 
 
 function generateRecap(state: GameState): string {
-  const memories = state.memory.filter(m => !m.id.startsWith('checkpoint-'));
+  const memories = normalizeLoopMemory(state.memory).crossRun;
 
   if (state.run > 1 && memories.length > 0) {
     const last = memories[memories.length - 1];
@@ -587,7 +587,7 @@ function coerceGameState(rawState: unknown): GameState {
       ...fallback.killerKnowledge,
       ...(raw.killerKnowledge ?? {}),
     },
-    memory: Array.isArray(raw.memory) ? raw.memory : fallback.memory,
+    memory: normalizeLoopMemory(raw.memory ?? fallback.memory),
     log: Array.isArray(raw.log) ? raw.log : fallback.log,
     clues: coerceClues(raw.clues, { ...fallback, run: raw.run ?? fallback.run, minute: raw.minute ?? fallback.minute }),
     killerStatus: raw.killerStatus ?? fallback.killerStatus,

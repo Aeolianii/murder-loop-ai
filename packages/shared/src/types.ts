@@ -130,11 +130,33 @@ export interface StoryLogEntry {
   isAiNarration?: boolean;
 }
 
+export type MemoryScope = 'short_term' | 'current_run' | 'cross_run' | 'character';
+export type MemoryKind = 'observation' | 'action' | 'clue' | 'death' | 'checkpoint' | 'lesson';
+export type CharacterMemoryOwner = 'player' | 'linYue' | 'killer';
+export type MemorySource = 'rule' | 'ai' | 'system' | 'legacy';
+
 export interface MemoryFragment {
   id: string;
   run: number;
+  minute?: number;
   title: string;
   text: string;
+  scope?: MemoryScope;
+  kind?: MemoryKind;
+  owner?: CharacterMemoryOwner;
+  importance?: number;
+  source?: MemorySource;
+}
+
+export interface LoopMemory {
+  shortTerm: MemoryFragment[];
+  currentRun: MemoryFragment[];
+  crossRun: MemoryFragment[];
+  characters: {
+    player: MemoryFragment[];
+    linYue: MemoryFragment[];
+    killer: MemoryFragment[];
+  };
 }
 
 export interface ClueRecord {
@@ -198,7 +220,7 @@ export interface GameState {
   clues: ClueRecord[];
   room: Record<string, RoomObjectState>;
   killerKnowledge: KillerKnowledge;
-  memory: MemoryFragment[];
+  memory: LoopMemory;
   log: StoryLogEntry[];
   ending: EndingId | null;
   score: ScoreResult | null;
@@ -274,6 +296,8 @@ export interface NarrationContext {
   plotPhase: string;
   /** 玩家处境摘要 */
   playerSituation: string;
+  /** Structured memory visible to narration only; rules and endings must ignore it. */
+  memorySummary?: string[];
   forbiddenFacts: string[];
   styleGuide: string[];
 }

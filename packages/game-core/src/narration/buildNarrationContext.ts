@@ -1,4 +1,5 @@
 import type { NarrationContext, RuleEvent, RuleResult } from '@murder-loop-ai/shared';
+import { buildVisibleMemoryForAgent } from '../memory/loopMemory';
 
 export function event(kind: RuleEvent['kind'], subject: string, summary: string, sensoryHints: string[] = [], visibility: RuleEvent['visibility'] = 'player'): RuleEvent {
   return { kind, subject, summary, sensoryHints, visibility };
@@ -58,6 +59,7 @@ export function buildNarrationContext(playerResult: RuleResult, killerResult: Ru
       channel: entry.channel,
     })),
     knownClueTitles: state.clues.map(c => c.title),
+    memorySummary: buildVisibleMemoryForAgent(state.memory, 'narrator'),
     combatContext: state.combatTriggered ? {
       playerWeapon: state.playerHolding,
       killerArmed: state.killerStatus === 'confronting' || state.threat > 60,

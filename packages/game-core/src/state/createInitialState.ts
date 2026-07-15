@@ -1,5 +1,6 @@
 import { initialRoomObjects, introText } from '@murder-loop-ai/content';
 import { START_MINUTE, type GameState } from '@murder-loop-ai/shared';
+import { createEmptyLoopMemory } from '../memory/loopMemory';
 
 export function createInitialGameState(): GameState {
   return {
@@ -33,7 +34,7 @@ export function createInitialGameState(): GameState {
       suspectsPlayerIsAlert: false,
       knowsEvidenceLocation: null,
     },
-    memory: [],
+    memory: createEmptyLoopMemory(),
     log: [
       {
         id: 'intro-1',

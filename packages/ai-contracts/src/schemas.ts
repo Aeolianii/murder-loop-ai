@@ -117,7 +117,7 @@ export const GameStateContractSchema = z.object({
   clues: z.array(ClueRecordSchema),
   room: z.record(z.string(), z.unknown()),
   killerKnowledge: z.record(z.string(), z.unknown()),
-  memory: z.array(z.unknown()),
+  memory: z.unknown(),
   log: z.array(z.unknown()),
   ending: z.string().nullable(),
   score: z.unknown().nullable(),
@@ -201,6 +201,7 @@ export const NarrationContextSchema = z.object({
   }).optional(),
   plotPhase: z.string().optional(),
   playerSituation: z.string().optional(),
+  memorySummary: z.array(z.string()).optional(),
   forbiddenFacts: z.array(z.string()),
   styleGuide: z.array(z.string()),
 });

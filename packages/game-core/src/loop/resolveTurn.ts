@@ -27,6 +27,7 @@ import { DirectorAgent } from '../agents/DirectorAgent';
 import { NpcAgent } from '../agents/NpcAgent';
 import { UIAdapterAgent } from '../agents/UIAdapterAgent';
 import { SidebarAgent } from '../agents/SidebarAgent';
+import { recordDeathMemory, recordTurnMemory } from '../memory/loopMemory';
 import { clearReviveProtection, hasReviveProtection } from './reviveProtection';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
@@ -139,12 +140,12 @@ function saveConversationCheckpoint(state: GameState): void {
   if (!lastCommunicate) return;
 
   // 检查是否已保存过同一对话的检查点
-  const alreadySaved = state.memory.some(
+  const alreadySaved = state.memory.currentRun.some(
     (m) => m.id === `checkpoint-${lastCommunicate.id}`,
   );
   if (alreadySaved) return;
 
-  state.memory.push({
+  state.memory.currentRun.push({
     id: `checkpoint-${lastCommunicate.id}`,
     run: state.run,
     title: '对话节点',
@@ -429,6 +430,16 @@ export async function resolveTurnHarness(
   });
 
   // Step 8: 完成回合
+  recordTurnMemory(finalState, {
+    playerInput: ctx.input,
+    summary: plan.summary,
+    title: actionNarration.title,
+    text: actionNarration.text,
+  });
+  if (finalState.phase === 'death') {
+    recordDeathMemory(finalState);
+  }
+
   await harness.dispatcher.runCommand('TurnCompleted', {
     finalState,
     moodSignal: directorResult.moodSignal,
@@ -507,6 +518,14 @@ export async function resolveAmbientTurn(
       isAiNarration: Boolean(ambientNarrator),
     },
   ];
+  recordTurnMemory(finalState, {
+    summary: 'ambient turn advanced',
+    title: narration.title,
+    text: narration.text,
+  });
+  if (finalState.phase === 'death') {
+    recordDeathMemory(finalState);
+  }
 
   return { ambientResult, killerStrategy, killerResult, narration, finalState };
 }

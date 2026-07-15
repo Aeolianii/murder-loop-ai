@@ -7,6 +7,7 @@ export * from './killer/fallbackStrategy';
 export * from './killer/applyKillerStrategy';
 export * from './narration/fallbackNarration';
 export * from './narration/buildNarrationContext';
+export * from './memory/loopMemory';
 export * from './scoring/scoreRun';
 export * from './loop/resolveTurn';
 export * from './npc/fallbackNpc';
