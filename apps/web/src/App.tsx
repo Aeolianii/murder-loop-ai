@@ -22,12 +22,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { getClueAsset } from './clueAssets';
 import { ClueReadMap, findFirstNewClue, markClueRead } from './clueRevealState';
 import { loadFrontendState, persistFrontendState, resetFrontendProgress } from './frontendState';
-
-interface FrontendResolveResponse extends Partial<GameState> {
-  coreState?: unknown;
-  storyLog?: GameState['storyLog'];
-  audioCue?: ActionAudioCue | null;
-}
+import { postHarnessTurn } from './api/harnessTurnClient';
 
 interface EndingCinematicPayload {
   key: string;
@@ -90,15 +85,7 @@ export default function App() {
     }));
 
     try {
-      const response = await fetch('/api/harness/turn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: actionText, state: coreState }),
-      });
-      if (!response.ok) throw new Error(`harness turn failed: ${response.status}`);
-      const result = (await response.json()) as FrontendResolveResponse & {
-        turn?: { plan?: { actions?: Array<{ intent: string }> }; killerStrategy?: { type: string } };
-      };
+      const result = await postHarnessTurn(actionText, coreState);
       const resultLog = result.storyLog?.filter(node => node.type !== 'player_input') ?? [];
       const resultClues = result.clues ?? previousClues;
       const newClue = findFirstNewClue(previousClues, resultClues);
@@ -263,13 +250,7 @@ export default function App() {
                     onClick={async () => {
                       setState(prev => ({ ...prev, isParsing: true }));
                       try {
-                        const resp = await fetch('/api/harness/turn', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ input: '', state: state.coreState }),
-                        });
-                        if (!resp.ok) throw new Error(`复活失败: ${resp.status}`);
-                        const result = await resp.json() as FrontendResolveResponse;
+                        const result = await postHarnessTurn('', state.coreState);
                         setState(prev => ({
                           ...prev,
                           isParsing: false,
