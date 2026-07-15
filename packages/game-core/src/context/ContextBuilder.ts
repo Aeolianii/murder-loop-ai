@@ -68,6 +68,7 @@ export interface DirectorContext {
   playerEvents: RuleEvent[];
   killerEvents: RuleEvent[];
   traceSummary: DirectorTraceSummary[];
+  worldInfo: WorldInfoCard[];
   consistencyChecklist: string[];
 }
 
@@ -158,6 +159,20 @@ export function buildDirectorContext(input: {
   killerResult: RuleResult;
   agentTrace?: AgentTraceEntryContract[];
 }): DirectorContext {
+  const consistencyChecklist = [
+    'Narration must be grounded in rule results and confirmed events.',
+    'Narration must not add endings, deaths, arrests, clues, rooms, or character arrivals not present in rule results.',
+    'Agent trace errors or fallback usage should be considered when judging reliability.',
+  ];
+  const traceSummary = (input.agentTrace ?? []).map((entry) => ({
+    agent: entry.agent,
+    eventType: entry.eventType,
+    mode: entry.mode,
+    valid: entry.validation.valid,
+    errors: entry.validation.errors,
+    durationMs: entry.durationMs,
+  }));
+
   return {
     stateSummary: {
       run: input.state.run,
@@ -172,19 +187,24 @@ export function buildDirectorContext(input: {
     ambientNarration: input.ambientNarration,
     playerEvents: input.playerResult.events,
     killerEvents: input.killerResult.events,
-    traceSummary: (input.agentTrace ?? []).map((entry) => ({
-      agent: entry.agent,
-      eventType: entry.eventType,
-      mode: entry.mode,
-      valid: entry.validation.valid,
-      errors: entry.validation.errors,
-      durationMs: entry.durationMs,
-    })),
-    consistencyChecklist: [
-      'Narration must be grounded in rule results and confirmed events.',
-      'Narration must not add endings, deaths, arrests, clues, rooms, or character arrivals not present in rule results.',
-      'Agent trace errors or fallback usage should be considered when judging reliability.',
-    ],
+    traceSummary,
+    worldInfo: selectWorldInfoCards({
+      agent: 'director',
+      input: [
+        input.narration.title,
+        input.narration.text,
+        input.actionNarration.title,
+        input.actionNarration.text,
+        input.ambientNarration.title,
+        input.ambientNarration.text,
+        ...consistencyChecklist,
+        ...traceSummary.flatMap((entry) => [entry.agent, entry.eventType, entry.mode, ...entry.errors]),
+      ].join(' '),
+      state: input.state,
+      events: [...input.playerResult.events, ...input.killerResult.events],
+      limit: 6,
+    }),
+    consistencyChecklist,
   };
 }
 

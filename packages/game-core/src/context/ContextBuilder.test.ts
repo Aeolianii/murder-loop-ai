@@ -53,6 +53,7 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   assert(context.recentMemory[0].includes('short 2'));
   assert.equal('room' in context.stateSummary, false);
   assert(context.worldInfo.some((card) => card.id === 'object.front_door'));
+  assert(!context.worldInfo.some((card) => card.id === 'style.no_player_mind_reading'));
 }
 
 {
@@ -98,6 +99,7 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   assert(!context.recentKillerMemory.some((line) => line.includes('player-death-memory')));
   assert(context.worldInfo.some((card) => card.id === 'rule.killer_visibility'));
   assert(!context.worldInfo.some((card) => card.id === 'clue.linyue_has_photo'));
+  assert(!context.worldInfo.some((card) => card.id === 'style.no_player_mind_reading'));
   assert(context.uncertainty.some((line) => line.includes('hidden player facts')));
 }
 
@@ -119,12 +121,13 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
     state,
     playerResult,
     killerResult,
-    playerActionSummary: 'open package',
-    playerInput: 'I open the package',
+    playerActionSummary: 'open package, then narrator checks whether this causes an ending',
+    playerInput: 'I open the package and wonder if this causes an ending',
   });
 
   assert(context.memorySummary?.some((line) => line.includes('previous loop')));
   assert(context.worldInfo?.some((card) => card.id === 'object.package'));
+  assert(context.worldInfo?.some((card) => card.id === 'rule.narrator_no_rule_change'));
   assert(context.forbiddenFacts.some((line) => line.includes('must not decide endings')));
 }
 
@@ -156,5 +159,7 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
 
   assert.equal(JSON.stringify(state), before);
   assert.equal(context.traceSummary[0]?.agent, 'parser');
+  assert(context.worldInfo.some((card) => card.id === 'rule.world_info_not_authority'));
+  assert(context.worldInfo.some((card) => card.id === 'rule.narrator_no_rule_change'));
   assert(context.consistencyChecklist.some((line) => line.includes('rule results')));
 }
