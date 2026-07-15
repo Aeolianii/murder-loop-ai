@@ -102,6 +102,37 @@ async function testFallbackModeTraceUsesFallbackSource() {
   assert.equal(dispatcher.getAgentTrace()[0].validation.valid, true);
 }
 
+async function testAgentTraceRecordsWorldInfoSummary() {
+  const bus = new GameEventBus();
+  const registry = new AgentRegistry(bus);
+  registry.register(createAgent({}));
+  const dispatcher = new HarnessDispatcher(bus, registry);
+
+  await dispatcher.runCommand('PlayerActionSubmitted', {
+    input: 'check the door',
+    state: {} as never,
+    traceContext: {
+      worldInfo: [{
+        id: 'object.front_door',
+        title: '入户门',
+        content: 'full card content should stay out of trace summary',
+        tags: ['object', 'door'],
+        priority: 8,
+        source: 'derived',
+      }],
+    },
+  } as never);
+
+  const trace = dispatcher.getAgentTrace()[0];
+  assert.deepEqual(trace.worldInfo, [{
+    id: 'object.front_door',
+    title: '入户门',
+    source: 'derived',
+    priority: 8,
+  }]);
+  assert.equal('content' in (trace.worldInfo?.[0] ?? {}), false);
+}
+
 async function testFallbackModeFailureTraceUsesFallbackSource() {
   const bus = new GameEventBus();
   const registry = new AgentRegistry(bus);
@@ -190,6 +221,7 @@ await testCommandUsesPrimaryAgentResult();
 await testCommandFallsBackWhenAiThrows();
 await testCommandFallsBackWhenAiViolatesContract();
 await testFallbackModeTraceUsesFallbackSource();
+await testAgentTraceRecordsWorldInfoSummary();
 await testFallbackModeFailureTraceUsesFallbackSource();
 await testCommandRejectsInvalidFallbackOutput();
 await testRuleAgentRejectsMalformedDeterministicOutput();

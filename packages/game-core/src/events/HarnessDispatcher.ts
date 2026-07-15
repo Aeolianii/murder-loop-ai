@@ -1,5 +1,5 @@
 import type { AgentId, AgentRegistration, AgentRegistry } from './AgentRegistry';
-import type { AgentTraceEntryContract } from '@murder-loop-ai/ai-contracts';
+import type { AgentTraceEntryContract, AgentTraceWorldInfoContract } from '@murder-loop-ai/ai-contracts';
 import type { GameEventBus } from './EventBus';
 import type {
   GameCommandResults,
@@ -168,12 +168,14 @@ export class HarnessDispatcher {
     input: unknown,
     output: unknown,
   ): void {
+    const worldInfo = extractTraceWorldInfo(input);
     this.agentTrace.push({
       agent: agent.id,
       eventType,
       mode: source === 'ai' ? 'ai' : 'fallback',
       input: sanitizeTraceValue(input),
       output: sanitizeTraceValue(output),
+      ...(worldInfo.length > 0 ? { worldInfo } : {}),
       validation: {
         valid: warnings.length === 0,
         errors: [...warnings],
@@ -212,6 +214,46 @@ function summarizeGameState(state: Record<string, unknown>) {
     ending: state.ending,
     clueCount: Array.isArray(state.clues) ? state.clues.length : undefined,
     logCount: Array.isArray(state.log) ? state.log.length : undefined,
+  };
+}
+
+function extractTraceWorldInfo(value: unknown): AgentTraceWorldInfoContract[] {
+  const candidates = [
+    getNestedValue(value, ['traceContext', 'worldInfo']),
+    getNestedValue(value, ['parserContext', 'worldInfo']),
+    getNestedValue(value, ['killerContext', 'worldInfo']),
+    getNestedValue(value, ['narrationContext', 'worldInfo']),
+    getNestedValue(value, ['directorContext', 'worldInfo']),
+    getNestedValue(value, ['worldInfo']),
+  ];
+
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    const summarized = candidate
+      .map(summarizeWorldInfoCard)
+      .filter((card): card is AgentTraceWorldInfoContract => Boolean(card));
+    if (summarized.length > 0) return summarized;
+  }
+  return [];
+}
+
+function getNestedValue(value: unknown, path: string[]): unknown {
+  let current = value;
+  for (const key of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
+function summarizeWorldInfoCard(value: unknown): AgentTraceWorldInfoContract | undefined {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.title !== 'string') return undefined;
+  const source = value.source === 'derived' || value.source === 'manual' ? value.source : 'unknown';
+  return {
+    id: value.id,
+    title: value.title,
+    source,
+    priority: typeof value.priority === 'number' ? value.priority : 0,
   };
 }
 

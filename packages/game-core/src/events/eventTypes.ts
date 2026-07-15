@@ -31,12 +31,13 @@ export type GameEventType =
  * 通过映射类型确保 emit 时的类型安全。
  */
 export interface GameEventPayloads {
-  PlayerActionSubmitted: { input: string; state: GameState };
+  PlayerActionSubmitted: { input: string; state: GameState; traceContext?: { worldInfo?: unknown[] } };
   ActionParsed: { plan: ActionPlan; state: GameState };
   RulesApplied: {
     playerResult: TurnResolution['playerResult'];
     state: GameState;
     plan?: ActionPlan;
+    traceContext?: { worldInfo?: unknown[] };
   };
   KillerActed: { killerStrategy: KillerStrategy; playerResult: TurnResolution['playerResult']; state: GameState };
   NarrationRequested: {

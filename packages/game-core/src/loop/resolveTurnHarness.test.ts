@@ -14,6 +14,16 @@ async function testResolveTurnHarnessReturnsTraceAndFinalState() {
   assert.ok(resolution.actionNarration?.text || resolution.narration.text);
   assert.ok(harness.dispatcher.getTrace().some((entry) => entry.eventType === 'PlayerActionSubmitted'));
   assert.ok(harness.dispatcher.getTrace().some((entry) => entry.eventType === 'NarrationRequested'));
+
+  const agentTrace = harness.dispatcher.getAgentTrace();
+  const parserTrace = agentTrace.find((entry) => entry.agent === 'parser');
+  const killerTrace = agentTrace.find((entry) => entry.agent === 'killer');
+  const narratorTrace = agentTrace.find((entry) => entry.agent === 'narrator');
+
+  assert.ok(parserTrace?.worldInfo?.some((card) => card.id === 'object.package'));
+  assert.ok(killerTrace?.worldInfo && killerTrace.worldInfo.length > 0);
+  assert.ok(narratorTrace?.worldInfo?.some((card) => card.id === 'object.package'));
+  assert.equal('content' in (parserTrace?.worldInfo?.[0] ?? {}), false);
 }
 
 async function testMalformedParserAiOutputFallsBackToValidPlan() {

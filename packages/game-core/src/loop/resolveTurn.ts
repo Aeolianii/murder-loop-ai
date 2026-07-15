@@ -15,7 +15,7 @@ import {
   sanitizeNarration,
 } from '../narration/fallbackNarration';
 import { buildNarrationContext } from '../narration/buildNarrationContext';
-import { buildDirectorContext, buildNarratorContext } from '../context/ContextBuilder';
+import { buildDirectorContext, buildKillerContext, buildNarratorContext, buildParserContext } from '../context/ContextBuilder';
 import { advanceAmbientTurn } from '../ambient/advanceAmbientTurn';
 import { GameEventBus } from '../events/EventBus';
 import { AgentRegistry } from '../events/AgentRegistry';
@@ -303,9 +303,11 @@ export async function resolveTurnHarness(
   const ctx: TurnContext = { input, state: { ...state } };
 
   // Step 1: 解析行动
+  const parserContext = buildParserContext(input, ctx.state);
   const plan = await harness.dispatcher.runCommand('PlayerActionSubmitted', {
     input,
     state: ctx.state,
+    traceContext: { worldInfo: parserContext.worldInfo },
   });
 
   ctx.plan = plan;
@@ -353,12 +355,14 @@ export async function resolveTurnHarness(
   const playerLogId = ctx.state.log[ctx.state.log.length - 1]?.id;
 
   // Step 3: 凶手策略
+  const killerContext = buildKillerContext(ctx.state, { plan, playerResult });
   const killerStrategy = ctx.state.ending
     ? chooseFallbackKillerStrategy(ctx.state)
     : await harness.dispatcher.runCommand('RulesApplied', {
         playerResult,
         state: ctx.state,
         plan,
+        traceContext: { worldInfo: killerContext.worldInfo },
       });
   ctx.killerStrategy = killerStrategy;
 

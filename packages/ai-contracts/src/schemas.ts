@@ -301,12 +301,20 @@ export const ScoreRecapSchema = z.object({
   notes: z.array(z.string()),
 });
 
+export const AgentTraceWorldInfoSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  source: z.enum(['derived', 'manual', 'unknown']),
+  priority: z.number(),
+});
+
 export const AgentTraceEntrySchema = z.object({
   agent: z.enum(AgentNameValues),
   eventType: z.string(),
   mode: z.enum(AgentModeValues),
   input: z.unknown(),
   output: z.unknown(),
+  worldInfo: z.array(AgentTraceWorldInfoSchema).optional(),
   validation: z.object({
     valid: z.boolean(),
     errors: z.array(z.string()),
@@ -328,6 +336,7 @@ export type NarrationContract = z.infer<typeof NarrationSchema>;
 export type NarrationPairContract = z.infer<typeof NarrationPairSchema>;
 export type DirectorOutputContract = z.infer<typeof DirectorOutputSchema>;
 export type ScoreRecapContract = z.infer<typeof ScoreRecapSchema>;
+export type AgentTraceWorldInfoContract = z.infer<typeof AgentTraceWorldInfoSchema>;
 export type AgentNameContract = z.infer<typeof AgentTraceEntrySchema>['agent'];
 export type AgentModeContract = z.infer<typeof AgentTraceEntrySchema>['mode'];
 export type AgentTraceEntryContract = z.infer<typeof AgentTraceEntrySchema>;
