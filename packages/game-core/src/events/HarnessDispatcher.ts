@@ -1,4 +1,5 @@
 import type { AgentId, AgentRegistration, AgentRegistry } from './AgentRegistry';
+import type { AgentTraceEntryContract } from '@murder-loop-ai/ai-contracts';
 import type { GameEventBus } from './EventBus';
 import type {
   GameCommandResults,
@@ -17,6 +18,7 @@ export interface HarnessTraceEntry {
 
 export class HarnessDispatcher {
   private trace: HarnessTraceEntry[] = [];
+  private agentTrace: AgentTraceEntryContract[] = [];
   private artifacts: Array<{ eventType: string; agentId: AgentId; source: HarnessTraceEntry['source']; result: unknown }> = [];
 
   constructor(
@@ -77,6 +79,10 @@ export class HarnessDispatcher {
     return this.trace;
   }
 
+  getAgentTrace(): ReadonlyArray<AgentTraceEntryContract> {
+    return this.agentTrace;
+  }
+
   getArtifacts(eventType?: string): ReadonlyArray<{ eventType: string; agentId: AgentId; source: HarnessTraceEntry['source']; result: unknown }> {
     return eventType ? this.artifacts.filter((artifact) => artifact.eventType === eventType) : this.artifacts;
   }
@@ -101,6 +107,7 @@ export class HarnessDispatcher {
       const result = await this.registry.runAgent(agent, payload, event);
       const source = agent.mode === 'ai' ? 'ai' : 'fallback';
       this.recordTrace(eventType, agent, startedAt, warnings, source);
+      this.recordAgentTrace(eventType, agent, startedAt, warnings, source, payload, result);
       this.recordArtifact(eventType, agent, source, result);
       return result;
     } catch (error) {
@@ -108,17 +115,20 @@ export class HarnessDispatcher {
 
       if (agent.mode !== 'ai') {
         this.recordTrace(eventType, agent, startedAt, warnings, 'fallback');
+        this.recordAgentTrace(eventType, agent, startedAt, warnings, 'fallback', payload, undefined);
         throw error;
       }
 
       try {
         const fallbackResult = await this.registry.runFallback(agent, payload, event);
         this.recordTrace(eventType, agent, startedAt, warnings, 'fallback');
+        this.recordAgentTrace(eventType, agent, startedAt, warnings, 'fallback', payload, fallbackResult);
         this.recordArtifact(eventType, agent, 'fallback', fallbackResult);
         return fallbackResult;
       } catch (fallbackError) {
         warnings.push(formatError(fallbackError));
         this.recordTrace(eventType, agent, startedAt, warnings, 'fallback');
+        this.recordAgentTrace(eventType, agent, startedAt, warnings, 'fallback', payload, undefined);
         throw fallbackError;
       }
     }
@@ -148,8 +158,80 @@ export class HarnessDispatcher {
   ): void {
     this.artifacts.push({ eventType, agentId: agent.id, source, result });
   }
+
+  private recordAgentTrace(
+    eventType: string,
+    agent: AgentRegistration,
+    startedAt: number,
+    warnings: string[],
+    source: HarnessTraceEntry['source'],
+    input: unknown,
+    output: unknown,
+  ): void {
+    this.agentTrace.push({
+      agent: agent.id,
+      eventType,
+      mode: source === 'ai' ? 'ai' : 'fallback',
+      input: sanitizeTraceValue(input),
+      output: sanitizeTraceValue(output),
+      validation: {
+        valid: warnings.length === 0,
+        errors: [...warnings],
+      },
+      durationMs: Math.round(performance.now() - startedAt),
+      timestamp: new Date().toISOString(),
+    });
+  }
 }
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function looksLikeGameState(value: unknown): value is Record<string, unknown> {
+  return isRecord(value)
+    && typeof value.run === 'number'
+    && typeof value.minute === 'number'
+    && typeof value.phase === 'string'
+    && typeof value.threat === 'number';
+}
+
+function summarizeGameState(state: Record<string, unknown>) {
+  return {
+    run: state.run,
+    minute: state.minute,
+    phase: state.phase,
+    killerStatus: state.killerStatus,
+    policePhase: state.policePhase,
+    threat: state.threat,
+    suspicion: state.suspicion,
+    ending: state.ending,
+    clueCount: Array.isArray(state.clues) ? state.clues.length : undefined,
+    logCount: Array.isArray(state.log) ? state.log.length : undefined,
+  };
+}
+
+function sanitizeTraceValue(value: unknown, depth = 0): unknown {
+  if (depth > 4) return '[truncated]';
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.slice(0, 8).map((entry) => sanitizeTraceValue(entry, depth + 1));
+  if (looksLikeGameState(value)) return summarizeGameState(value);
+
+  const result: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (/apiKey|secret|token|password/i.test(key)) {
+      result[key] = '[redacted]';
+      continue;
+    }
+    if ((key === 'state' || key === 'finalState' || key === 'coreState') && looksLikeGameState(nested)) {
+      result[key] = summarizeGameState(nested);
+      continue;
+    }
+    result[key] = sanitizeTraceValue(nested, depth + 1);
+  }
+  return result;
 }

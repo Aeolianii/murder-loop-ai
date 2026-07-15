@@ -151,6 +151,9 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
   assert.equal(body.storyLog[0].type, 'player_input');
   assert.equal(body.storyLog[1].type, 'action_result');
   assert.equal(body.coordination.trace[0].taskId, 'PlayerActionSubmitted');
+  assert.equal(body.agentTrace[0].agent, 'parser');
+  assert.equal(body.agentTrace[0].mode, 'ai');
+  assert.equal(body.agentTrace[0].validation.valid, true);
   assert.equal(body.audioCue.soundId, 'phone_msg');
   assert.equal(body.audioCue.confidence, 0.91);
 
@@ -178,6 +181,8 @@ async function testDefaultHarnessRouteReturnsDispatcherTrace() {
   const body = response.json();
   assert.equal(body.coordination.trace[0].taskId, 'PlayerActionSubmitted');
   assert.notEqual(body.coordination.trace[0].source, 'game-core-harness');
+  assert.equal(body.agentTrace[0].agent, 'parser');
+  assert.ok(['ai', 'fallback'].includes(body.agentTrace[0].mode));
   assert.deepEqual(
     body.coordination.warnings,
     body.coordination.trace.flatMap((entry: { warnings: string[] }) => entry.warnings),

@@ -745,6 +745,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         recap: generateRecap(state),
         sidebar,
         storyLog: [] satisfies FrontendStoryNode[],
+        agentTrace: [],
         coordination: { warnings: [], trace: [], judgements: {} },
       };
     }
@@ -789,6 +790,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const trace = harness.dispatcher.getTrace().map(e => ({
       taskId: e.eventType, agentId: e.agentId, source: e.source, warnings: e.warnings, durationMs: e.durationMs,
     }));
+    const agentTrace = harness.dispatcher.getAgentTrace();
     const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
 
     return {
@@ -805,6 +807,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         ...visibleEntries.map(toFrontendNode),
       ] satisfies FrontendStoryNode[],
       turn: { plan: resolution.plan, killerStrategy: resolution.killerStrategy, actionNarration: resolution.actionNarration ?? resolution.narration, ambientNarration: resolution.ambientNarration ?? null },
+      agentTrace,
       coordination: { warnings: [...routeWarnings, ...trace.flatMap(t => t.warnings)], trace, judgements: routeJudgements },
       sidebar,
     };

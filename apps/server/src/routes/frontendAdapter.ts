@@ -303,6 +303,7 @@ export async function frontendAdapterRoute(app: FastifyInstance, options: Fronte
       warnings: e.warnings,
       durationMs: e.durationMs,
     }));
+    const agentTrace = harness.dispatcher.getAgentTrace();
     return {
       coreState: finalState,
       time: minuteLabel(finalState.minute),
@@ -328,6 +329,7 @@ export async function frontendAdapterRoute(app: FastifyInstance, options: Fronte
       deathSummary: finalState.phase === 'death' ? endingEntry?.text ?? null : null,
       deathMethod: null,
       score: finalState.score,
+      agentTrace,
       coordination: {
         warnings: [
           ...(adapterBundle.coordination?.warnings ?? []),

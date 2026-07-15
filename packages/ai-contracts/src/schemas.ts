@@ -1,10 +1,51 @@
 import { z } from 'zod';
 
-// ActionIntent 不做 enum 校验——AI 可以自由创造新的意图
-export const ActionIntentSchema = z.string();
+export const ActionIntentValues = [
+  'inspect',
+  'preserve_evidence',
+  'communicate',
+  'deceive',
+  'record',
+  'secure_entry',
+  'hide_evidence',
+  'call_police',
+  'verify_identity',
+  'escape',
+  'open_door',
+  'self_care',
+  'wait',
+  'attack',
+  'pick_up',
+  'use_item',
+] as const;
 
-// ActionTarget 不做 enum 校验——AI 可以自由使用任何物品/目标
-export const ActionTargetSchema = z.string();
+export const ActionRiskValues = ['low', 'medium', 'high'] as const;
+
+export const KillerStrategyTypeValues = [
+  'phone_probe',
+  'soft_knock',
+  'landlord_excuse',
+  'fake_police',
+  'spare_key_entry',
+  'window_route',
+  'direct_confrontation',
+  'framing_pressure',
+  'power_cut',
+  'lure_linyue',
+  'fake_neighbor',
+  'fake_callback',
+  'message_reply',
+  'wait_for_fatigue',
+  'retreat',
+] as const;
+
+export const RuleEventKindValues = ['action', 'clue', 'state_change', 'sound', 'message', 'threat', 'ending'] as const;
+export const RuleEventVisibilityValues = ['player', 'killer', 'hidden'] as const;
+export const AgentNameValues = ['parser', 'rule', 'killer', 'narrator', 'director', 'npc', 'ui-adapter', 'sidebar'] as const;
+export const AgentModeValues = ['ai', 'fallback'] as const;
+
+export const ActionIntentSchema = z.enum(ActionIntentValues);
+export const ActionTargetSchema = z.string().min(1);
 
 export const ParsedActionSchema = z.object({
   id: z.string(),
@@ -15,8 +56,8 @@ export const ParsedActionSchema = z.object({
   confidence: z.number().min(0).max(1),
   timeCost: z.number().min(1).max(5),
   noise: z.number().min(0).max(10),
-  risk: z.enum(['low', 'medium', 'high']),
-});
+  risk: z.enum(ActionRiskValues),
+}).passthrough();
 
 export const ActionPlanSchema = z.object({
   id: z.string(),
@@ -29,21 +70,96 @@ export const ActionPlanSchema = z.object({
 
 export const KillerStrategySchema = z.object({
   id: z.string(),
-  // Killer strategy type: AI 自由选择，不做 enum 限制
-  type: z.string(),
+  type: z.enum(KillerStrategyTypeValues),
   title: z.string(),
   rationale: z.string(),
   responseHint: z.string().optional(),
   visibleToPlayer: z.boolean(),
-  risk: z.enum(['low', 'medium', 'high']),
+  risk: z.enum(ActionRiskValues),
 });
 
 export const RuleEventSchema = z.object({
-  kind: z.enum(['action', 'clue', 'state_change', 'sound', 'message', 'threat', 'ending']),
+  kind: z.enum(RuleEventKindValues),
   subject: z.string(),
   summary: z.string(),
   sensoryHints: z.array(z.string()),
-  visibility: z.enum(['player', 'killer', 'hidden']),
+  visibility: z.enum(RuleEventVisibilityValues),
+});
+
+export const ClueRecordSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  detail: z.string(),
+  source: z.enum(['ai_generated', 'static_fallback', 'player_discovered']),
+  weight: z.number(),
+  discoveredAt: z.object({ run: z.number(), minute: z.number() }),
+  isPersistent: z.boolean(),
+});
+
+export const GameStateContractSchema = z.object({
+  run: z.number(),
+  minute: z.number(),
+  phase: z.string(),
+  killerPhase: z.string(),
+  killerStatus: z.string(),
+  policePhase: z.string(),
+  linYuePhase: z.string(),
+  evidencePhase: z.string(),
+  threat: z.number(),
+  suspicion: z.number(),
+  player: z.object({
+    injury: z.string(),
+    stress: z.number(),
+    hidden: z.boolean(),
+  }),
+  playerHolding: z.string().nullable(),
+  combatTriggered: z.boolean(),
+  clues: z.array(ClueRecordSchema),
+  room: z.record(z.string(), z.unknown()),
+  killerKnowledge: z.record(z.string(), z.unknown()),
+  memory: z.array(z.unknown()),
+  log: z.array(z.unknown()),
+  ending: z.string().nullable(),
+  score: z.unknown().nullable(),
+  phoneBattery: z.number(),
+  phoneFunctional: z.boolean(),
+  reviveProtectionTurns: z.number().optional(),
+  policeArrivalMinute: z.number().optional(),
+  plotGuidance: z.string().optional(),
+});
+
+export const RuleResultSchema = z.object({
+  title: z.string(),
+  text: z.string(),
+  tone: z.enum(['neutral', 'memory', 'clue', 'threat', 'death', 'win', 'system']),
+  addedClues: z.array(ClueRecordSchema),
+  timePassed: z.number(),
+  threatDelta: z.number(),
+  events: z.array(RuleEventSchema),
+  state: GameStateContractSchema,
+});
+
+export const ParserAgentInputSchema = z.object({
+  input: z.string(),
+  state: GameStateContractSchema,
+});
+
+export const RuleAgentInputSchema = z.union([
+  z.object({
+    plan: ActionPlanSchema,
+    state: GameStateContractSchema,
+  }),
+  z.object({
+    killerStrategy: KillerStrategySchema,
+    playerResult: RuleResultSchema,
+    state: GameStateContractSchema,
+  }),
+]);
+
+export const KillerAgentInputSchema = z.object({
+  playerResult: RuleResultSchema,
+  state: GameStateContractSchema,
+  plan: ActionPlanSchema.optional(),
 });
 
 export const NarrationContextSchema = z.object({
@@ -51,6 +167,7 @@ export const NarrationContextSchema = z.object({
   minute: z.number(),
   turnIndex: z.number(),
   playerActionSummary: z.string(),
+  playerInput: z.string().optional(),
   events: z.array(RuleEventSchema),
   stateSnapshot: z.object({
     phase: z.string(),
@@ -63,15 +180,7 @@ export const NarrationContextSchema = z.object({
     suspicion: z.number(),
     injury: z.string(),
     stress: z.number(),
-    clues: z.array(z.object({
-      id: z.string(),
-      title: z.string(),
-      detail: z.string(),
-      source: z.string(),
-      weight: z.number(),
-      discoveredAt: z.object({ run: z.number(), minute: z.number() }),
-      isPersistent: z.boolean(),
-    })),
+    clues: z.array(ClueRecordSchema),
     ending: z.string().nullable(),
     phoneBattery: z.number().optional(),
     phoneFunctional: z.boolean().optional(),
@@ -94,6 +203,14 @@ export const NarrationContextSchema = z.object({
   playerSituation: z.string().optional(),
   forbiddenFacts: z.array(z.string()),
   styleGuide: z.array(z.string()),
+});
+
+export const NarratorAgentInputSchema = z.object({
+  plan: ActionPlanSchema,
+  playerResult: RuleResultSchema,
+  killerResult: RuleResultSchema,
+  state: GameStateContractSchema,
+  narrationContext: NarrationContextSchema.optional(),
 });
 
 export const NpcReplySchema = z.object({
@@ -136,6 +253,33 @@ export const NarrationSchema = z.object({
   }).optional(),
 });
 
+export const NarrationPairSchema = z.object({
+  actionNarration: NarrationSchema,
+  ambientNarration: NarrationSchema,
+});
+
+export const DirectorAgentInputSchema = z.object({
+  narration: NarrationSchema,
+  actionNarration: NarrationSchema,
+  ambientNarration: NarrationSchema,
+  state: GameStateContractSchema,
+  narrationContext: NarrationContextSchema.optional(),
+  playerResult: RuleResultSchema.optional(),
+  killerResult: RuleResultSchema.optional(),
+});
+
+export const DirectorOutputSchema = z.object({
+  score: z.object({
+    pacing: z.number().min(0).max(10),
+    infoLeak: z.number().min(0).max(10),
+    ruleConsistency: z.number().min(0).max(10),
+    prose: z.number().min(0).max(10),
+  }),
+  passed: z.boolean(),
+  violations: z.array(z.string()),
+  moodSignal: z.string().optional(),
+});
+
 export const ScoreRecapSchema = z.object({
   total: z.number().min(0).max(100),
   rank: z.enum(['S', 'A', 'B', 'C', 'D', 'F']),
@@ -148,11 +292,33 @@ export const ScoreRecapSchema = z.object({
   notes: z.array(z.string()),
 });
 
+export const AgentTraceEntrySchema = z.object({
+  agent: z.enum(AgentNameValues),
+  eventType: z.string(),
+  mode: z.enum(AgentModeValues),
+  input: z.unknown(),
+  output: z.unknown(),
+  validation: z.object({
+    valid: z.boolean(),
+    errors: z.array(z.string()),
+  }),
+  durationMs: z.number().optional(),
+  timestamp: z.string().optional(),
+});
+
+export type ActionIntentContract = z.infer<typeof ActionIntentSchema>;
 export type ParsedActionContract = z.infer<typeof ParsedActionSchema>;
 export type ActionPlanContract = z.infer<typeof ActionPlanSchema>;
+export type KillerStrategyTypeContract = z.infer<typeof KillerStrategySchema>['type'];
 export type KillerStrategyContract = z.infer<typeof KillerStrategySchema>;
 export type RuleEventContract = z.infer<typeof RuleEventSchema>;
+export type RuleResultContract = z.infer<typeof RuleResultSchema>;
 export type NarrationContextContract = z.infer<typeof NarrationContextSchema>;
 export type NpcReplyContract = z.infer<typeof NpcReplySchema>;
 export type NarrationContract = z.infer<typeof NarrationSchema>;
+export type NarrationPairContract = z.infer<typeof NarrationPairSchema>;
+export type DirectorOutputContract = z.infer<typeof DirectorOutputSchema>;
 export type ScoreRecapContract = z.infer<typeof ScoreRecapSchema>;
+export type AgentNameContract = z.infer<typeof AgentTraceEntrySchema>['agent'];
+export type AgentModeContract = z.infer<typeof AgentTraceEntrySchema>['mode'];
+export type AgentTraceEntryContract = z.infer<typeof AgentTraceEntrySchema>;

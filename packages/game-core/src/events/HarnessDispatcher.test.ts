@@ -78,6 +78,11 @@ async function testCommandFallsBackWhenAiViolatesContract() {
   assert.deepEqual(result, { value: 'fallback' });
   assert.equal(dispatcher.getTrace()[0].source, 'fallback');
   assert.match(dispatcher.getTrace()[0].warnings[0], /output violation|parser.*output/i);
+  assert.equal(dispatcher.getAgentTrace()[0].agent, 'parser');
+  assert.equal(dispatcher.getAgentTrace()[0].mode, 'fallback');
+  assert.equal(dispatcher.getAgentTrace()[0].validation.valid, false);
+  assert.match(dispatcher.getAgentTrace()[0].validation.errors[0], /output violation|parser.*output/i);
+  assert.deepEqual(dispatcher.getAgentTrace()[0].output, { value: 'fallback' });
 }
 
 async function testFallbackModeTraceUsesFallbackSource() {
@@ -93,6 +98,8 @@ async function testFallbackModeTraceUsesFallbackSource() {
 
   assert.deepEqual(result, { value: 'fallback' });
   assert.equal(dispatcher.getTrace()[0].source, 'fallback');
+  assert.equal(dispatcher.getAgentTrace()[0].mode, 'fallback');
+  assert.equal(dispatcher.getAgentTrace()[0].validation.valid, true);
 }
 
 async function testFallbackModeFailureTraceUsesFallbackSource() {
@@ -151,6 +158,8 @@ async function testRuleAgentRejectsMalformedDeterministicOutput() {
     /rule.*output violation/i,
   );
   assert.equal(dispatcher.getTrace()[0].source, 'fallback');
+  assert.equal(dispatcher.getAgentTrace()[0].validation.valid, false);
+  assert.match(dispatcher.getAgentTrace()[0].validation.errors[0], /output violation/i);
 }
 
 async function testCommandRunsObserverArtifacts() {
