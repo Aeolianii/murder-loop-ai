@@ -52,6 +52,7 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   assert.equal(context.recentMemory.length, 3);
   assert(context.recentMemory[0].includes('short 2'));
   assert.equal('room' in context.stateSummary, false);
+  assert(context.worldInfo.some((card) => card.id === 'object.front_door'));
 }
 
 {
@@ -95,6 +96,8 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   assert.deepEqual(context.observableEvents.map((item) => item.subject), ['phone_screen_lit']);
   assert(context.recentKillerMemory.some((line) => line.includes('killer noticed door')));
   assert(!context.recentKillerMemory.some((line) => line.includes('player-death-memory')));
+  assert(context.worldInfo.some((card) => card.id === 'rule.killer_visibility'));
+  assert(!context.worldInfo.some((card) => card.id === 'clue.linyue_has_photo'));
   assert(context.uncertainty.some((line) => line.includes('hidden player facts')));
 }
 
@@ -121,6 +124,7 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   });
 
   assert(context.memorySummary?.some((line) => line.includes('previous loop')));
+  assert(context.worldInfo?.some((card) => card.id === 'object.package'));
   assert(context.forbiddenFacts.some((line) => line.includes('must not decide endings')));
 }
 

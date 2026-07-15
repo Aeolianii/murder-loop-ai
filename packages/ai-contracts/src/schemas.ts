@@ -202,6 +202,13 @@ export const NarrationContextSchema = z.object({
   plotPhase: z.string().optional(),
   playerSituation: z.string().optional(),
   memorySummary: z.array(z.string()).optional(),
+  worldInfo: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    content: z.string(),
+    tags: z.array(z.string()),
+    priority: z.number(),
+  }).passthrough()).optional(),
   forbiddenFacts: z.array(z.string()),
   styleGuide: z.array(z.string()),
 });

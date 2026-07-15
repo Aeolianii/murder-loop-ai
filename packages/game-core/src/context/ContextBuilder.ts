@@ -7,6 +7,7 @@ import type {
   RuleResult,
 } from '@murder-loop-ai/shared';
 import type { AgentTraceEntryContract } from '@murder-loop-ai/ai-contracts';
+import { selectWorldInfoCards, type WorldInfoCard } from '@murder-loop-ai/content';
 import { projectKillerVisibleState } from '../killer/knowledge';
 import { buildNarrationContext } from '../narration/buildNarrationContext';
 import { buildVisibleMemoryForAgent, normalizeLoopMemory } from '../memory/loopMemory';
@@ -24,6 +25,7 @@ export interface ParserContext {
     clueIds: string[];
   };
   recentMemory: string[];
+  worldInfo: WorldInfoCard[];
 }
 
 export interface KillerObservableEvent {
@@ -38,6 +40,7 @@ export interface KillerContext {
   planSummary?: string;
   observableEvents: KillerObservableEvent[];
   recentKillerMemory: string[];
+  worldInfo: WorldInfoCard[];
   uncertainty: string[];
 }
 
@@ -83,6 +86,7 @@ export function buildParserContext(input: string, state: GameState): ParserConte
       clueIds: state.clues.map((clue) => clue.id),
     },
     recentMemory: buildVisibleMemoryForAgent(memory, 'parser').slice(-3),
+    worldInfo: selectWorldInfoCards({ agent: 'parser', input, state, limit: 6 }),
   };
 }
 
@@ -100,6 +104,13 @@ export function buildKillerContext(
     planSummary: input.plan?.summary,
     observableEvents,
     recentKillerMemory: buildVisibleMemoryForAgent(normalizeLoopMemory(state.memory), 'killer'),
+    worldInfo: selectWorldInfoCards({
+      agent: 'killer',
+      input: input.plan?.raw ?? input.plan?.summary,
+      state,
+      events: input.playerResult?.events,
+      limit: 6,
+    }),
     uncertainty: [
       'Killer only receives observable events and projected knowledge, not player private intent.',
       hiddenCount > 0
@@ -124,6 +135,13 @@ export function buildNarratorContext(input: {
   );
   return {
     ...context,
+    worldInfo: selectWorldInfoCards({
+      agent: 'narrator',
+      input: input.playerInput ?? input.playerActionSummary,
+      state: input.state,
+      events: context.events,
+      limit: 6,
+    }),
     forbiddenFacts: [
       ...context.forbiddenFacts,
       'Narrator may use memorySummary for continuity but must not decide endings, deaths, arrests, or rule outcomes.',

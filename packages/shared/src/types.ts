@@ -298,6 +298,8 @@ export interface NarrationContext {
   playerSituation: string;
   /** Structured memory visible to narration only; rules and endings must ignore it. */
   memorySummary?: string[];
+  /** Selected world facts for this turn. These are context only, not rule authority. */
+  worldInfo?: Array<{ id: string; title: string; content: string; tags: string[]; priority: number }>;
   forbiddenFacts: string[];
   styleGuide: string[];
 }
