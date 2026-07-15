@@ -1,13 +1,23 @@
 import type { FastifyInstance } from 'fastify';
 import { ActionPlanSchema, KillerStrategySchema, NarrationSchema } from '@murder-loop-ai/ai-contracts';
 import { clueBook } from '@murder-loop-ai/content';
-import { chooseFallbackKillerStrategy, createFallbackActionNarration, createFallbackAmbientNarration, createInitialGameState, fallbackParseAction, projectKillerVisibleState, resolveTurn } from '@murder-loop-ai/game-core';
+import { chooseFallbackKillerStrategy, createFallbackActionNarration, createFallbackAmbientNarration, createHarness, createInitialGameState, fallbackParseAction, projectKillerVisibleState, resolveTurnHarness } from '@murder-loop-ai/game-core';
 import type { AiAdapters } from '@murder-loop-ai/game-core';
 import { minuteLabel, type ActionPlan, type GameState, type KillerStrategy, type Narration, type NarrationContext, type RuleResult, type StoryLogEntry } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from '../ai/turnCoordinator';
 import { scoreNarrationWithDirector } from '../ai/directorScorer';
 import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObject';
+
+interface FrontendAdapterRouteOptions {
+  createAiAdapters?: (input: string, state: GameState) => {
+    aiAdapters: AiAdapters;
+    coordination?: {
+      warnings?: string[];
+      judgements?: Record<string, unknown>;
+    };
+  };
+}
 
 interface FrontendStoryNode {
   id: string;
@@ -43,79 +53,26 @@ function toFrontendNode(entry: StoryLogEntry): FrontendStoryNode {
   };
 }
 
-function phaseFromEnding(ending: NonNullable<GameState['ending']>): GameState['phase'] {
-  return ending.includes('survived') || ending === 'perfect_truth' || ending === 'escaped_without_truth' || ending === 'framed_survivor'
-    ? 'survived'
-    : 'death';
-}
-
-function isNarratedEndingSupported(
-  ending: NonNullable<GameState['ending']>,
-  finalState: GameState,
-  plan?: ActionPlan,
-): boolean {
-  const didEscape = plan?.actions.some((action) => action.intent === 'escape') ?? false;
-  const didOpenExit = Boolean(finalState.room.front_door.state.opened) || Boolean(finalState.room.window.state.opened);
-  const hasEvidence = finalState.clues.some(c => c.id === 'package_photo')
-    || finalState.clues.some(c => c.id === 'linyue_has_photo')
-    || Boolean(finalState.room.phone.state.recording)
-    || Boolean(finalState.room.package.state.backedUp);
-  const policeTrusted = finalState.policePhase === 'real_police_en_route' || finalState.policePhase === 'arrived'
-    || finalState.clues.some(c => c.id === 'police_verified');
-  const killerDown = finalState.killerStatus === 'dead' || finalState.killerStatus === 'arrested' || finalState.killerStatus === 'fled';
-
-  switch (ending) {
-    case 'escaped_without_truth':
-      return didEscape && didOpenExit;
-    case 'survived_with_evidence':
-    case 'perfect_truth':
-    case 'framed_survivor':
-      return hasEvidence || policeTrusted;
-    case 'killer_dead_with_evidence':
-      return finalState.killerStatus === 'dead' && hasEvidence;
-    case 'killer_dead_no_evidence':
-      return finalState.killerStatus === 'dead';
-    case 'killer_arrested':
-      return finalState.killerStatus === 'arrested' || policeTrusted;
-    case 'killer_fled':
-      return finalState.killerStatus === 'fled' || (didEscape && didOpenExit);
-    default:
-      return killerDown || didOpenExit || policeTrusted || hasEvidence;
-  }
-}
-
-function applyNarrationOutcomeHints(
-  finalState: GameState,
-  blackboard: ReturnType<typeof createTurnBlackboard>,
-  plan?: ActionPlan,
+function collectNarrationOutcomeWarnings(
   actionNarration?: Narration | null,
   ambientNarration?: Narration | null,
-) {
+): string[] {
+  const warnings: string[] = [];
   const decisiveNarration = actionNarration?.ending || actionNarration?.isFatal || actionNarration?.killerKilled
     ? actionNarration
     : ambientNarration;
 
   if (decisiveNarration?.ending) {
-    if (isNarratedEndingSupported(decisiveNarration.ending, finalState, plan)) {
-      finalState.ending = decisiveNarration.ending;
-      finalState.phase = phaseFromEnding(decisiveNarration.ending);
-      blackboard.warnings.push(`narrated ending accepted: ${decisiveNarration.ending}`);
-      return;
-    }
-    blackboard.warnings.push(`narrated ending rejected: ${decisiveNarration.ending} was not supported by resolved events.`);
+    warnings.push(`narrated ending proposal ignored: ${decisiveNarration.ending}; rules/director must validate world-state changes.`);
   }
-
   if (actionNarration?.isFatal || ambientNarration?.isFatal) {
-    finalState.ending = null;
-    finalState.phase = 'death';
-    finalState.score = null;
-    return;
+    warnings.push('fatal narration proposal ignored: narration cannot directly set death.');
+  }
+  if (actionNarration?.killerKilled || ambientNarration?.killerKilled) {
+    warnings.push('killerKilled narration proposal ignored: narration cannot directly change killer status.');
   }
 
-  if (actionNarration?.killerKilled || ambientNarration?.killerKilled) {
-    finalState.killerStatus = 'dead';
-    finalState.combatTriggered = true;
-  }
+  return warnings;
 }
 
 async function parseActionForFrontend(input: string, state: GameState, blackboard = createTurnBlackboard(input, state)): Promise<ActionPlan> {
@@ -310,7 +267,7 @@ export function createFrontendHarnessAdapters(input: string, state: GameState) {
   };
 }
 
-export async function frontendAdapterRoute(app: FastifyInstance) {
+export async function frontendAdapterRoute(app: FastifyInstance, options: FrontendAdapterRouteOptions = {}) {
   app.post('/api/frontend/resolve-action', async (request) => {
     const body = request.body as { actionText?: string; coreState?: GameState };
     const actionText = body.actionText?.trim();
@@ -329,23 +286,23 @@ export async function frontendAdapterRoute(app: FastifyInstance) {
     }
 
     const beforeLogLength = baseState.log.length;
-    const blackboard = createTurnBlackboard(actionText, baseState);
-    const resolution = await resolveTurn(baseState, actionText, {
-      parseAction: (input, state) => parseActionForFrontend(input, state, blackboard),
-      chooseKillerStrategy: (state, plan, playerResult) => chooseKillerStrategyForFrontend(state, plan, playerResult, blackboard),
-      narrateAction: (context, playerResult, killerResult, state) => narrateActionForFrontend(context, playerResult, killerResult, state, blackboard),
-      narrateAmbient: (context, playerResult, killerResult, state) => narrateAmbientForFrontend(context, playerResult, killerResult, state, blackboard),
-    });
+    const adapterBundle = options.createAiAdapters?.(actionText, baseState) ?? createFrontendHarnessAdapters(actionText, baseState);
+    const harness = createHarness(adapterBundle.aiAdapters);
+    const resolution = await resolveTurnHarness(baseState, actionText, harness);
     const finalState = resolution.finalState;
-    applyNarrationOutcomeHints(
-      finalState,
-      blackboard,
-      resolution.plan,
+    const outcomeWarnings = collectNarrationOutcomeWarnings(
       resolution.actionNarration,
       resolution.ambientNarration,
     );
     const newNodes = finalState.log.slice(beforeLogLength).map(toFrontendNode);
     const endingEntry = finalState.ending ? finalState.log[finalState.log.length - 1] : null;
+    const trace = harness.dispatcher.getTrace().map(e => ({
+      taskId: e.eventType,
+      agentId: e.agentId,
+      source: e.source,
+      warnings: e.warnings,
+      durationMs: e.durationMs,
+    }));
     return {
       coreState: finalState,
       time: minuteLabel(finalState.minute),
@@ -372,9 +329,13 @@ export async function frontendAdapterRoute(app: FastifyInstance) {
       deathMethod: null,
       score: finalState.score,
       coordination: {
-        warnings: blackboard.warnings,
-        facts: blackboard.facts,
-        directorScores: blackboard.directorScores,
+        warnings: [
+          ...(adapterBundle.coordination?.warnings ?? []),
+          ...outcomeWarnings,
+          ...trace.flatMap(t => t.warnings),
+        ],
+        trace,
+        ...(adapterBundle.coordination?.judgements ?? {}),
       },
     };
   });

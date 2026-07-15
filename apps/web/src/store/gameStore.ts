@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { createInitialGameState, fallbackParseAction, resolveAmbientTurn, resolveTurn, rewindAfterDeath } from '@murder-loop-ai/game-core';
+import { createInitialGameState, resolveAmbientTurn, rewindAfterDeath } from '@murder-loop-ai/game-core';
 import type { GameState } from '@murder-loop-ai/shared';
 import { aiClient } from '../api/aiClient';
 
@@ -30,6 +30,23 @@ function persistGame(game: GameState) {
 function clearSavedGame() {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(SAVE_KEY);
+}
+
+async function resolveHarnessTurn(game: GameState, input: string): Promise<{ finalState: GameState; debug: unknown }> {
+  const response = await fetch('/api/harness/turn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input, state: game }),
+  });
+  if (!response.ok) throw new Error(`/api/harness/turn failed: ${response.status}`);
+  const body = await response.json() as { coreState?: GameState };
+  if (!body.coreState) {
+    throw new Error('/api/harness/turn returned an incomplete turn payload');
+  }
+  return {
+    finalState: body.coreState,
+    debug: body,
+  };
 }
 
 interface GameStore {
@@ -69,21 +86,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!input || get().inputBusy || get().game.ending) return;
     set({ busy: true, inputBusy: true, draft: '', plannedAction: null, autoNarrationPaused: false });
     try {
-      const resolution = await enqueueTurn(() => resolveTurn(get().game, input, {
-        parseAction: aiClient.parseAction,
-        chooseKillerStrategy: aiClient.chooseKillerStrategy,
-        narrateAction: aiClient.narrateAction,
-        narrateAmbient: aiClient.narrateAmbient,
-        narrate: aiClient.narrate,
-      }));
+      const resolution = await enqueueTurn(() => resolveHarnessTurn(get().game, input));
       persistGame(resolution.finalState);
-      set({ game: resolution.finalState, serverStatus: 'online', lastDebug: resolution });
-    } catch {
-      const resolution = await enqueueTurn(() => resolveTurn(get().game, input, {
-        parseAction: async () => fallbackParseAction(input),
-      }));
-      persistGame(resolution.finalState);
-      set({ game: resolution.finalState, serverStatus: 'fallback', lastDebug: resolution });
+      set({ game: resolution.finalState, serverStatus: 'online', lastDebug: resolution.debug });
+    } catch (error) {
+      set({ serverStatus: 'fallback', lastDebug: error });
     } finally {
       set((store) => ({ inputBusy: false, busy: store.ambientBusy }));
     }

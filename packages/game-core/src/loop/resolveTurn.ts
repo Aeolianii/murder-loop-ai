@@ -8,12 +8,9 @@ import type {
   NpcReply,
   TurnResolution,
 } from '@murder-loop-ai/shared';
-import { fallbackParseAction } from '../actions/fallbackParser';
-import { applyPlayerActions } from '../rules/applyPlayerActions';
 import { chooseFallbackKillerStrategy } from '../killer/fallbackStrategy';
 import { applyKillerStrategy } from '../killer/applyKillerStrategy';
 import {
-  createFallbackActionNarration,
   createFallbackAmbientNarration,
   sanitizeNarration,
 } from '../narration/fallbackNarration';
@@ -435,99 +432,6 @@ export async function resolveTurnHarness(
   await harness.dispatcher.runCommand('TurnCompleted', {
     finalState,
     moodSignal: directorResult.moodSignal,
-  });
-
-  return {
-    plan,
-    playerResult,
-    killerStrategy,
-    killerResult,
-    narration: actionNarration,
-    actionNarration,
-    ambientNarration,
-    finalState,
-  };
-}
-
-// ============================================================================
-// 向后兼容：保留旧的 resolveTurn 函数
-// ============================================================================
-
-export async function resolveTurn(
-  state: GameState,
-  input: string,
-  aiAdapters: AiAdapters = {},
-): Promise<TurnResolution> {
-  const startedWithReviveProtection = hasReviveProtection(state);
-  const plan = aiAdapters.parseAction
-    ? await aiAdapters
-        .parseAction(input, state)
-        .catch(() => fallbackParseAction(input))
-    : fallbackParseAction(input);
-  const playerResult = applyPlayerActions(state, plan);
-  const playerLogId = playerResult.state.log[playerResult.state.log.length - 1]?.id;
-
-  const killerStrategy = playerResult.state.ending
-    ? chooseFallbackKillerStrategy(playerResult.state)
-    : aiAdapters.chooseKillerStrategy
-      ? await aiAdapters
-          .chooseKillerStrategy(playerResult.state, plan, playerResult)
-          .catch(() => chooseFallbackKillerStrategy(playerResult.state))
-      : chooseFallbackKillerStrategy(playerResult.state);
-
-  const killerResult = playerResult.state.ending
-    ? {
-        ...playerResult,
-        text: '',
-        title: '对抗结束',
-        tone: 'system' as const,
-        addedClues: [],
-        timePassed: 0,
-        threatDelta: 0,
-        events: [],
-      }
-    : applyKillerStrategy(playerResult.state, killerStrategy);
-  const killerLogId = playerResult.state.ending
-    ? undefined
-    : killerResult.state.log[killerResult.state.log.length - 1]?.id;
-  const narrationContext = buildNarrationContext(playerResult, killerResult, plan.summary, input);
-  const actionNarrator = aiAdapters.narrateAction ?? aiAdapters.narrate;
-  const ambientNarrator = aiAdapters.narrateAmbient ?? aiAdapters.narrate;
-  const rawActionNarration = actionNarrator
-    ? await actionNarrator(narrationContext, playerResult, killerResult, killerResult.state).catch(
-        () => createFallbackActionNarration(playerResult),
-      )
-    : createFallbackActionNarration(playerResult);
-  const rawAmbientNarration = playerResult.state.ending
-    ? rawActionNarration
-    : ambientNarrator
-      ? await ambientNarrator(
-          narrationContext,
-          playerResult,
-          killerResult,
-          killerResult.state,
-        ).catch(() => createFallbackAmbientNarration(playerResult, killerResult))
-      : createFallbackAmbientNarration(playerResult, killerResult);
-  const actionNarration = sanitizeNarration(rawActionNarration);
-  const ambientNarration = sanitizeNarration(rawAmbientNarration);
-
-  const finalState = { ...killerResult.state };
-  if (startedWithReviveProtection) {
-    clearReviveProtection(finalState);
-  }
-  replaceLogEntry(finalState, playerLogId, {
-    title: actionNarration.title,
-    text: actionNarration.text,
-    isAiNarration: Boolean(actionNarrator),
-    channel: 'action',
-    tone: playerResult.tone,
-  });
-  replaceLogEntry(finalState, killerLogId, {
-    title: ambientNarration.title,
-    text: ambientNarration.text,
-    isAiNarration: Boolean(ambientNarrator),
-    channel: 'ambient',
-    tone: killerResult.tone === 'death' ? 'death' : killerResult.tone,
   });
 
   return {
