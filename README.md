@@ -1,5 +1,62 @@
 # murder-loop-ai
 
+## v1.2 更新摘要
+
+本版本重点完成了 AI Agent 架构收口、World Info Lite、结构化上下文与凶手信息边界修复，目标是让开放输入下的叙事更稳定、凶手不再全知、各 Agent 能按职责读取上下文。
+
+### 架构与 Agent Contract
+
+- 统一到 harness 架构，收口旧流程中的重复路径。
+- 引入 Agent Contract 与 Agent Trace，记录每个 Agent 的输入、输出、校验结果、fallback 状态和耗时。
+- Agent Trace 现在会记录每回合命中的 World Info 摘要，只保存 `id / title / source / priority`，不把卡片正文暴露到普通 UI。
+
+### 结构化记忆与 ContextBuilder
+
+- 完成结构化循环记忆基础：短期记忆、本轮记忆、跨轮记忆、角色记忆。
+- 新增 ContextBuilder，统一决定 Parser / Killer / Narrator / Director 每回合能看到什么。
+- Killer 只接收可观察事件、投影后的可见状态、凶手记忆和允许的 World Info，不再默认读取完整世界状态。
+- Director 接入 trace、叙事、规则结果和 World Info，用于一致性检查。
+
+### World Info Lite
+
+- 新增轻量版 World Info 卡片系统，覆盖规则卡、关键物品卡、线索卡、NPC 卡和故事核心卡。
+- 已按人工校验后的“草稿描述”回填运行时卡片。
+- 关键规则包括：
+  - 凶手信息边界
+  - 门窗防御互不替代
+  - 警察身份核验
+  - 叙事不能改规则
+  - World Info 不是规则裁判
+  - 手机活动可见性
+  - 禁止凭空新增物品和路线
+  - 叙事不能替玩家读心
+- 林越已统一设定为主角的前男友，是外部求救和证据备份角色，不是凶手。
+
+### Killer / Narrator Prompt 接入
+
+- Killer、Action Narrator、Ambient Narrator 的 server prompt 已接入 World Info Lite。
+- prompt 明确说明 World Info 只是设定上下文，不是规则裁判。
+- Narrator 不能根据 World Info 自行新增死亡、逮捕、逃脱、线索或状态变化。
+- Killer 使用 World Info 时必须受 `killerContext.visibleState` 和 `killerContext.observableEvents` 限制。
+
+### 凶手信息泄露修复
+
+- 修复“玩家检查纸板箱看到药片后，门外人直接短信说别碰药片”的信息泄露风险。
+- Killer AI prompt payload 现在只传 `killerContext`，不再传完整 `plan` 和完整 `playerResult`。
+- `killerContext.planSummary` 不再使用玩家原始动作摘要，只从 `visibility === 'killer'` 的可观察事件生成。
+- `updateKillerKnowledgeFromState()` 不再因为房间状态里 `package.opened = true` 就让凶手确定知道玩家打开了包裹；只有传入 killer 可见事件时才升级相关知识。
+- 已加入回归测试，确保 Killer payload 中不会出现 `药片`、`药板`、`package contents`、玩家原始动作或完整规则结果文本。
+
+### 验证
+
+本版本已通过：
+
+```bash
+npm run test -w @murder-loop-ai/game-core
+npm run test -w @murder-loop-ai/server
+npm run typecheck
+```
+
 《murder-loop-ai》是一款多 AI 协作驱动的悬疑时间循环互动小说游戏。玩家通过自然语言输入行动，系统用规则引擎维护世界事实，由行动解析 AI、凶手 AI、叙事 AI、NPC 模块和评分系统共同推动一场发生在 23:47 前后的悬疑生存循环。
 
 项目当前处于可运行的 Web 原型阶段：参考项目前端已经接入，核心文字循环、服务端 AI 接口、本地 fallback 规则、导演评分器、死亡/生还过场和基础多 AI 协调层已经搭建完成。完整剧情分支、持久化存档、更复杂的证据链和长期凶手规划仍在开发中。
