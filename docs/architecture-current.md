@@ -14,6 +14,7 @@ POST /api/harness/turn
 
 ```txt
 apps/web/src/App.tsx
+  -> apps/web/src/store/gameStore.ts
   -> apps/web/src/api/harnessTurnClient.ts
   -> POST /api/harness/turn
 ```
@@ -36,6 +37,7 @@ packages/game-core/src/loop/resolveTurn.ts
 
 ```txt
 apps/web
+  -> apps/web/src/store/gameStore.ts
   -> apps/web/src/api/harnessTurnClient.ts
   -> POST /api/harness/turn
   -> apps/server/src/routes/harnessTurn.ts
@@ -75,10 +77,10 @@ apps/web
 
 当前注意点：
 
-- `App.tsx` 仍直接维护主要 UI 状态，但不再直接 `fetch('/api/harness/turn')`。
+- `App.tsx` 只负责 UI 组合、过场动画、线索弹窗、移动侧栏和音效触发等临时 UI 状态。
+- `src/store/gameStore.ts` 是当前 Web 侧正式前端状态入口，负责 `frontendState`、`submitAction`、`rewind`、`reset` 和 `lastDebug`。
 - `src/api/harnessTurnClient.ts` 是当前 Web 侧 harness turn 请求入口。
-- `src/store/gameStore.ts` 也存在 Zustand 状态和 harness 请求逻辑，并复用同一个 harness turn client；但当前主界面还没有统一迁入 store。
-- `src/api/aiClient.ts` 仍保留旧单 Agent API client，主要应视为 legacy/debug 辅助。
+- Web 侧旧单 Agent API client 已移除；正式前端不再直接调用 `/api/parse-action`、`/api/killer-strategy`、`/api/narrate*` 或 `/api/npc-reply`。
 
 ### apps/server
 
@@ -220,22 +222,25 @@ apps/server/src/ai/harnessAiAdapters.ts
 
 后续如果继续拆，应优先考虑 `plotGuidance` 或 `dynamicClues`，仍保持一次只移动一类职责。
 
-### 5.2 前端状态双轨
+### 5.2 前端状态已统一
 
 当前存在：
 
 ```txt
 apps/web/src/App.tsx
 apps/web/src/store/gameStore.ts
+apps/web/src/turnViewModel.ts
 ```
 
-两者都包含游戏状态处理。`/api/harness/turn` 请求已经集中到 `apps/web/src/api/harnessTurnClient.ts`，但状态源仍未统一。后续需要选择一个正式状态入口。
+前端状态源已统一到 `gameStore.ts`。`App.tsx` 不再直接持有主 `GameState`、不直接发起 harness 请求，也不直接做持久化；它从 store 读取 `frontendState` 并调用 `submitAction` / `rewind` / `reset`。
 
-建议方向：
+当前分工：
 
 ```txt
 App.tsx -> UI composition only
-gameStore.ts -> game state, submitAction, rewind, reset, lastDebug
+gameStore.ts -> frontendState, submitAction, rewind, reset, lastDebug
+turnViewModel.ts -> begin/merge/rewind frontend state transitions
+harnessTurnClient.ts -> POST /api/harness/turn
 ```
 
 ### 5.3 旧 API 与新 harness 并存
@@ -272,11 +277,14 @@ Done:
 3. Extract AI harness adapter factory from harnessTurn.ts
 4. Group core/debug/legacy routes in server registration
 5. Extract web harness turn client
+6. Extract web turn view model
+7. Make gameStore the canonical frontend state owner
+8. Move App.tsx back to UI composition
+9. Remove unused Web-side single Agent API client and core-state helper
 
 Recommended next:
-1. Decide whether App.tsx or gameStore.ts is the canonical frontend state owner
-2. Add stronger Killer information-boundary regression tests
-3. Optionally extract plotGuidance or dynamicClues from harnessTurn.ts
+1. Add stronger Killer information-boundary regression tests
+2. Optionally extract plotGuidance or dynamicClues from harnessTurn.ts
 ```
 
 每一步完成后至少运行：
