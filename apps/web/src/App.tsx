@@ -23,6 +23,7 @@ import { getClueAsset } from './clueAssets';
 import { ClueReadMap, findFirstNewClue, markClueRead } from './clueRevealState';
 import { loadFrontendState, persistFrontendState, resetFrontendProgress } from './frontendState';
 import { postHarnessTurn } from './api/harnessTurnClient';
+import { applyHarnessTurnResponse, beginHarnessTurn, rewindFrontendStateFromResponse } from './turnViewModel';
 
 interface EndingCinematicPayload {
   key: string;
@@ -75,18 +76,10 @@ export default function App() {
     const coreState = state.coreState;
     const previousClues = state.clues;
 
-    setState(prev => ({
-      ...prev,
-      isParsing: true,
-      storyLog: [
-        ...prev.storyLog,
-        { id: `input-${newLogId}`, type: 'player_input', content: actionText }
-      ]
-    }));
+    setState(prev => beginHarnessTurn(prev, actionText, newLogId));
 
     try {
       const result = await postHarnessTurn(actionText, coreState);
-      const resultLog = result.storyLog?.filter(node => node.type !== 'player_input') ?? [];
       const resultClues = result.clues ?? previousClues;
       const newClue = findFirstNewClue(previousClues, resultClues);
 
@@ -98,24 +91,7 @@ export default function App() {
       setTimeout(() => { lastTurnCompleted.current = false; }, 300);
 
       setState(prev => {
-        const nextState: GameState = {
-          ...prev,
-          isParsing: false,
-          actionConfirmation: null,
-          time: result.time ?? prev.time,
-          location: result.location ?? prev.location,
-          phase: result.phase ?? prev.phase,
-          clues: resultClues,
-          coreState: result.coreState ?? prev.coreState,
-          ending: result.ending !== undefined ? result.ending : prev.ending,
-          deathTitle: result.deathTitle !== undefined ? result.deathTitle : prev.deathTitle,
-          deathSummary: result.deathSummary !== undefined ? result.deathSummary : prev.deathSummary,
-          deathMethod: result.deathMethod !== undefined ? result.deathMethod : prev.deathMethod,
-          coordination: result.coordination ?? prev.coordination,
-          recap: result.recap ?? prev.recap,
-          sidebar: result.sidebar ?? prev.sidebar,
-          storyLog: [...prev.storyLog, ...resultLog],
-        };
+        const nextState = applyHarnessTurnResponse(prev, result);
         persistFrontendState(nextState);
         return nextState;
       });
@@ -144,18 +120,7 @@ export default function App() {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error('[murder-loop] 请求失败:', errMsg);
-      setState(prev => ({
-        ...prev,
-        isParsing: false,
-        storyLog: [
-          ...prev.storyLog,
-          {
-            id: `sys-${Date.now()}`,
-            type: 'system',
-            content: `后端暂时没有回应（${errMsg.slice(0, 60)}），行动未写入循环。`,
-          },
-        ],
-      }));
+      setState(prev => applyHarnessTurnResponse(prev, {}, err));
     }
   };
 
@@ -251,22 +216,7 @@ export default function App() {
                       setState(prev => ({ ...prev, isParsing: true }));
                       try {
                         const result = await postHarnessTurn('', state.coreState);
-                        setState(prev => ({
-                          ...prev,
-                          isParsing: false,
-                          time: result.time ?? prev.time,
-                          location: result.location ?? prev.location,
-                          phase: result.phase ?? prev.phase,
-                          clues: result.clues ?? prev.clues,
-                          coreState: result.coreState ?? prev.coreState,
-                          ending: null,
-                          deathTitle: null,
-                          deathSummary: null,
-                          deathMethod: null,
-                          coordination: result.coordination ?? prev.coordination,
-                          recap: result.recap ?? prev.recap,
-                          sidebar: result.sidebar ?? prev.sidebar,
-                        }));
+                        setState(prev => rewindFrontendStateFromResponse(prev, result));
                         setShowCinematic(false);
                       } catch {
                         setState(prev => ({ ...prev, isParsing: false }));
