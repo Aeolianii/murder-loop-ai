@@ -71,6 +71,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ serverStatus: 'online', lastDebug: result });
       return result;
     } catch (error) {
+      setAndPersist(set, current);
       set({ serverStatus: 'fallback', lastDebug: error });
       return null;
     } finally {

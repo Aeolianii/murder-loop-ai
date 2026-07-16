@@ -21,9 +21,7 @@ import { Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { getClueAsset } from './clueAssets';
 import { ClueReadMap, findFirstNewClue, markClueRead } from './clueRevealState';
-import { loadFrontendState, persistFrontendState, resetFrontendProgress } from './frontendState';
-import { postHarnessTurn } from './api/harnessTurnClient';
-import { applyHarnessTurnResponse, beginHarnessTurn, rewindFrontendStateFromResponse } from './turnViewModel';
+import { useGameStore } from './store/gameStore';
 
 interface EndingCinematicPayload {
   key: string;
@@ -38,9 +36,13 @@ function shouldShowIntroCinematic(state: GameState) {
 }
 
 export default function App() {
-  const [showCinematic, setShowCinematic] = useState(() => shouldShowIntroCinematic(loadFrontendState()));
+  const state = useGameStore(store => store.frontendState);
+  const submitAction = useGameStore(store => store.submitAction);
+  const rewind = useGameStore(store => store.rewind);
+  const reset = useGameStore(store => store.reset);
+  const setFrontendState = useGameStore(store => store.setFrontendState);
+  const [showCinematic, setShowCinematic] = useState(() => shouldShowIntroCinematic(useGameStore.getState().frontendState));
   const [endingCinematic, setEndingCinematic] = useState<EndingCinematicPayload | null>(null);
-  const [state, setState] = useState<GameState>(() => loadFrontendState());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeClueId, setActiveClueId] = useState<string | null>(null);
   const [readClues, setReadClues] = useState<ClueReadMap>({});
@@ -64,76 +66,59 @@ export default function App() {
   });
 
   useEffect(() => {
-    persistFrontendState(state);
-  }, [state]);
-
-  useEffect(() => {
     void audio.init();
   }, []);
 
   const handleActionSubmit = async (actionText: string) => {
-    const newLogId = Date.now().toString();
-    const coreState = state.coreState;
+    const previousState = state;
     const previousClues = state.clues;
 
-    setState(prev => beginHarnessTurn(prev, actionText, newLogId));
+    const result = await submitAction(actionText);
+    if (!result) return;
 
-    try {
-      const result = await postHarnessTurn(actionText, coreState);
-      const resultClues = result.clues ?? previousClues;
-      const newClue = findFirstNewClue(previousClues, resultClues);
+    const resultClues = result.clues ?? previousClues;
+    const newClue = findFirstNewClue(previousClues, resultClues);
 
-      // Audio triggers from turn data
-      lastActionIntents.current = result.turn?.plan?.actions?.map(a => a.intent) ?? [];
-      lastActionAudioCue.current = result.audioCue ?? null;
-      lastKillerType.current = result.turn?.killerStrategy?.type ?? null;
-      lastTurnCompleted.current = true;
-      setTimeout(() => { lastTurnCompleted.current = false; }, 300);
+    // Audio triggers from turn data
+    lastActionIntents.current = result.turn?.plan?.actions?.map(a => a.intent) ?? [];
+    lastActionAudioCue.current = result.audioCue ?? null;
+    lastKillerType.current = result.turn?.killerStrategy?.type ?? null;
+    lastTurnCompleted.current = true;
+    setTimeout(() => { lastTurnCompleted.current = false; }, 300);
 
-      setState(prev => {
-        const nextState = applyHarnessTurnResponse(prev, result);
-        persistFrontendState(nextState);
-        return nextState;
+    if (newClue && getClueAsset(newClue.id)) {
+      setActiveClueId(newClue.id);
+    }
+
+    if (result.ending && result.ending !== previousState.ending) {
+      setEndingCinematic({
+        key: `${result.ending}-${Date.now()}`,
+        kind: result.phase === 'survived' ? 'survived' : 'death',
+        title: result.deathTitle || (result.phase === 'survived' ? '你活了下来' : '23:47'),
+        summary: result.deathSummary || '这一轮结束了。房间里的每一个细节都会回到下一次醒来。',
+        method: result.deathMethod,
       });
-
-      if (newClue && getClueAsset(newClue.id)) {
-        setActiveClueId(newClue.id);
-      }
-
-      if (result.ending && result.ending !== state.ending) {
-        setEndingCinematic({
-          key: `${result.ending}-${Date.now()}`,
-          kind: result.phase === 'survived' ? 'survived' : 'death',
-          title: result.deathTitle || (result.phase === 'survived' ? '你活了下来' : '23:47'),
-          summary: result.deathSummary || '这一轮结束了。房间里的每一个细节都会回到下一次醒来。',
-          method: result.deathMethod,
-        });
-      } else if (result.phase === 'death' && state.phase !== 'death') {
-        setEndingCinematic({
-          key: `death-generic-${Date.now()}`,
-          kind: 'death',
-          title: result.deathTitle || '最后一秒',
-          summary: result.deathSummary || '黑暗来得很快，但这一次你会把这一秒记住，带去下一轮。',
-          method: result.deathMethod,
-        });
-      }
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('[murder-loop] 请求失败:', errMsg);
-      setState(prev => applyHarnessTurnResponse(prev, {}, err));
+    } else if (result.phase === 'death' && previousState.phase !== 'death') {
+      setEndingCinematic({
+        key: `death-generic-${Date.now()}`,
+        kind: 'death',
+        title: result.deathTitle || '最后一秒',
+        summary: result.deathSummary || '黑暗来得很快，但这一次你会把这一秒记住，带去下一轮。',
+        method: result.deathMethod,
+      });
     }
   };
 
   const handleConfirmAction = () => {
-    setState(prev => ({ ...prev, actionConfirmation: null }));
+    setFrontendState({ ...state, actionConfirmation: null });
   };
 
   const handleCancelAction = () => {
-    setState(prev => ({ ...prev, actionConfirmation: null }));
+    setFrontendState({ ...state, actionConfirmation: null });
   };
 
   const handleRestart = () => {
-    setState(resetFrontendProgress());
+    reset();
     setShowCinematic(true);
     setEndingCinematic(null);
     setMobileMenuOpen(false);
@@ -213,13 +198,9 @@ export default function App() {
                   </p>
                   <button
                     onClick={async () => {
-                      setState(prev => ({ ...prev, isParsing: true }));
-                      try {
-                        const result = await postHarnessTurn('', state.coreState);
-                        setState(prev => rewindFrontendStateFromResponse(prev, result));
+                      const result = await rewind();
+                      if (result) {
                         setShowCinematic(false);
-                      } catch {
-                        setState(prev => ({ ...prev, isParsing: false }));
                       }
                     }}
                     className="px-6 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 hover:bg-red-500/20 transition-colors font-serif text-base"
