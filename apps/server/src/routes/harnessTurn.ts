@@ -299,17 +299,59 @@ function isClueExplicitlyMentioned(visibleFactCorpus: string, title: string, det
   return needles.some((needle) => visibleFactCorpus.includes(needle));
 }
 
+function isPaperNoteClueText(text: string) {
+  return text.includes('纸条') && /(门缝|门底|门外|塞入|塞进)/.test(text);
+}
+
+function hasUnopenedPaperNoteClaim(text: string) {
+  return /(尚未|还未|未)(展开|打开|查看)/.test(text);
+}
+
+function hasRevealedPaperNoteContent(text: string) {
+  return /[“"]([^”"]{2,})[”"]/.test(text) || /写着|写字|内容/.test(text);
+}
+
+function paperNoteClueResolution(existing: ClueRecord, candidate: ClueRecord) {
+  const existingText = `${existing.title} ${existing.detail}`;
+  const candidateText = `${candidate.title} ${candidate.detail}`;
+  const sameTurn = existing.discoveredAt.run === candidate.discoveredAt.run && existing.discoveredAt.minute === candidate.discoveredAt.minute;
+  if (!sameTurn || !isPaperNoteClueText(existingText) || !isPaperNoteClueText(candidateText)) return 'keep-both';
+
+  const existingRevealed = hasRevealedPaperNoteContent(existingText);
+  const candidateRevealed = hasRevealedPaperNoteContent(candidateText);
+  const existingUnopened = hasUnopenedPaperNoteClaim(existingText);
+  const candidateUnopened = hasUnopenedPaperNoteClaim(candidateText);
+
+  if (candidateUnopened && existingRevealed) return 'skip-candidate';
+  if (candidateRevealed && existingUnopened) return 'replace-existing';
+  return 'skip-candidate';
+}
+
 function addDynamicClue(state: GameState, clue: Omit<ClueRecord, 'source' | 'discoveredAt' | 'isPersistent'>) {
   const id = normalizeDynamicClueId(clue.id);
   if (state.clues.some((existing) => existing.id === id || existing.title === clue.title)) return;
 
-  state.clues.push({
+  const candidate: ClueRecord = {
     ...clue,
     id,
     source: 'ai_generated',
     discoveredAt: { run: state.run, minute: state.minute },
     isPersistent: true,
+  };
+
+  const paperNoteIndex = state.clues.findIndex((existing) => {
+    const resolution = paperNoteClueResolution(existing, candidate);
+    return resolution === 'skip-candidate' || resolution === 'replace-existing';
   });
+  if (paperNoteIndex >= 0) {
+    const resolution = paperNoteClueResolution(state.clues[paperNoteIndex], candidate);
+    if (resolution === 'replace-existing') {
+      state.clues.splice(paperNoteIndex, 1, candidate);
+    }
+    return;
+  }
+
+  state.clues.push(candidate);
 }
 
 function addNarrationClues(state: GameState, narrations: Array<Narration | undefined>, visibleFactCorpus: string) {

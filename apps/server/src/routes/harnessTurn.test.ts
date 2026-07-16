@@ -725,6 +725,93 @@ async function testNarrationClueIsRejectedWhenVisibleTextDoesNotExplicitlyMentio
   await app.close();
 }
 
+async function testContradictoryPaperNoteCluesAreDeduped() {
+  const app = Fastify({ logger: false });
+  const inspectPlan: ActionPlan = {
+    id: 'paper-note-plan',
+    raw: '看门缝下面塞进来的纸条',
+    summary: '查看门缝下面塞进来的纸条',
+    actions: [
+      {
+        id: 'inspect-paper-note',
+        raw: '看门缝下面塞进来的纸条',
+        intent: 'inspect',
+        target: 'front_door',
+        method: '捡起门缝下的纸条查看',
+        confidence: 0.93,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      },
+    ],
+    confidence: 0.93,
+    warnings: [],
+  };
+
+  await app.register(harnessTurnRoute, {
+    createAiAdapters: () => ({
+      aiAdapters: {
+        parseAction: async () => inspectPlan,
+        chooseKillerStrategy: async () => ({
+          id: 'killer-note',
+          type: 'paper_note',
+          title: '门外塞入纸条',
+          rationale: '门外的人继续用纸条试探。',
+          visibleToPlayer: true,
+          risk: 'medium',
+        }),
+        narrateAction: async () => ({
+          title: '门缝里的纸条',
+          text: '我把门缝下的纸条捡起来，上面歪歪扭扭写着：“我老婆病了，那药是她的，别报警，我们私了。”',
+          clue: {
+            id: 'paper_note_content',
+            title: '门缝塞进的纸条',
+            detail: '纸条写字：“我老婆病了，那药是她的，别报警，我们私了。”纸片有折痕，边缘整齐，像是事先写好带在身上的。',
+            weight: 9,
+          },
+        }),
+        narrateAmbient: async () => ({
+          title: '门外塞入的纸条',
+          text: '门外塞入的纸条还在地上，尚未展开查看。',
+          clue: {
+            id: 'paper_note_unopened',
+            title: '门外塞入的纸条',
+            detail: '一张对折的白纸条从门缝下被塞入，边缘湿润，折痕处有钢笔洇开的墨迹，尚未展开查看。',
+            weight: 7,
+          },
+        }),
+      },
+      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+    }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: '看门缝下面塞进来的纸条',
+      state: baseState,
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const paperNoteClues = body.clues.filter((clue: { name?: string; description?: string }) =>
+    `${clue.name ?? ''}${clue.description ?? ''}`.includes('纸条'));
+
+  assert.equal(paperNoteClues.length, 1, 'same-turn paper note clues should be deduped');
+  assert.ok(
+    paperNoteClues[0].description.includes('我老婆病了'),
+    'revealed paper note content should be kept over unopened-note wording',
+  );
+  assert.ok(
+    !paperNoteClues[0].description.includes('尚未展开查看'),
+    'unopened-note wording should not survive once content is visible',
+  );
+
+  await app.close();
+}
+
 function testActionPlanVerifierDoesNotRewriteAiOutput() {
   const plan: ActionPlan = {
     id: 'bad-ai-plan',
@@ -793,5 +880,6 @@ await testNarratedEscapeEndingIsRejectedWhenOnlyPlayerClaimsIt();
 await testThreatEventsDoNotBecomeDynamicCluesWithoutExplicitEvidence();
 await testNarrationClueIsAcceptedOnlyWhenVisibleTextExplicitlyMentionsIt();
 await testNarrationClueIsRejectedWhenVisibleTextDoesNotExplicitlyMentionIt();
+await testContradictoryPaperNoteCluesAreDeduped();
 testActionPlanVerifierDoesNotRewriteAiOutput();
 testKillerStrategyVerifierDoesNotDowngradeAiOutput();
