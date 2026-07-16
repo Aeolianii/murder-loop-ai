@@ -43,9 +43,25 @@ export const RuleEventKindValues = ['action', 'clue', 'state_change', 'sound', '
 export const RuleEventVisibilityValues = ['player', 'killer', 'hidden'] as const;
 export const AgentNameValues = ['parser', 'rule', 'killer', 'narrator', 'director', 'npc', 'ui-adapter', 'sidebar'] as const;
 export const AgentModeValues = ['ai', 'fallback'] as const;
+export const EndingIdValues = ['death', 'escaped_no_evidence', 'escaped_with_evidence'] as const;
+export const EndingReasonValues = [
+  'deadline_murder',
+  'forced_entry',
+  'window_route',
+  'ambient_pressure',
+  'killer_dead_with_evidence',
+  'killer_dead_no_evidence',
+  'deadline_survived_with_evidence',
+  'police_arrived_with_evidence',
+  'police_arrived_without_evidence',
+  'escaped_without_evidence',
+  'unknown',
+] as const;
 
 export const ActionIntentSchema = z.enum(ActionIntentValues);
 export const ActionTargetSchema = z.string().min(1);
+export const EndingIdSchema = z.enum(EndingIdValues);
+export const EndingReasonSchema = z.enum(EndingReasonValues);
 
 export const ParsedActionSchema = z.object({
   id: z.string(),
@@ -119,7 +135,8 @@ export const GameStateContractSchema = z.object({
   killerKnowledge: z.record(z.string(), z.unknown()),
   memory: z.unknown(),
   log: z.array(z.unknown()),
-  ending: z.string().nullable(),
+  ending: EndingIdSchema.nullable(),
+  endingReason: EndingReasonSchema.nullable(),
   score: z.unknown().nullable(),
   phoneBattery: z.number(),
   phoneFunctional: z.boolean(),
@@ -181,7 +198,8 @@ export const NarrationContextSchema = z.object({
     injury: z.string(),
     stress: z.number(),
     clues: z.array(ClueRecordSchema),
-    ending: z.string().nullable(),
+    ending: EndingIdSchema.nullable(),
+    endingReason: EndingReasonSchema.nullable().optional(),
     phoneBattery: z.number().optional(),
     phoneFunctional: z.boolean().optional(),
     playerHolding: z.string().nullable().optional(),
@@ -228,24 +246,6 @@ export const NpcReplySchema = z.object({
   riskWarning: z.string(),
   suggestedExternalAction: z.string(),
 });
-
-export const EndingIdSchema = z.enum([
-  'default_murder',
-  'opened_to_fake_police',
-  'window_route_death',
-  'hidden_inside_death',
-  'framed_survivor',
-  'escaped_without_truth',
-  'survived_with_evidence',
-  'perfect_truth',
-  'killer_dead_with_evidence',
-  'killer_dead_no_evidence',
-  'killer_arrested',
-  'killer_fled',
-  'mutual_kill',
-  'phone_dead_helpless',
-  'suicide',
-]);
 
 export const NarrationSchema = z.object({
   title: z.string().min(1).max(24),

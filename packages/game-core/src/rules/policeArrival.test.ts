@@ -71,7 +71,38 @@ function testVerifiedPoliceResolvesToArrestEndingInBackground() {
     state = waitTurn(state);
   }
 
-  assert.equal(state.ending, 'killer_arrested');
+  assert.equal(state.ending, 'escaped_no_evidence');
+  assert.equal(state.endingReason, 'police_arrived_without_evidence');
+  assert.equal(state.phase, 'survived');
+  assert.equal(state.policePhase, 'arrived');
+  assert.equal(state.killerStatus, 'arrested');
+}
+
+function testVerifiedPoliceWithEvidenceResolvesToConvictionEnding() {
+  let state = createInitialGameState();
+  state.room.package.state.photographed = true;
+  state.room.phone.state.recording = true;
+  state.clues.push({
+    id: 'package_photo',
+    title: 'Package photo',
+    detail: 'The package label and contents were photographed.',
+    source: 'player_discovered',
+    weight: 8,
+    discoveredAt: { run: state.run, minute: state.minute },
+    isPersistent: true,
+  });
+
+  state = applyPlayerActions(state, actionPlan([
+    policeAction('call_police', 'call 110'),
+    policeAction('verify_identity', 'verify the official callback and badge number'),
+  ])).state;
+
+  while (!state.ending) {
+    state = waitTurn(state);
+  }
+
+  assert.equal(state.ending, 'escaped_with_evidence');
+  assert.equal(state.endingReason, 'police_arrived_with_evidence');
   assert.equal(state.phase, 'survived');
   assert.equal(state.policePhase, 'arrived');
   assert.equal(state.killerStatus, 'arrested');
@@ -90,4 +121,5 @@ function testUnverifiedPoliceDoesNotStartArrivalCountdown() {
 
 testVerifiedPoliceStartsHiddenArrivalCountdown();
 testVerifiedPoliceResolvesToArrestEndingInBackground();
+testVerifiedPoliceWithEvidenceResolvesToConvictionEnding();
 testUnverifiedPoliceDoesNotStartArrivalCountdown();

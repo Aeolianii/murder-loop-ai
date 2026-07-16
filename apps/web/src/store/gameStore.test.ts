@@ -63,7 +63,7 @@ useGameStore.setState({
   frontendState: {
     ...useGameStore.getState().frontendState,
     phase: 'death',
-    ending: 'default_murder',
+    ending: 'death',
     deathTitle: '23:47',
     deathSummary: '黑暗落下。',
     deathMethod: 'spare_key_entry',

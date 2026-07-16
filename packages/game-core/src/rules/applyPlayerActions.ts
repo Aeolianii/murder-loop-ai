@@ -1,10 +1,10 @@
 import { clueBook, createClueFromTemplate } from '@murder-loop-ai/content';
 import { DEADLINE_MINUTE, type ActionPlan, type ClueRecord, type GameState, type RuleResult, type StoryLogEntry } from '@murder-loop-ai/shared';
 import { cloneGameState } from '../state/createInitialState';
-import { scoreRun } from '../scoring/scoreRun';
 import { event } from '../narration/buildNarrationContext';
 import { ensurePoliceArrivalCountdown, isPoliceArrivalDue, resolvePoliceArrival } from './policeArrival';
 import { absorbReviveProtection, hasReviveProtection } from '../loop/reviveProtection';
+import { hasConvictingEvidence, markEnding } from './endingRules';
 
 function addClue(state: GameState, added: ClueRecord[], clueId: string) {
   if (state.clues.some(c => c.id === clueId)) return;
@@ -81,15 +81,6 @@ function pushEntry(state: GameState, result: Omit<RuleResult, 'state'>) {
       channel: result.tone === 'system' ? 'system' : 'action',
     };
   state.log.push(entry);
-}
-
-function markEnding(state: GameState, ending: NonNullable<GameState['ending']>, title: string, text: string): RuleResult {
-  state.ending = ending;
-  state.phase = ending.includes('survived') || ending === 'perfect_truth' || ending === 'escaped_without_truth' || ending === 'framed_survivor' ? 'survived' : 'death';
-  state.score = scoreRun(state);
-  const result = { title, text, tone: state.phase === 'death' ? 'death' : 'win', addedClues: [] as ClueRecord[], timePassed: 0, threatDelta: 0, events: [event('ending', ending, text, [title])] } as Omit<RuleResult, 'state'>;
-  
-  return { ...result, state };
 }
 
 export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleResult {
@@ -348,13 +339,12 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
 
   // ---- 战斗触发的结局检测（在 23:47 之前也可能结束） ----
   if (state.combatTriggered && !state.ending) {
-    const hasEvidence = state.clues.some(c => c.id === 'package_photo') &&
-      (state.clues.some(c => c.id === 'linyue_has_photo') || state.room.phone.state.recording || state.room.package.state.backedUp);
+    const hasEvidence = hasConvictingEvidence(state);
     if (state.killerStatus === 'dead' && hasEvidence) {
-      return markEnding(state, 'killer_dead_with_evidence', '不是你死，就是我活', '刀落在瓷砖上，声音比想象中轻。陈怀民的身体滑倒在地，手机从外套口袋里滑出来，屏幕还亮着——上面是他和"上游"的对话。你捡起手机，把录音和照片一起按下了发送。这一次，证据比你更早抵达外面。');
+      return markEnding(state, 'escaped_with_evidence', 'killer_dead_with_evidence', '不是你死，就是我活', '刀落在瓷砖上，声音比想象中轻。陈怀民的身体滑倒在地，手机从外套口袋里滑出来，屏幕还亮着——上面是他和"上游"的对话。你捡起手机，把录音和照片一起按下了发送。这一次，证据比你更早抵达外面。');
     }
     if (state.killerStatus === 'dead' && !hasEvidence) {
-      return markEnding(state, 'killer_dead_no_evidence', '门外的身体还有余温', '陈怀民不再动了。你靠着门框喘气，手指还在发抖。但当你低头看向自己空空的手机相册和没有发送的消息记录时，你意识到——你杀了一个人，但没有任何证据证明他该死。警笛声从远处传来，留给你的时间以秒计算。');
+      return markEnding(state, 'escaped_no_evidence', 'killer_dead_no_evidence', '门外的身体还有余温', '陈怀民不再动了。你靠着门框喘气，手指还在发抖。但当你低头看向自己空空的手机相册和没有发送的消息记录时，你意识到——你杀了一个人，但没有任何证据证明他该死。警笛声从远处传来，留给你的时间以秒计算。');
     }
   }
 
@@ -365,7 +355,7 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
     const policeTrusted = state.policePhase === 'real_police_en_route' || state.clues.some(c => c.id === 'police_verified');
 
     if (hasEvidence && hasDefense && policeTrusted) {
-      return markEnding(state, 'survived_with_evidence', '23:47 没有吞掉我', '电子钟跳到 23:47 的时候，我几乎不敢眨眼。门外的人没有等到我开门，锁芯也没有再转动。录音、照片和官方回拨把这间屋子从孤岛变成了现场。我还活着，但我知道这不只是因为运气——是因为这一轮，我终于把证据送出了房间。');
+      return markEnding(state, 'escaped_with_evidence', 'deadline_survived_with_evidence', '23:47 没有吞掉我', '电子钟跳到 23:47 的时候，我几乎不敢眨眼。门外的人没有等到我开门，锁芯也没有再转动。录音、照片和官方回拨把这间屋子从孤岛变成了现场。我还活着，但我知道这不只是因为运气——是因为这一轮，我终于把证据送出了房间。');
     }
 
     if (hasReviveProtection(state)) {
@@ -374,7 +364,7 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
       return { ...protection, state };
     }
 
-    return markEnding(state, 'default_murder', '23:47', '电子钟跳到 23:47。门外的人不再敲门，锁芯却轻轻响了一声。我那一瞬间才明白，自己还是慢了一步：证据没有送到足够远的地方，门窗也没有把危险挡在外面。黑暗从门缝里挤进来，像上一轮死亡时一样熟悉。');
+    return markEnding(state, 'death', 'deadline_murder', '23:47', '电子钟跳到 23:47。门外的人不再敲门，锁芯却轻轻响了一声。我那一瞬间才明白，自己还是慢了一步：证据没有送到足够远的地方，门窗也没有把危险挡在外面。黑暗从门缝里挤进来，像上一轮死亡时一样熟悉。');
   }
 
   if (state.policePhase === 'dispatch_pending' && state.clues.some(c => c.id === 'police_verified')) {

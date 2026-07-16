@@ -1,8 +1,8 @@
 import type { GameState, KillerStrategy, RuleResult, StoryLogEntry } from '@murder-loop-ai/shared';
 import { cloneGameState } from '../state/createInitialState';
-import { scoreRun } from '../scoring/scoreRun';
 import { event } from '../narration/buildNarrationContext';
 import { absorbReviveProtection, hasReviveProtection } from '../loop/reviveProtection';
+import { markEnding } from '../rules/endingRules';
 
 function pickVariant<T>(items: T[], seed: number) {
   return items[Math.abs(seed) % items.length];
@@ -21,13 +21,10 @@ function pushEntry(state: GameState, result: Omit<RuleResult, 'state'>) {
   state.log.push(entry);
 }
 
-function end(state: GameState, ending: NonNullable<GameState['ending']>, title: string, text: string): RuleResult {
-  state.ending = ending;
-  state.phase = 'death';
-  state.score = scoreRun(state);
-  const result = { title, text, tone: 'death', addedClues: [], timePassed: 0, threatDelta: 0, events: [event('ending', ending, text, [title])] } as Omit<RuleResult, 'state'>;
+function end(state: GameState, reason: NonNullable<GameState['endingReason']>, title: string, text: string): RuleResult {
+  const result = markEnding(state, 'death', reason, title, text);
   pushEntry(state, result);
-  return { ...result, state };
+  return result;
 }
 
 export function applyKillerStrategy(current: GameState, strategy: KillerStrategy): RuleResult {
@@ -94,7 +91,7 @@ export function applyKillerStrategy(current: GameState, strategy: KillerStrategy
           pushEntry(state, protection);
           return { ...protection, state };
         }
-        return end(state, 'default_murder', '锁芯转动', '锁芯响起来的时候，我先以为是自己听错了。那声音太轻，像有人用指甲碰了一下金属。紧接着，门把手往下压。门缝里漏进来一线楼道的白光，我还没来得及后退，一个人已经用肩膀顶住门板。没有争吵，没有威胁，只有熟练到近乎安静的动作。');
+        return end(state, 'forced_entry', '锁芯转动', '锁芯响起来的时候，我先以为是自己听错了。那声音太轻，像有人用指甲碰了一下金属。紧接着，门把手往下压。门缝里漏进来一线楼道的白光，我还没来得及后退，一个人已经用肩膀顶住门板。没有争吵，没有威胁，只有熟练到近乎安静的动作。');
       }
       text = '锁芯被尝试拨动；门的加固阻止了直接进入，但暴露了防备状态。';
       break;
@@ -105,7 +102,7 @@ export function applyKillerStrategy(current: GameState, strategy: KillerStrategy
           pushEntry(state, protection);
           return { ...protection, state };
         }
-        return end(state, 'window_route_death', '窗外有人', '窗帘没有完全合上。雨声里，一只手从窗沿下方摸上来，指节被雨水泡得发白。我终于明白，门不是唯一入口。可这个念头出现得太晚，晚到我只能看见玻璃上自己的倒影被另一个影子覆盖。');
+        return end(state, 'window_route', '窗外有人', '窗帘没有完全合上。雨声里，一只手从窗沿下方摸上来，指节被雨水泡得发白。我终于明白，门不是唯一入口。可这个念头出现得太晚，晚到我只能看见玻璃上自己的倒影被另一个影子覆盖。');
       }
       text = '窗外雨棚有轻微刮擦声，窗沿下方的雨水被蹭出一道断痕。';
       break;

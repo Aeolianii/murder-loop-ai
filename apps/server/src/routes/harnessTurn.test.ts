@@ -417,7 +417,7 @@ async function testNarratedEscapeEndingIsOnlyAProposalEvenWhenPlausible() {
         narrateAction: async () => ({
           title: '便利店白光',
           text: '你一口气冲下楼，街角手机店还亮着灯。自动门滑开时，503 和门外那串脚步声终于被你甩在雨夜后面。',
-          ending: 'escaped_without_truth',
+          ending: 'escaped_no_evidence',
         }),
         narrateAmbient: async () => ({
           title: '楼道被抛在身后',
@@ -439,7 +439,7 @@ async function testNarratedEscapeEndingIsOnlyAProposalEvenWhenPlausible() {
 
   assert.equal(response.statusCode, 200);
   const body = response.json();
-  assert.notEqual(body.coreState.ending, 'escaped_without_truth');
+  assert.notEqual(body.coreState.ending, 'escaped_no_evidence');
   assert.ok(body.coordination.warnings.some((warning: string) => warning.includes('narrated ending proposal ignored')));
 
   await app.close();
@@ -483,7 +483,7 @@ async function testNarratedEscapeEndingIsRejectedWhenOnlyPlayerClaimsIt() {
         narrateAction: async () => ({
           title: '只是一个念头',
           text: '你嘴里挤出那句“我已经逃到手机店了”，可手指摸到的还是后脑勺的钝痛，房间和门锁都还在原地。',
-          ending: 'escaped_without_truth',
+          ending: 'escaped_no_evidence',
         }),
         narrateAmbient: async () => ({
           title: '门外没走',
@@ -505,7 +505,7 @@ async function testNarratedEscapeEndingIsRejectedWhenOnlyPlayerClaimsIt() {
 
   assert.equal(response.statusCode, 200);
   const body = response.json();
-  assert.notEqual(body.coreState.ending, 'escaped_without_truth');
+  assert.notEqual(body.coreState.ending, 'escaped_no_evidence');
   assert.ok(body.coordination.warnings.some((warning: string) => warning.includes('narrated ending proposal ignored')));
 
   await app.close();

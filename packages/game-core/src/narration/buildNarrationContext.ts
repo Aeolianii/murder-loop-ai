@@ -47,6 +47,7 @@ export function buildNarrationContext(playerResult: RuleResult, killerResult: Ru
       stress: state.player.stress,
       clues: state.clues,
       ending: state.ending,
+      endingReason: state.endingReason,
       phoneBattery: state.phoneBattery,
       phoneFunctional: state.phoneFunctional,
       playerHolding: state.playerHolding,

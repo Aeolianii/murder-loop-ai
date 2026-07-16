@@ -212,6 +212,7 @@ function summarizeGameState(state: Record<string, unknown>) {
     threat: state.threat,
     suspicion: state.suspicion,
     ending: state.ending,
+    endingReason: state.endingReason,
     clueCount: Array.isArray(state.clues) ? state.clues.length : undefined,
     logCount: Array.isArray(state.log) ? state.log.length : undefined,
   };

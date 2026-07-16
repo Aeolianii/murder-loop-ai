@@ -32,7 +32,8 @@ export function advanceAmbientTurn(current: GameState): RuleResult {
       const protection = absorbReviveProtection(state, 'ambient_pressure');
       return { ...protection, state };
     }
-    state.ending = 'default_murder';
+    state.ending = 'death';
+    state.endingReason = 'ambient_pressure';
     state.phase = 'death';
     state.score = scoreRun(state);
     const result = {
@@ -43,7 +44,7 @@ export function advanceAmbientTurn(current: GameState): RuleResult {
       timePassed,
       threatDelta,
       events: [
-        event('ending', 'default_murder', '长时间无行动后，凶手完成进入；本轮死亡。', ['锁芯转动', '门缝进光']),
+        event('ending', 'death', '长时间无行动后，凶手完成进入；本轮死亡。', ['锁芯转动', '门缝进光', 'ambient_pressure']),
       ],
     } satisfies Omit<RuleResult, 'state'>;
 

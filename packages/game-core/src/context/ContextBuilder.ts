@@ -59,6 +59,7 @@ export interface DirectorContext {
     minute: number;
     phase: GameState['phase'];
     ending: GameState['ending'];
+    endingReason: GameState['endingReason'];
     threat: number;
     suspicion: number;
   };
@@ -181,6 +182,7 @@ export function buildDirectorContext(input: {
       minute: input.state.minute,
       phase: input.state.phase,
       ending: input.state.ending,
+      endingReason: input.state.endingReason,
       threat: input.state.threat,
       suspicion: input.state.suspicion,
     },

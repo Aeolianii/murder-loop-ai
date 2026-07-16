@@ -47,6 +47,7 @@ export function createInitialGameState(): GameState {
       },
     ],
     ending: null,
+    endingReason: null,
     score: null,
     phoneBattery: 61,
     phoneFunctional: true,

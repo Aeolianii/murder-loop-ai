@@ -9,7 +9,19 @@
 但规则系统拥有最终解释权。
 ```
 
-当前版本：`v1.3`
+当前版本：`v1.4`
+
+## v1.4 更新摘要
+
+本版本将结局系统简化为三种主结局，并把细分原因统一沉淀到 `endingReason`：
+
+- `death`：玩家死亡。
+- `escaped_no_evidence`：玩家逃脱，但证据链不足，无法揭示房东罪行。
+- `escaped_with_evidence`：玩家逃脱且证据链成立，房东可被绳之以法。
+
+具体触发原因不再作为主结局 ID 分散在系统里，而是记录为 `endingReason`，例如 `deadline_murder`、`forced_entry`、`police_arrived_with_evidence`、`killer_dead_no_evidence`。规则层新增 `packages/game-core/src/rules/endingRules.ts`，集中处理定罪证据判断和结局写入，避免前端、服务端和 AI 契约各自维护一套旧结局枚举。
+
+证据链现在统一判断为“包裹照片 + 至少一种外部留存或可信通道”，外部留存包括林越收到照片、手机录音、证据备份、警方核验或真警抵达。Narrator 仍然可以表达规则结果，但不能自造结局；服务端和 AI 契约现在只接受三种主结局。
 
 ## v1.3 更新摘要
 

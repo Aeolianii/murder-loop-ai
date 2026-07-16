@@ -73,21 +73,22 @@ export type StoryTone = 'neutral' | 'memory' | 'clue' | 'threat' | 'death' | 'wi
 export type StoryChannel = 'ambient' | 'action' | 'memory' | 'system';
 
 export type EndingId =
-  | 'default_murder'
-  | 'opened_to_fake_police'
-  | 'window_route_death'
-  | 'hidden_inside_death'
-  | 'framed_survivor'
-  | 'escaped_without_truth'
-  | 'survived_with_evidence'
-  | 'perfect_truth'
+  | 'death'
+  | 'escaped_no_evidence'
+  | 'escaped_with_evidence';
+
+export type EndingReason =
+  | 'deadline_murder'
+  | 'forced_entry'
+  | 'window_route'
+  | 'ambient_pressure'
   | 'killer_dead_with_evidence'
   | 'killer_dead_no_evidence'
-  | 'killer_arrested'
-  | 'killer_fled'
-  | 'mutual_kill'
-  | 'phone_dead_helpless'
-  | 'suicide';
+  | 'deadline_survived_with_evidence'
+  | 'police_arrived_with_evidence'
+  | 'police_arrived_without_evidence'
+  | 'escaped_without_evidence'
+  | 'unknown';
 
 export type ScoreRank = 'S' | 'A' | 'B' | 'C' | 'D' | 'F';
 
@@ -223,6 +224,7 @@ export interface GameState {
   memory: LoopMemory;
   log: StoryLogEntry[];
   ending: EndingId | null;
+  endingReason: EndingReason | null;
   score: ScoreResult | null;
   /** 手机电量（分钟），独立追踪 */
   phoneBattery: number;
@@ -282,6 +284,7 @@ export interface NarrationContext {
     stress: number;
     clues: ClueRecord[];
     ending: EndingId | null;
+    endingReason: EndingReason | null;
     phoneBattery: number;
     phoneFunctional: boolean;
     playerHolding: string | null;

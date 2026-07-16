@@ -64,7 +64,7 @@ assert(errorState.storyLog.at(-1)?.content.includes('backend failed badly'), 'er
 
 const rewindState = rewindFrontendStateFromResponse({
   ...next,
-  ending: 'default_murder',
+  ending: 'death',
   phase: 'death',
   deathTitle: '23:47',
   deathSummary: '黑暗落下。',

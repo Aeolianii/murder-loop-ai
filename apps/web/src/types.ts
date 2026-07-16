@@ -7,20 +7,22 @@ export type GamePhase =
   | 'survived';
 
 export type EndingId =
-  | 'default_murder'
-  | 'opened_to_fake_police'
-  | 'window_route_death'
-  | 'hidden_inside_death'
-  | 'framed_survivor'
-  | 'escaped_without_truth'
-  | 'survived_with_evidence'
-  | 'perfect_truth'
+  | 'death'
+  | 'escaped_no_evidence'
+  | 'escaped_with_evidence';
+
+export type EndingReason =
+  | 'deadline_murder'
+  | 'forced_entry'
+  | 'window_route'
+  | 'ambient_pressure'
   | 'killer_dead_with_evidence'
   | 'killer_dead_no_evidence'
-  | 'killer_arrested'
-  | 'killer_fled'
-  | 'mutual_kill'
-  | 'phone_dead_helpless';
+  | 'deadline_survived_with_evidence'
+  | 'police_arrived_with_evidence'
+  | 'police_arrived_without_evidence'
+  | 'escaped_without_evidence'
+  | 'unknown';
 
 export type KillerStatus =
   | 'alive'
@@ -101,6 +103,7 @@ export interface GameState {
   actionConfirmation: string | null;
   coreState?: unknown;
   ending?: EndingId | null;
+  endingReason?: EndingReason | null;
   deathTitle?: string | null;
   deathSummary?: string | null;
   deathMethod?: string | null;

@@ -75,9 +75,7 @@ function generateRecap(state: GameState): string {
 }
 
 function phaseFromEnding(ending: NonNullable<GameState['ending']>): GameState['phase'] {
-  return ending.includes('survived') || ending === 'perfect_truth' || ending === 'escaped_without_truth' || ending === 'framed_survivor'
-    ? 'survived'
-    : 'death';
+  return ending === 'death' ? 'death' : 'survived';
 }
 
 function isNarratedEndingSupported(
@@ -87,31 +85,26 @@ function isNarratedEndingSupported(
 ): boolean {
   const didEscape = plan?.actions.some((action) => action.intent === 'escape') ?? false;
   const didOpenExit = Boolean(finalState.room.front_door.state.opened) || Boolean(finalState.room.window.state.opened);
-  const hasEvidence = finalState.clues.some(c => c.id === 'package_photo')
-    || finalState.clues.some(c => c.id === 'linyue_has_photo')
+  const hasPackagePhoto = finalState.clues.some(c => c.id === 'package_photo') || Boolean(finalState.room.package.state.photographed);
+  const hasExternalRecord = finalState.clues.some(c => c.id === 'linyue_has_photo')
     || Boolean(finalState.room.phone.state.recording)
-    || Boolean(finalState.room.package.state.backedUp);
+    || Boolean(finalState.room.package.state.backedUp)
+    || finalState.clues.some(c => c.id === 'police_verified')
+    || finalState.policePhase === 'real_police_en_route'
+    || finalState.policePhase === 'arrived';
+  const hasEvidence = hasPackagePhoto && hasExternalRecord;
   const policeTrusted = finalState.policePhase === 'real_police_en_route' || finalState.policePhase === 'arrived'
     || finalState.clues.some(c => c.id === 'police_verified');
   const killerDown = finalState.killerStatus === 'dead' || finalState.killerStatus === 'arrested' || finalState.killerStatus === 'fled';
+  const safeOutcome = killerDown || didOpenExit || policeTrusted || didEscape;
 
   switch (ending) {
-    case 'escaped_without_truth':
-      return didEscape && didOpenExit;
-    case 'survived_with_evidence':
-    case 'perfect_truth':
-    case 'framed_survivor':
-      return hasEvidence || policeTrusted;
-    case 'killer_dead_with_evidence':
-      return finalState.killerStatus === 'dead' && hasEvidence;
-    case 'killer_dead_no_evidence':
-      return finalState.killerStatus === 'dead';
-    case 'killer_arrested':
-      return finalState.killerStatus === 'arrested' || policeTrusted;
-    case 'killer_fled':
-      return finalState.killerStatus === 'fled' || (didEscape && didOpenExit);
-    default:
-      return killerDown || didOpenExit || policeTrusted || hasEvidence;
+    case 'death':
+      return finalState.phase === 'death' || finalState.player.injury === 'critical';
+    case 'escaped_no_evidence':
+      return safeOutcome && !hasEvidence;
+    case 'escaped_with_evidence':
+      return safeOutcome && hasEvidence;
   }
 }
 

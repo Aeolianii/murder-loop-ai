@@ -1,7 +1,45 @@
 import { strict as assert } from 'node:assert';
-import type { ActionPlan } from '@murder-loop-ai/shared';
+import { DEADLINE_MINUTE, type ActionPlan, type GameState } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
 import { applyPlayerActions } from './applyPlayerActions';
+
+function actionPlan(actions: ActionPlan['actions']): ActionPlan {
+  return {
+    id: `plan-${actions.map((action) => action.intent).join('-')}`,
+    raw: actions.map((action) => action.raw).join('; '),
+    summary: actions.map((action) => action.method ?? action.intent).join('; '),
+    confidence: 1,
+    warnings: [],
+    actions,
+  };
+}
+
+function waitAction(): ActionPlan['actions'][number] {
+  return {
+    id: 'act-wait',
+    raw: 'wait',
+    intent: 'wait',
+    target: 'self',
+    method: 'wait quietly',
+    confidence: 1,
+    timeCost: 1,
+    noise: 0,
+    risk: 'low',
+  };
+}
+
+function addPackagePhoto(state: GameState) {
+  state.room.package.state.photographed = true;
+  state.clues.push({
+    id: 'package_photo',
+    title: 'Package photo',
+    detail: 'The package label and contents were photographed.',
+    source: 'player_discovered',
+    weight: 8,
+    discoveredAt: { run: state.run, minute: state.minute },
+    isPersistent: true,
+  });
+}
 
 function testChargingPhoneFromParserShape() {
   const state = createInitialGameState();
@@ -39,3 +77,33 @@ function testChargingPhoneFromParserShape() {
 }
 
 testChargingPhoneFromParserShape();
+
+function testDeadlineWithoutSurvivalConditionsUsesDeathEnding() {
+  const state = createInitialGameState();
+  state.minute = DEADLINE_MINUTE - 1;
+
+  const result = applyPlayerActions(state, actionPlan([waitAction()]));
+
+  assert.equal(result.state.ending, 'death');
+  assert.equal(result.state.endingReason, 'deadline_murder');
+  assert.equal(result.state.phase, 'death');
+}
+
+function testDeadlineWithEvidenceAndDefenseUsesConvictionEnding() {
+  const state = createInitialGameState();
+  state.minute = DEADLINE_MINUTE - 1;
+  state.room.front_door.state.barricaded = true;
+  state.room.window.state.locked = true;
+  state.policePhase = 'real_police_en_route';
+  addPackagePhoto(state);
+  state.room.phone.state.recording = true;
+
+  const result = applyPlayerActions(state, actionPlan([waitAction()]));
+
+  assert.equal(result.state.ending, 'escaped_with_evidence');
+  assert.equal(result.state.endingReason, 'deadline_survived_with_evidence');
+  assert.equal(result.state.phase, 'survived');
+}
+
+testDeadlineWithoutSurvivalConditionsUsesDeathEnding();
+testDeadlineWithEvidenceAndDefenseUsesConvictionEnding();

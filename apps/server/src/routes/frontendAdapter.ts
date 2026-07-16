@@ -178,7 +178,7 @@ async function narrateActionForFrontend(context: NarrationContext, playerResult:
       '',
       '【严格结局声明】只有当本回合事件已经把结局坐实时，才能声明 ending / isFatal / killerKilled。',
       '不能因为玩家嘴上说“我逃出去了”“我已经到手机店了”就直接给结局；必须是事件里已经完成了逃离、制服、死亡或脱险。',
-      '可选字段：ending（escaped_without_truth|survived_with_evidence|perfect_truth|killer_dead_with_evidence|killer_dead_no_evidence|killer_arrested|killer_fled|framed_survivor|default_murder|opened_to_fake_police|window_route_death|hidden_inside_death|mutual_kill|phone_dead_helpless|suicide）',
+      '可选字段：ending（death|escaped_no_evidence|escaped_with_evidence）。具体死因或逃脱原因由规则系统写入 endingReason，叙事不能自造旧结局名。',
       `【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造上下文里不存在的时间。`,
       '220-520 个中文字符。只输出 JSON：{“title”:”...”,”text”:”...”,“ending”:”可选 endingId”}。',
     ].join('\n') + '\n' + formatWorldInfoPromptBlock(narrationContext.worldInfo, 'narrator');

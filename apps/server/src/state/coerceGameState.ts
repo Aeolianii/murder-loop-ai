@@ -61,6 +61,7 @@ export function coerceGameState(rawState: unknown): GameState {
     combatTriggered: raw.combatTriggered ?? fallback.combatTriggered,
     phoneBattery: raw.phoneBattery ?? ((raw.room?.phone?.state?.battery as number | undefined) ?? fallback.phoneBattery),
     phoneFunctional: raw.phoneFunctional ?? fallback.phoneFunctional,
+    endingReason: raw.endingReason ?? fallback.endingReason,
   };
 
   return state;

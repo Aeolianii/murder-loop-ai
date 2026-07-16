@@ -6,8 +6,7 @@ function hasClue(state: GameState, id: string) {
 
 export function scoreRun(state: GameState): ScoreResult {
   // 更新结局判定：把新的结局 id 也纳入"存活"范围
-  const lethalEndings = ['default_murder', 'opened_to_fake_police', 'window_route_death', 'hidden_inside_death', 'mutual_kill', 'suicide'];
-  const survived = state.ending !== null && !lethalEndings.includes(state.ending ?? '');
+  const survived = state.ending !== null && state.ending !== 'death';
   const survival = survived ? (state.player.injury === 'none' ? 20 : 12) : 0;
   const truth = Math.min(20, state.clues.filter(c => ['wrong_package', 'chen_probe', 'police_verified', 'door_scratch', 'chen_phone_found'].includes(c.id)).length * 5);
   const evidence = Math.min(20, state.clues.filter(c => ['package_photo', 'linyue_has_photo', 'recording_pressure', 'self_defense_evidence'].includes(c.id)).length * 7);
@@ -22,8 +21,8 @@ export function scoreRun(state: GameState): ScoreResult {
   if (!hasClue(state, 'package_photo')) notes.push('缺少包裹照片，证据链很脆弱。');
   if (!hasClue(state, 'police_verified')) notes.push('没有核实警察身份，假警察路线仍然危险。');
   if (hasClue(state, 'linyue_has_photo')) notes.push('林越成为外部备份，但也要注意他的风险。');
-  if (hasClue(state, 'killer_dead_with_evidence')) notes.push('你成功反击并保留了证据——自卫成立。');
-  if (hasClue(state, 'killer_dead_no_evidence')) notes.push('你杀了陈怀民，但无法证明他该死。');
+  if (state.endingReason === 'killer_dead_with_evidence') notes.push('你成功反击并保留了证据——自卫成立。');
+  if (state.endingReason === 'killer_dead_no_evidence') notes.push('你杀了陈怀民，但无法证明他该死。');
   if (riskControl >= 10) notes.push('门窗防御处理得较好，凶手必须改变策略。');
 
   return { total, rank, survival, truth, evidence, npc, injury, riskControl, notes };
