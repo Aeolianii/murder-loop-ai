@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { DEADLINE_MINUTE, type ActionPlan, type GameState } from '@murder-loop-ai/shared';
 import { createClueFromTemplate } from '@murder-loop-ai/content';
 import { createInitialGameState } from '../state/createInitialState';
-import { resolveStoryNode } from './resolveStoryNode';
+import { resolveStoryNode, storyNodes } from './resolveStoryNode';
 
 function planForPhoneUse(): ActionPlan {
   return {
@@ -71,7 +71,7 @@ function testBatteryCriticalReturnsChargingRecommendation() {
   const resolution = resolveStoryNode(state, planForPhoneUse());
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'battery_critical');
+  assert.equal(resolution.storyNodeId, 'story_battery_critical');
   assert.equal(resolution.timePassed, 0);
   assert.equal(resolution.threatDelta, 0);
   assert.deepEqual(resolution.addedClueIds, ['battery_critical']);
@@ -82,6 +82,25 @@ function testBatteryCriticalReturnsChargingRecommendation() {
 }
 
 testBatteryCriticalReturnsChargingRecommendation();
+
+function testStoryNodeIdsAreDistinctFromClueIds() {
+  for (const node of storyNodes) {
+    assert.match(node.id, /^story_/, `story node id should be prefixed: ${node.id}`);
+  }
+
+  const state = createInitialGameState();
+  state.phoneBattery = 20;
+  state.phoneFunctional = true;
+  const resolution = resolveStoryNode(state, planForPhoneUse());
+
+  assert.ok(resolution);
+  assert.ok(
+    !resolution.addedClueIds.includes(resolution.storyNodeId),
+    'storyNodeId should not reuse a clue id',
+  );
+}
+
+testStoryNodeIdsAreDistinctFromClueIds();
 
 function testRoom403ReceiptRequiresWrongPackageAndDeepInspection() {
   const state = createInitialGameState();
@@ -94,7 +113,7 @@ function testRoom403ReceiptRequiresWrongPackageAndDeepInspection() {
   );
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'room_403_receipt');
+  assert.equal(resolution.storyNodeId, 'story_room_403_receipt');
   assert.deepEqual(resolution.addedClueIds, ['room_403_receipt']);
   assert.equal(resolution.timePassed, 2);
   assert.ok(resolution.recommendedActions.some((item) => item.label.includes('403')));
@@ -110,7 +129,7 @@ function testLinYueRetractedMessageSetsWorriedPhase() {
   );
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'linyue_retracted_message');
+  assert.equal(resolution.storyNodeId, 'story_linyue_retracted_message');
   const patchedState = structuredClone(state) as GameState;
   resolution.statePatch?.(patchedState);
   assert.equal(patchedState.linYuePhase, 'worried');
@@ -128,7 +147,7 @@ function testPeepholeBlindSpotRequiresDoorInspectionAndPressure() {
   );
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'peephole_blind_spot');
+  assert.equal(resolution.storyNodeId, 'story_peephole_blind_spot');
   assert.equal(resolution.threatDelta, 5);
   assert.ok(resolution.recommendedActions.some((item) => item.label.includes('不要开门')));
 }
@@ -144,7 +163,7 @@ function testFakeStoreCallRespondsToBarricadeOrHighThreat() {
   );
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'fake_store_call');
+  assert.equal(resolution.storyNodeId, 'story_fake_store_call');
   assert.equal(resolution.threatDelta, 6);
   assert.ok(resolution.recommendedActions.some((item) => item.label.includes('不要按对方要求下楼')));
 }
@@ -162,7 +181,7 @@ function testFalsePoliceOverknowsTakesPriorityOverBattery() {
   );
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'false_police_overknows');
+  assert.equal(resolution.storyNodeId, 'story_false_police_overknows');
   assert.equal(resolution.threatDelta, 8);
   assert.ok(resolution.recommendedActions.some((item) => item.label.includes('不要开门')));
 }
@@ -179,7 +198,7 @@ function testHandoffFailedRequiresDefenseOrEvidenceAndHasTopPriority() {
   );
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'handoff_failed_2347');
+  assert.equal(resolution.storyNodeId, 'story_handoff_failed_2347');
   assert.equal(resolution.phase, 'post_2347_escalation');
   assert.equal(resolution.threatDelta, 12);
 }
@@ -195,7 +214,7 @@ function testHandoffFailedAcceptsLinYuePoliceAssistAsShortTermCondition() {
   );
 
   assert.ok(resolution);
-  assert.equal(resolution.nodeId, 'handoff_failed_2347');
+  assert.equal(resolution.storyNodeId, 'story_handoff_failed_2347');
 }
 
 function testHandoffFailedDoesNotTriggerWithoutDefenseOrEvidence() {
@@ -207,7 +226,7 @@ function testHandoffFailedDoesNotTriggerWithoutDefenseOrEvidence() {
     singleActionPlan(action('wait', 'front_door', '守住门口继续等')),
   );
 
-  assert.equal(resolution?.nodeId ?? null, null);
+  assert.equal(resolution?.storyNodeId ?? null, null);
 }
 
 testRoom403ReceiptRequiresWrongPackageAndDeepInspection();

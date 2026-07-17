@@ -123,7 +123,7 @@ function buildStoryNodeTurnResolution(
   finalState.log = [
     ...finalState.log,
     {
-      id: `story-node-${storyNode.nodeId}-${finalState.run}-${finalState.minute}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `story-node-${storyNode.storyNodeId}-${finalState.run}-${finalState.minute}-${Math.random().toString(36).slice(2, 8)}`,
       run: finalState.run,
       minute: finalState.minute,
       title: storyNode.title,
@@ -144,7 +144,7 @@ function buildStoryNodeTurnResolution(
     events: [
       {
         kind: 'clue' as const,
-        subject: storyNode.nodeId,
+        subject: storyNode.storyNodeId,
         summary: `剧情节点命中：${storyNode.title}`,
         sensoryHints: [],
         visibility: 'player' as const,
@@ -153,7 +153,7 @@ function buildStoryNodeTurnResolution(
     state: finalState,
   };
   const killerStrategy: KillerStrategy = {
-    id: `story-node-skip-${storyNode.nodeId}`,
+    id: `story-node-skip-${storyNode.storyNodeId}`,
     type: 'story_node_skipped',
     title: '剧情节点短路',
     rationale: '规则剧情节点已返回固定文本，本回合跳过 KillerAgent。',

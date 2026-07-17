@@ -54,7 +54,7 @@ function hasAnyShortTermDefenseOrEvidence(state: GameState) {
 
 export const storyNodes: StoryNodeDefinition[] = [
   {
-    id: 'handoff_failed_2347',
+    id: 'story_handoff_failed_2347',
     priority: 0,
     resolve: (state) => {
       if (state.minute < DEADLINE_MINUTE) return null;
@@ -63,7 +63,7 @@ export const storyNodes: StoryNodeDefinition[] = [
       if (!hasAnyShortTermDefenseOrEvidence(state)) return null;
 
       return {
-        nodeId: 'handoff_failed_2347',
+        storyNodeId: 'story_handoff_failed_2347',
         title: '23:47 的交接失败',
         text: [
           '23:47。',
@@ -103,7 +103,7 @@ export const storyNodes: StoryNodeDefinition[] = [
     },
   },
   {
-    id: 'false_police_overknows',
+    id: 'story_false_police_overknows',
     priority: 1,
     resolve: (state, plan) => {
       if (!isInWindow(state, 23 * 60 + 30, 23 * 60 + 43)) return null;
@@ -115,7 +115,7 @@ export const storyNodes: StoryNodeDefinition[] = [
       if (!hasTarget(plan, ['front_door', 'police', 'hallway', 'phone'])) return null;
 
       return {
-        nodeId: 'false_police_overknows',
+        storyNodeId: 'story_false_police_overknows',
         title: '假警察说漏的细节',
         text: [
           '门外的人敲了两下。',
@@ -150,7 +150,7 @@ export const storyNodes: StoryNodeDefinition[] = [
     },
   },
   {
-    id: 'battery_critical',
+    id: 'story_battery_critical',
     priority: 2,
     resolve: (state, plan) => {
       if (hasClue(state, 'battery_critical')) return null;
@@ -159,7 +159,7 @@ export const storyNodes: StoryNodeDefinition[] = [
       if (!isUsingPhone(plan)) return null;
 
       return {
-        nodeId: 'battery_critical',
+        storyNodeId: 'story_battery_critical',
         title: '手机快没电了',
         text: [
           '屏幕右上角跳出低电量提示。',
@@ -190,7 +190,7 @@ export const storyNodes: StoryNodeDefinition[] = [
     },
   },
   {
-    id: 'room_403_receipt',
+    id: 'story_room_403_receipt',
     priority: 3,
     resolve: (state, plan) => {
       if (state.minute < 23 * 60 + 10) return null;
@@ -207,7 +207,7 @@ export const storyNodes: StoryNodeDefinition[] = [
       if (!deepInspection && !evidenceInspection) return null;
 
       return {
-        nodeId: 'room_403_receipt',
+        storyNodeId: 'story_room_403_receipt',
         title: '403 收据',
         text: [
           '旧书封底的夹层被潮气粘住。',
@@ -239,7 +239,7 @@ export const storyNodes: StoryNodeDefinition[] = [
     },
   },
   {
-    id: 'linyue_retracted_message',
+    id: 'story_linyue_retracted_message',
     priority: 4,
     resolve: (state, plan) => {
       if (!isInWindow(state, 23 * 60 + 4, 23 * 60 + 12)) return null;
@@ -249,7 +249,7 @@ export const storyNodes: StoryNodeDefinition[] = [
       if (!hasTarget(plan, ['phone', 'package', 'room'])) return null;
 
       return {
-        nodeId: 'linyue_retracted_message',
+        storyNodeId: 'story_linyue_retracted_message',
         title: '林越撤回的消息',
         text: [
           '手机屏幕亮了一下。',
@@ -284,7 +284,7 @@ export const storyNodes: StoryNodeDefinition[] = [
     },
   },
   {
-    id: 'fake_store_call',
+    id: 'story_fake_store_call',
     priority: 5,
     resolve: (state, plan) => {
       if (!isInWindow(state, 23 * 60 + 16, 23 * 60 + 34)) return null;
@@ -296,7 +296,7 @@ export const storyNodes: StoryNodeDefinition[] = [
       if (!hasTarget(plan, ['phone', 'room', 'front_door'])) return null;
 
       return {
-        nodeId: 'fake_store_call',
+        storyNodeId: 'story_fake_store_call',
         title: '不存在的便利店来电',
         text: [
           '电话那头是一个年轻女人的声音。',
@@ -327,7 +327,7 @@ export const storyNodes: StoryNodeDefinition[] = [
     },
   },
   {
-    id: 'peephole_blind_spot',
+    id: 'story_peephole_blind_spot',
     priority: 6,
     resolve: (state, plan) => {
       if (!isInWindow(state, 23 * 60 + 12, 23 * 60 + 35)) return null;
@@ -338,7 +338,7 @@ export const storyNodes: StoryNodeDefinition[] = [
       if (!hasTarget(plan, ['front_door', 'hallway', 'peephole'])) return null;
 
       return {
-        nodeId: 'peephole_blind_spot',
+        storyNodeId: 'story_peephole_blind_spot',
         title: '猫眼盲区的人影',
         text: [
           '猫眼里没有人。',

@@ -7,7 +7,7 @@ import type {
 } from '@murder-loop-ai/shared';
 
 export interface StoryNodeResolution {
-  nodeId: string;
+  storyNodeId: string;
   title: string;
   text: string;
   tone: RuleResult['tone'];
