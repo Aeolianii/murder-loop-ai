@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { DEADLINE_MINUTE, type ActionPlan } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
 import { createHarness, resolveTurnHarness } from './resolveTurn';
+import { createInitialWorldState } from '../world/worldSimulator';
 
 async function testResolveTurnHarnessReturnsTraceAndFinalState() {
   const state = createInitialGameState();
@@ -253,6 +254,7 @@ async function testStoryNodeShortCircuitsAfterParser() {
   assert.equal(resolution.finalState.minute, state.minute);
   assert.ok(resolution.finalState.clues.some((clue) => clue.id === 'battery_critical'));
   assert.ok(resolution.recommendedActions?.some((action) => action.label.includes('充电')));
+  assert.equal(resolution.finalState.world?.minute, resolution.finalState.minute);
   assert.ok(!traceEvents.includes('ActionParsed'));
   assert.ok(!traceEvents.includes('RulesApplied'));
   assert.ok(!traceEvents.includes('NarrationRequested'));
@@ -291,6 +293,59 @@ async function testLinYueWarningAfterRetractionReachesPoliceAssistPhase() {
   assert.ok(resolution.playerResult.text.includes('不上楼'));
 }
 
+async function testResolveTurnHarnessPersistsSyncedWorldState() {
+  const state = createInitialGameState();
+  state.world = createInitialWorldState();
+  state.world.events.push({
+    id: 'world-history-marker',
+    minute: state.world.minute,
+    type: 'knowledge',
+    actors: ['player'],
+    facts: ['history_marker'],
+    visibility: 'player',
+    effects: [],
+  });
+
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-secure-door',
+      raw: 'secure the front door',
+      summary: 'Secure the front door',
+      actions: [{
+        id: 'action-secure-door',
+        raw: 'secure the front door',
+        intent: 'secure_entry',
+        target: 'front_door',
+        method: 'lock and barricade the front door',
+        confidence: 0.95,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.95,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-wait',
+      type: 'wait_for_fatigue',
+      title: 'Wait outside',
+      rationale: 'Keep the test focused on final world sync',
+      visibleToPlayer: false,
+      risk: 'low',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, 'secure the front door', harness);
+
+  assert.ok(resolution.finalState.world);
+  assert.equal(resolution.finalState.world.run, resolution.finalState.run);
+  assert.equal(resolution.finalState.world.minute, resolution.finalState.minute);
+  assert.equal(resolution.finalState.world.threat, resolution.finalState.threat);
+  assert.equal(resolution.finalState.world.objects.door_lock.flags.barricaded, true);
+  assert.ok(resolution.finalState.world.events.some((event) => event.id === 'world-history-marker'));
+  assert.equal(state.world.events.length, 1);
+}
+
 await testResolveTurnHarnessReturnsTraceAndFinalState();
 await testMalformedParserAiOutputFallsBackToValidPlan();
 await testSelfCareDoesNotTriggerHardcodedDeath();
@@ -300,3 +355,4 @@ await testParserTimeCostAdvancesOneMinuteForSimpleAction();
 await testParserTimeCostCanAdvanceUpToFiveMinutes();
 await testStoryNodeShortCircuitsAfterParser();
 await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();
+await testResolveTurnHarnessPersistsSyncedWorldState();

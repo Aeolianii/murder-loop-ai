@@ -34,6 +34,7 @@ import { recordDeathMemory, recordTurnMemory } from '../memory/loopMemory';
 import { clearReviveProtection, hasReviveProtection } from './reviveProtection';
 import { resolveStoryNode } from '../storyNodes/resolveStoryNode';
 import type { StoryNodeResolution } from '../storyNodes/storyNodeTypes';
+import { ensureWorldState } from '../world/syncGameWorld';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
 export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
@@ -419,6 +420,7 @@ export async function resolveTurnHarness(
       title: storyNode.title,
       text: storyNode.text,
     });
+    resolution.finalState.world = ensureWorldState(resolution.finalState);
     await harness.dispatcher.runCommand('TurnCompleted', {
       finalState: resolution.finalState,
       moodSignal: undefined,
@@ -579,6 +581,7 @@ export async function resolveTurnHarness(
   if (finalState.phase === 'death') {
     recordDeathMemory(finalState);
   }
+  finalState.world = ensureWorldState(finalState);
 
   await harness.dispatcher.runCommand('TurnCompleted', {
     finalState,
