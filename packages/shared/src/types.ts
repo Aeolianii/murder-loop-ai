@@ -379,6 +379,7 @@ export interface TurnResolution {
   narration: Narration;
   actionNarration?: Narration;
   ambientNarration?: Narration;
+  npcReply?: NpcReply | null;
   recommendedActions?: RecommendedAction[];
   worldTickTrace?: WorldEvent[];
   finalState: GameState;

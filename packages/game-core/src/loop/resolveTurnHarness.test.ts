@@ -403,6 +403,73 @@ async function testResolveTurnHarnessAppliesPlayerWorldInputs() {
   assert.equal(state.world, undefined);
 }
 
+async function testLinYueMessageReplyStaysInActionNarration() {
+  const state = createInitialGameState();
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-ask-linyue-package',
+      raw: 'send a package photo to Lin Yue and ask if it is his package',
+      summary: 'Send the package photo to Lin Yue and ask whether the package is his',
+      actions: [
+        {
+          id: 'action-photo-package',
+          raw: 'photograph the package',
+          intent: 'preserve_evidence',
+          target: 'package',
+          method: 'take a clear photo of the package',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+        {
+          id: 'action-ask-linyue',
+          raw: 'ask Lin Yue if the package is his',
+          intent: 'communicate',
+          target: 'linyue',
+          method: 'send Lin Yue the package photo and ask if it belongs to him',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'medium',
+        },
+      ],
+      confidence: 0.98,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-wait',
+      type: 'wait_for_fatigue',
+      title: 'Wait outside',
+      rationale: 'Keep the focus on Lin Yue communication.',
+      visibleToPlayer: false,
+      risk: 'low',
+    }),
+    narrateAction: async () => ({
+      title: 'Chen pressure',
+      text: 'Chen Huaimin sends another probing message about the package.',
+    }),
+    narrateAmbient: async () => ({
+      title: 'Hallway',
+      text: 'The hallway stays quiet.',
+    }),
+    npcReply: async () => ({
+      speaker: 'linyue',
+      text: '这不是我的包裹。你别开门，把照片留好，我在楼下报警。',
+      intent: 'deny_package_and_assist',
+      riskWarning: '林越已卷入证据链，但不要让他上楼。',
+      suggestedExternalAction: '让林越在楼下报警并备份照片。',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, '拍个照片发给林越，问问包裹是不是他的', harness);
+
+  assert.equal(resolution.npcReply?.speaker, 'linyue');
+  assert.match(resolution.actionNarration?.text ?? resolution.narration.text, /林越|Lin Yue|这不是我的包裹/);
+  const actionLog = [...resolution.finalState.log].reverse().find((entry) => entry.channel === 'action');
+  assert.match(actionLog?.text ?? '', /林越|Lin Yue|这不是我的包裹/);
+}
+
 async function testResolveTurnHarnessOptionallyAdvancesWorldTick() {
   const state = createInitialGameState();
   state.world = createInitialWorldState();
@@ -477,4 +544,5 @@ await testStoryNodeShortCircuitsAfterParser();
 await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();
 await testResolveTurnHarnessPersistsSyncedWorldState();
 await testResolveTurnHarnessAppliesPlayerWorldInputs();
+await testLinYueMessageReplyStaysInActionNarration();
 await testResolveTurnHarnessOptionallyAdvancesWorldTick();

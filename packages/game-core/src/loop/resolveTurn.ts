@@ -234,6 +234,21 @@ function consumePendingWorldNarration(state: GameState, confirmedWorldEvents?: W
   };
 }
 
+function npcReplyTitle(reply: NpcReply) {
+  if (reply.speaker === 'linyue') return '林越回复';
+  if (reply.speaker === 'police_dispatch') return '接线员回复';
+  return '陈怀民回复';
+}
+
+function applyNpcReplyToActionNarration(narration: Narration, reply?: NpcReply | null): Narration {
+  if (!reply) return narration;
+  return {
+    ...narration,
+    title: npcReplyTitle(reply),
+    text: reply.text,
+  };
+}
+
 // ============================================================================
 // 新架构：Harness 工厂 + 事件驱动的回合解析
 // ============================================================================
@@ -260,6 +275,7 @@ export interface TurnContext {
   actionNarration?: Narration;
   /** 环境叙事 */
   ambientNarration?: Narration;
+  npcReply?: NpcReply | null;
   /** 叙事上下文 */
   narrationContext?: NarrationContext;
   /** 导演评分结果 */
@@ -531,6 +547,7 @@ export async function resolveTurnHarness(
   });
   ctx.playerResult = playerResult;
   ctx.state = playerResult.state;
+  ctx.npcReply = (harness.dispatcher.getLatestArtifact('npc', 'ActionParsed') as NpcReply | null | undefined) ?? null;
   const playerLogId = ctx.state.log[ctx.state.log.length - 1]?.id;
 
   // Step 3: 凶手策略
@@ -574,7 +591,10 @@ export async function resolveTurnHarness(
     state: ctx.state,
     narrationContext,
   });
-  const actionNarration = sanitizeNarration(narrationPair.actionNarration);
+  const actionNarration = applyNpcReplyToActionNarration(
+    sanitizeNarration(narrationPair.actionNarration),
+    ctx.npcReply,
+  );
   const ambientNarration = playerResult.state.ending
     ? actionNarration
     : sanitizeNarration(narrationPair.ambientNarration);
@@ -660,6 +680,7 @@ export async function resolveTurnHarness(
     narration: actionNarration,
     actionNarration,
     ambientNarration,
+    npcReply: ctx.npcReply ?? null,
     worldTickTrace: ctx.worldTickTrace ?? [],
     finalState,
   };

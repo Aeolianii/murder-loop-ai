@@ -10,7 +10,7 @@ import type { GameState, NpcReply } from '@murder-loop-ai/shared';
  */
 export const NpcAgent: AgentRegistration = {
   id: 'npc',
-  subscriptions: [{ event: 'ActionParsed', priority: 25, role: 'observer', defer: true }],
+  subscriptions: [{ event: 'ActionParsed', priority: 25, role: 'observer' }],
   contract: {
     version: '1.0.0',
     input: null as never,
