@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   createHarness, normalizeLoopMemory, resolveTurnHarness,
   type AiAdapters,
+  type HarnessOptions,
 } from '@murder-loop-ai/game-core';
 import {
   minuteLabel,
@@ -417,9 +418,12 @@ function attachRecommendedActions(
 
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
   app.post('/api/harness/turn', async (request) => {
-    const body = request.body as { input?: string; state?: GameState };
+    const body = request.body as { input?: string; state?: GameState; debug?: { advanceWorldTick?: boolean } };
     const input = body.input?.trim() ?? '';
     const rawState = coerceGameState(body.state);
+    const harnessOptions: HarnessOptions = {
+      advanceWorldTick: body.debug?.advanceWorldTick === true,
+    };
 
     // 死亡状态自动回退——无论有没有输入，先复活
     let state = rawState;
@@ -430,7 +434,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     state = hydrateCachedPlotGuidance(state);
 
     if (!input) {
-      const sidebar = await buildSidebarPayload(createAiHarness(), state, true);
+      const sidebar = await buildSidebarPayload(createAiHarness(harnessOptions), state, true);
       return {
         coreState: state, time: minuteLabel(state.minute), location: '青荷公寓 503 室',
         phase: state.phase, clues: toFrontendClues(state),
@@ -448,7 +452,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
 
     const adapterBundle = options.createAiAdapters?.(input, state);
-    const harness = adapterBundle ? createHarness(adapterBundle.aiAdapters) : createAiHarness();
+    const harness = adapterBundle ? createHarness(adapterBundle.aiAdapters, harnessOptions) : createAiHarness(harnessOptions);
     const routeWarnings = [...(adapterBundle?.coordination?.warnings ?? [])];
     const routeJudgements = adapterBundle?.coordination?.judgements ?? {};
 

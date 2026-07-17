@@ -3,6 +3,7 @@ import {
   buildKillerContext,
   buildParserContext,
   createHarness,
+  type HarnessOptions,
 } from '@murder-loop-ai/game-core';
 import {
   minuteLabel,
@@ -281,7 +282,7 @@ async function npcReplyAi(speaker: NpcReply['speaker'], input: string, state: Ga
   return parsed.data;
 }
 
-export function createAiHarness() {
+export function createAiHarness(options: HarnessOptions = {}) {
   return createHarness({
     parseAction: (input, state) => parseActionAi(input, state),
     chooseKillerStrategy: (state, plan, playerResult) => killerStrategyAi(state, plan, playerResult),
@@ -289,5 +290,5 @@ export function createAiHarness() {
     narrateAmbient: (ctx, pr, kr, st) => narrateAmbientAi(ctx, pr, kr, st),
     reviewNarration: reviewNarrationAi,
     npcReply: npcReplyAi,
-  });
+  }, options);
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
-import { createInitialGameState } from '@murder-loop-ai/game-core';
+import { createInitialGameState, createInitialWorldState } from '@murder-loop-ai/game-core';
 import type { ActionAudioCue, ActionPlan, GameState, KillerStrategy, Narration, TurnResolution } from '@murder-loop-ai/shared';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy } from '../ai/turnCoordinator';
 import { harnessTurnRoute } from './harnessTurn';
@@ -304,6 +304,117 @@ async function testDefaultHarnessRouteInjectsAiAdapters() {
   assert.equal(body.turn.ambientNarration.title, 'Hallway pause');
   assert.equal(body.coordination.trace[0].source, 'ai');
   assert.ok(body.coordination.warnings.includes('adapter factory used'));
+
+  await app.close();
+}
+
+async function testDebugAdvanceWorldTickEnablesWorldTickForRoute() {
+  const app = Fastify({ logger: false });
+  const createState = (): GameState => {
+    const worldState = createInitialWorldState();
+    worldState.characters.chen_huaimin.location = 'corridor_5f';
+    worldState.characters.lin_yue.location = 'corridor_5f';
+
+    return {
+      ...baseState,
+      world: worldState,
+    };
+  };
+  const aiPlan: ActionPlan = {
+    id: 'world-tick-plan',
+    raw: 'photograph the package and send it to Lin Yue',
+    summary: 'Preserve package evidence and tell Lin Yue',
+    actions: [
+      {
+        id: 'photo-package',
+        raw: 'photograph the package',
+        intent: 'preserve_evidence',
+        target: 'package',
+        method: 'take a clear photo of the package contents',
+        confidence: 0.95,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      },
+      {
+        id: 'send-linyue',
+        raw: 'send it to Lin Yue',
+        intent: 'communicate',
+        target: 'linyue',
+        method: 'send Lin Yue the package photo',
+        confidence: 0.95,
+        timeCost: 1,
+        noise: 0,
+        risk: 'medium',
+      },
+    ],
+    confidence: 0.95,
+    warnings: [],
+  };
+
+  await app.register(harnessTurnRoute, {
+    createAiAdapters: () => ({
+      aiAdapters: {
+        parseAction: async () => aiPlan,
+        chooseKillerStrategy: async () => ({
+          id: 'killer-wait',
+          type: 'wait_for_fatigue',
+          title: 'Wait outside',
+          rationale: 'Keep watching for what the player does with the evidence.',
+          visibleToPlayer: true,
+          risk: 'low',
+        }),
+        narrateAction: async () => ({
+          title: 'Evidence sent',
+          text: 'The package photo leaves the phone and reaches Lin Yue.',
+        }),
+        narrateAmbient: async () => ({
+          title: 'Hallway pressure',
+          text: 'The corridor outside tightens around the new evidence.',
+        }),
+      },
+      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+    }),
+  });
+
+  const defaultResponse = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'photograph the package and send it to Lin Yue',
+      state: createState(),
+    },
+  });
+
+  assert.equal(defaultResponse.statusCode, 200);
+  const defaultBody = defaultResponse.json();
+  assert.equal(
+    defaultBody.coreState.world.events.some((event: { id: string }) => event.id === 'conflict.chen_intercepts_linyue'),
+    false,
+    'World tick should stay disabled unless debug.advanceWorldTick is true',
+  );
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'photograph the package and send it to Lin Yue',
+      state: createState(),
+      debug: { advanceWorldTick: true },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.ok(
+    body.coreState.world.events.some((event: { id: string }) => event.id === 'conflict.chen_intercepts_linyue'),
+    'debug.advanceWorldTick should advance the World once after player inputs',
+  );
+  assert.notEqual(
+    body.coreState.linYuePhase,
+    'endangered',
+    'World tick should not write back into legacy GameState fields yet',
+  );
 
   await app.close();
 }
@@ -874,6 +985,7 @@ function testKillerStrategyVerifierDoesNotDowngradeAiOutput() {
 await testHarnessTurnRouteReturnsFrontendPackage();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
+await testDebugAdvanceWorldTickEnablesWorldTickForRoute();
 await testFatalNarrationIsOnlyAProposal();
 await testNarratedEscapeEndingIsOnlyAProposalEvenWhenPlausible();
 await testNarratedEscapeEndingIsRejectedWhenOnlyPlayerClaimsIt();
