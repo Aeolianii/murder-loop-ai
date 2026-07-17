@@ -22,6 +22,13 @@
 - 手机电量成为生死资源：低电量节点会优先提示寻找房间内充电器；充电后电量逐步恢复，电量耗尽会进入 `phone_battery_depleted` 死亡结局。
 - 23:47 与评分闭环完成：林越协助报警可作为外部协助条件，`handoff_failed_2347`、403 收据和假警察细节会进入真相/证据评分。
 
+补充架构清理：
+
+- Web 状态仓库中将 `lastDebug` 收紧命名为 `lastTurnDebug`，明确它保存的是最近一次回合请求的响应或错误。
+- Web 回合请求队列从 `enqueueTurn` 改名为 `enqueueHarnessRequest`，避免和游戏回合解析概念混用。
+- StoryNode 与线索 ID 已拆分命名：剧情节点统一使用 `story_` 前缀，例如 `story_battery_critical`；线索仍保留 `battery_critical` 这样的业务 ID。
+- `StoryNodeResolution.nodeId` 改为 `storyNodeId`，并新增测试防止剧情节点 ID 和线索 ID 再次复用同一个字符串。
+
 ## v1.5 更新摘要
 
 本版本重点优化手机竖屏体验，让小屏设备也能稳定游玩：
