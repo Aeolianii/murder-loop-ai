@@ -7,6 +7,7 @@ import type {
   Narration,
   NarrationContext,
   NpcReply,
+  RecommendedAction,
   TurnResolution,
   WorldEvent,
 } from '@murder-loop-ai/shared';
@@ -247,6 +248,94 @@ function applyNpcReplyToActionNarration(narration: Narration, reply?: NpcReply |
     title: npcReplyTitle(reply),
     text: reply.text,
   };
+}
+
+function hasText(text: string, words: string[]) {
+  return words.some((word) => text.includes(word));
+}
+
+function dedupeRecommendedActions(actions: RecommendedAction[]) {
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    if (seen.has(action.id)) return false;
+    seen.add(action.id);
+    return true;
+  }).slice(0, 3);
+}
+
+function buildRecommendedActionsForTurn(
+  state: GameState,
+  plan: ActionPlan,
+  killerStrategy: KillerStrategy,
+  playerResult: TurnResolution['playerResult'],
+  killerResult: TurnResolution['killerResult'],
+  npcReply?: NpcReply | null,
+): RecommendedAction[] {
+  void plan;
+  void playerResult;
+  const text = [
+    killerStrategy.type,
+    killerResult.title,
+    killerResult.text,
+    ...killerResult.events.map((event) => `${event.subject} ${event.summary} ${event.sensoryHints.join(' ')}`),
+    npcReply?.riskWarning ?? '',
+    npcReply?.suggestedExternalAction ?? '',
+  ].join('\n');
+  const actions: RecommendedAction[] = [];
+  const door = state.room.front_door?.state ?? {};
+  const doorSecuredButNotBarricaded = Boolean(door.locked || door.chainLocked) && !door.barricaded;
+  const exposedDoorCoordination = killerStrategy.type === 'spare_key_entry'
+    || killerStrategy.type === 'fake_police'
+    || hasText(text, ['门里有东西挡着', '东西挡着', '进不去', '打不开', '压低声音', '冒充警察', '假警察', 'blocked', 'get in']);
+
+  if (doorSecuredButNotBarricaded && exposedDoorCoordination) {
+    actions.push(
+      {
+        id: 'record_blocked_door_voice',
+        label: '录下门外压低声音说“进不去”的原话，别靠近门缝。',
+        rationale: '这句话说明门外的人不是正常核验身份，而是在协调进入方式；录音能变成证据。',
+        intent: 'record',
+        target: 'front_door',
+      },
+      {
+        id: 'bait_hallway_speaker',
+        label: '隔门套话：让对方报单位、警号和接警编号，但不要开门。',
+        rationale: '真正的身份核验应该经得起复述；对方如果回避或说错，就是新的破绽。',
+        intent: 'communicate',
+        target: 'chen_huaimin',
+      },
+    );
+  }
+
+  if (state.policePhase !== 'not_contacted' && exposedDoorCoordination) {
+    actions.push({
+      id: 'report_door_coordination_to_police',
+      label: '把“门里有东西挡着，进不去”这句补充给 110 或接线员。',
+      rationale: '这能让警方知道门外的人在尝试进入，而不是正常上门询问。',
+      intent: 'verify_identity',
+      target: 'police',
+    });
+  } else if (state.policePhase === 'not_contacted' && exposedDoorCoordination) {
+    actions.push({
+      id: 'call_police_with_door_coordination',
+      label: '报警时直接复述门外原话，说明有人正在尝试进入。',
+      rationale: '比单纯说“有人敲门”更具体，能提高事件紧急度。',
+      intent: 'call_police',
+      target: 'police',
+    });
+  }
+
+  if (state.linYuePhase === 'received_photo' || state.linYuePhase === 'calling_police') {
+    actions.push({
+      id: 'send_door_quote_to_linyue',
+      label: '把门外原话发给林越，让他只在楼下找真正警察，不要上楼。',
+      rationale: '林越可以做外部证人，但必须留在安全位置。',
+      intent: 'communicate',
+      target: 'linyue',
+    });
+  }
+
+  return dedupeRecommendedActions(actions);
 }
 
 // ============================================================================
@@ -681,6 +770,14 @@ export async function resolveTurnHarness(
     actionNarration,
     ambientNarration,
     npcReply: ctx.npcReply ?? null,
+    recommendedActions: buildRecommendedActionsForTurn(
+      finalState,
+      plan,
+      killerStrategy,
+      playerResult,
+      killerResult,
+      ctx.npcReply,
+    ),
     worldTickTrace: ctx.worldTickTrace ?? [],
     finalState,
   };

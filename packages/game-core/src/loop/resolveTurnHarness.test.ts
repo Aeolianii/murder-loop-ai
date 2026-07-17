@@ -470,6 +470,58 @@ async function testLinYueMessageReplyStaysInActionNarration() {
   assert.match(actionLog?.text ?? '', /林越|Lin Yue|这不是我的包裹/);
 }
 
+async function testDoorCoordinationCreatesPlayableNextSteps() {
+  const state = createInitialGameState();
+  state.policePhase = 'dispatch_pending';
+  state.room.front_door.state.locked = true;
+  state.room.front_door.state.chainLocked = true;
+  state.room.front_door.state.barricaded = false;
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-wait-behind-door',
+      raw: 'stay quiet and listen behind the locked door',
+      summary: 'Stay quiet and listen behind the locked door',
+      actions: [{
+        id: 'action-wait',
+        raw: 'stay quiet and listen behind the locked door',
+        intent: 'wait',
+        target: 'self',
+        method: 'listen without approaching the door gap',
+        confidence: 0.95,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.95,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-spare-key-blocked',
+      type: 'spare_key_entry',
+      title: 'Door entry fails',
+      rationale: 'The locked door blocks a quiet entry attempt.',
+      responseHint: 'A low voice outside says, "Something inside is stopping the door. We cannot get in."',
+      visibleToPlayer: true,
+      risk: 'medium',
+    }),
+    narrateAction: async () => ({
+      title: 'Hold position',
+      text: 'You keep the door locked and stay away from the gap.',
+    }),
+    narrateAmbient: async () => ({
+      title: 'Door held',
+      text: 'A low voice outside says, "Something inside is stopping the door. We cannot get in."',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, 'listen without opening the locked door', harness);
+  const labels = resolution.recommendedActions?.map((action) => action.label).join('\n') ?? '';
+
+  assert.match(labels, /录下|录音/);
+  assert.match(labels, /报单位|警号|接警编号/);
+  assert.match(labels, /110|接线员/);
+}
+
 async function testResolveTurnHarnessOptionallyAdvancesWorldTick() {
   const state = createInitialGameState();
   state.world = createInitialWorldState();
@@ -545,4 +597,5 @@ await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();
 await testResolveTurnHarnessPersistsSyncedWorldState();
 await testResolveTurnHarnessAppliesPlayerWorldInputs();
 await testLinYueMessageReplyStaysInActionNarration();
+await testDoorCoordinationCreatesPlayableNextSteps();
 await testResolveTurnHarnessOptionallyAdvancesWorldTick();
