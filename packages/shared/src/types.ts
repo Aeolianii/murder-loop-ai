@@ -1,3 +1,5 @@
+import type { WorldState } from './worldTypes';
+
 export type GamePhase =
   | 'intro'
   | 'loop_started'
@@ -237,6 +239,8 @@ export interface GameState {
   policeArrivalMinute?: number;
   /** Plot Director 生成的剧情指导——下一回合注入给叙事/杀手 AI */
   plotGuidance?: string;
+  /** Optional Behavior Network snapshot while legacy GameState remains authoritative. */
+  world?: WorldState;
 }
 
 export interface RuleEvent {

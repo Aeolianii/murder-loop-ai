@@ -49,6 +49,7 @@ export function createInitialWorldState(): WorldState {
     phone: { id: 'phone', name: 'Phone', location: 'player', flags: { recording: false } },
     keys: { id: 'keys', name: 'Spare keys', location: 'chen_huaimin', flags: {} },
     door_lock: { id: 'door_lock', name: 'Room 503 lock', location: 'room_503', flags: { locked: true, barricaded: false } },
+    window_lock: { id: 'window_lock', name: 'Room 503 window lock', location: 'room_503', flags: { locked: false, curtainClosed: false } },
   };
 
   return {

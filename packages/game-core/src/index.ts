@@ -17,6 +17,7 @@ export * from './npc/fallbackNpc';
 export * from './ambient/advanceAmbientTurn';
 export * from './world/worldSimulator';
 export * from './world/worldInputs';
+export * from './world/syncGameWorld';
 export * from './machines/gamePhaseMachine';
 
 // Harness 架构新增导出
