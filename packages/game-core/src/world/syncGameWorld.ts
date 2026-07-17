@@ -105,5 +105,6 @@ export function syncGameStateToWorld(state: GameState, current: WorldState): Wor
 
 export function ensureWorldState(state: GameState): WorldState {
   const base = state.world ? cloneWorld(state.world) : createInitialWorldState();
+  base.consumedNarrationEventIds ??= [];
   return syncGameStateToWorld(state, base);
 }

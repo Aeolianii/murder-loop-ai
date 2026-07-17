@@ -212,6 +212,28 @@ function applyPlayerPlanToWorldState(
   return { state: { ...state, world }, worldTickTrace };
 }
 
+function consumePendingWorldNarration(state: GameState, confirmedWorldEvents?: WorldEvent[]): GameState {
+  if (!state.world || !confirmedWorldEvents?.length || state.world.pendingNarration.length === 0) return state;
+  const pendingIds = new Set(state.world.pendingNarration.map((event) => event.id));
+  const consumedIds = confirmedWorldEvents
+    .map((event) => event.id)
+    .filter((id) => pendingIds.has(id));
+  if (consumedIds.length === 0) return state;
+
+  const consumedSet = new Set(consumedIds);
+  return {
+    ...state,
+    world: {
+      ...state.world,
+      pendingNarration: state.world.pendingNarration.filter((event) => !consumedSet.has(event.id)),
+      consumedNarrationEventIds: [...new Set([
+        ...(state.world.consumedNarrationEventIds ?? []),
+        ...consumedIds,
+      ])],
+    },
+  };
+}
+
 // ============================================================================
 // 新架构：Harness 工厂 + 事件驱动的回合解析
 // ============================================================================
@@ -558,6 +580,7 @@ export async function resolveTurnHarness(
     : sanitizeNarration(narrationPair.ambientNarration);
   ctx.actionNarration = actionNarration;
   ctx.ambientNarration = ambientNarration;
+  ctx.state = consumePendingWorldNarration(ctx.state, narrationContext.confirmedWorldEvents);
 
   // Step 6: Director review uses the same agent event chain, but it is kept
   // outside the response critical path. Narration proposals are advisory now,

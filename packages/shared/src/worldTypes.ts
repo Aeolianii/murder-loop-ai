@@ -90,5 +90,6 @@ export interface WorldState {
   knowledge: Record<CharacterId, KnowledgeState>;
   events: WorldEvent[];
   pendingNarration: WorldEvent[];
+  consumedNarrationEventIds: string[];
   affectedCharacters: CharacterId[];
 }

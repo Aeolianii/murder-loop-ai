@@ -81,6 +81,7 @@ export function createInitialWorldState(): WorldState {
     },
     events: [],
     pendingNarration: [],
+    consumedNarrationEventIds: [],
     affectedCharacters: [],
   };
 }
