@@ -86,6 +86,25 @@ function isAskingLinYueToAssistPolice(text: string) {
   return includesAny(text, ['报警', '打110', '叫警察', '等警察', '备份', '留证', '录下来', '记录']);
 }
 
+function isPhysicalDoorBlock(text: string) {
+  const lower = text.toLowerCase();
+  return includesAny(lower, [
+    '堵门',
+    '抵住门',
+    '顶住门',
+    '椅子',
+    '行李箱',
+    '胶带',
+    '封门',
+    '挡住门',
+    'barricade',
+    'block the door',
+    'chair',
+    'luggage',
+    'suitcase',
+  ]);
+}
+
 function pushEntry(state: GameState, result: Omit<RuleResult, 'state'>) {
   const entry: StoryLogEntry = {
     id: `log-${state.run}-${state.minute}-${Math.random().toString(36).slice(2, 8)}`,
@@ -242,14 +261,18 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
         break;
       case 'secure_entry':
         if (action.target === 'front_door') {
+          const actionText = `${action.raw} ${action.method ?? ''}`;
+          const physicallyBlocked = isPhysicalDoorBlock(actionText);
           state.room.front_door.state.locked = true;
           state.room.front_door.state.chainLocked = true;
-          state.room.front_door.state.barricaded = true;
-          state.room.chair.state.movedToDoor = true;
+          state.room.front_door.state.barricaded = physicallyBlocked;
+          state.room.chair.state.movedToDoor = physicallyBlocked;
           state.killerKnowledge.suspectsPlayerIsAlert = action.noise >= 2 || state.killerKnowledge.suspectsPlayerIsAlert;
-          state.killerKnowledge.knowsDoorBarricaded = action.noise >= 2;
+          state.killerKnowledge.knowsDoorBarricaded = physicallyBlocked && action.noise >= 2;
           title = '门被临时加固';
-          texts.push('加固门：门锁、门链、椅子和行李箱形成临时阻挡；拖动家具产生轻微噪音。');
+          texts.push(physicallyBlocked
+            ? '加固门：门锁和门链扣上，椅子或行李箱被移到门后形成临时阻挡；拖动家具产生轻微噪音。'
+            : '反锁门：门锁和门链从屋内扣上；没有搬动家具，也没有制造新的物理堵门。');
         } else if (action.target === 'window') {
           state.room.window.state.locked = true;
           state.room.window.state.curtainClosed = true;

@@ -93,7 +93,13 @@ export function applyKillerStrategy(current: GameState, strategy: KillerStrategy
         }
         return end(state, 'forced_entry', '锁芯转动', '锁芯响起来的时候，我先以为是自己听错了。那声音太轻，像有人用指甲碰了一下金属。紧接着，门把手往下压。门缝里漏进来一线楼道的白光，我还没来得及后退，一个人已经用肩膀顶住门板。没有争吵，没有威胁，只有熟练到近乎安静的动作。');
       }
-      text = '锁芯被尝试拨动；门的加固阻止了直接进入，但暴露了防备状态。';
+      if (state.room.front_door.state.barricaded) {
+        text = '备用钥匙插进锁芯后只转了半圈，门板后面的物理障碍顶住了力道；门没有打开，只有门后障碍物被轻轻压响的声音。';
+      } else if (state.room.front_door.state.chainLocked) {
+        text = '备用钥匙插进锁芯后轻轻转动，外侧锁舌被拨开了一瞬，但内侧反锁和门链挡住了门板；门没有形成可进入的缝隙。';
+      } else {
+        text = '备用钥匙插进锁芯后受阻停住；门仍然关着，外面的人确认了里面已经上锁。';
+      }
       break;
     case 'window_route':
       if (!state.room.window.state.locked && state.threat >= 55) {

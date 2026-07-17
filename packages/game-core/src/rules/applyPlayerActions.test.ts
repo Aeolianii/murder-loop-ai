@@ -42,6 +42,20 @@ function communicateLinYueAction(raw: string): ActionPlan['actions'][number] {
   };
 }
 
+function secureDoorAction(raw: string): ActionPlan['actions'][number] {
+  return {
+    id: 'act-secure-door',
+    raw,
+    intent: 'secure_entry',
+    target: 'front_door',
+    method: raw,
+    confidence: 1,
+    timeCost: 1,
+    noise: 0,
+    risk: 'low',
+  };
+}
+
 function addPackagePhoto(state: GameState) {
   state.room.package.state.photographed = true;
   state.clues.push({
@@ -152,6 +166,30 @@ function testPhoneBatteryDepletionUsesDeathEnding() {
 }
 
 testPhoneBatteryDepletionUsesDeathEnding();
+
+function testLockingDoorDoesNotInventBarricade() {
+  const state = createInitialGameState();
+
+  const result = applyPlayerActions(state, actionPlan([secureDoorAction('我反锁门口')]));
+
+  assert.equal(result.state.room.front_door.state.locked, true);
+  assert.equal(result.state.room.front_door.state.chainLocked, true);
+  assert.equal(result.state.room.front_door.state.barricaded, false);
+  assert.doesNotMatch(result.text, /椅子|行李箱|顶住|堵住|刮/);
+}
+
+function testPhysicalDoorBlockingSetsBarricade() {
+  const state = createInitialGameState();
+
+  const result = applyPlayerActions(state, actionPlan([secureDoorAction('我搬椅子堵住门')]));
+
+  assert.equal(result.state.room.front_door.state.locked, true);
+  assert.equal(result.state.room.front_door.state.chainLocked, true);
+  assert.equal(result.state.room.front_door.state.barricaded, true);
+}
+
+testLockingDoorDoesNotInventBarricade();
+testPhysicalDoorBlockingSetsBarricade();
 
 function testAskingLinYueAboutRetractedMessageKeepsDialogueOpen() {
   const state = createInitialGameState();

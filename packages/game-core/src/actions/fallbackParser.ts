@@ -109,7 +109,7 @@ export function fallbackParseAction(input: string): ActionPlan {
   }
 
   if (includesAny(text, ['锁门', '反锁', '门链', '堵门', '抵住门', '顶住门', '椅子', '行李箱'])) {
-    actions.push(createAction(raw, 'secure_entry', 'front_door', '加固门锁并尝试堵门', 0.92, 2, includesAny(text, ['轻轻', '小声', '尽量不要']) ? 1 : 3, 'medium'));
+    actions.push(createAction(raw, 'secure_entry', 'front_door', '处理门锁和门链', 0.92, 2, includesAny(text, ['轻轻', '小声', '尽量不要']) ? 1 : 3, 'medium'));
   }
 
   if (!includesOpenDoorNegation(text) && includesAny(text, ['开门', '打开门', '让他进来'])) {
