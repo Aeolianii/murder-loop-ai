@@ -10,6 +10,7 @@ import { scoreNarrationWithDirector } from '../ai/directorScorer';
 import { buildKillerPromptPayload } from '../ai/killerPrompt';
 import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObject';
 import { formatWorldInfoPromptBlock } from '../ai/worldInfoPrompt';
+import { formatConfirmedWorldEventsPromptBlock } from '../ai/worldEventPrompt';
 
 interface FrontendAdapterRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -202,7 +203,9 @@ async function narrateActionForFrontend(context: NarrationContext, playerResult:
       '可选字段：ending（death|escaped_no_evidence|escaped_with_evidence）。具体死因或逃脱原因由规则系统写入 endingReason，叙事不能自造旧结局名。',
       `【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造上下文里不存在的时间。`,
       '220-520 个中文字符。只输出 JSON：{“title”:”...”,”text”:”...”,“ending”:”可选 endingId”}。',
-    ].join('\n') + '\n' + formatWorldInfoPromptBlock(narrationContext.worldInfo, 'narrator');
+    ].join('\n')
+      + '\n' + formatConfirmedWorldEventsPromptBlock(narrationContext.confirmedWorldEvents)
+      + '\n' + formatWorldInfoPromptBlock(narrationContext.worldInfo, 'narrator');
   const fallback = createFallbackActionNarration(playerResult);
 
   const ai = await completeRoleJson(
@@ -243,7 +246,9 @@ async function narrateAmbientForFrontend(context: NarrationContext, playerResult
       '不能因为玩家嘴上说自己已经脱险就直接给结局；必须是外部事件已经把结果坐实。',
       `【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造上下文里不存在的时间。`,
       '90-240 个中文字符。只输出 JSON：{"title":"...","text":"...","ending":"可选 endingId"}。',
-    ].join('\n') + '\n' + formatWorldInfoPromptBlock(narrationContext.worldInfo, 'narrator');
+    ].join('\n')
+      + '\n' + formatConfirmedWorldEventsPromptBlock(narrationContext.confirmedWorldEvents)
+      + '\n' + formatWorldInfoPromptBlock(narrationContext.worldInfo, 'narrator');
   const fallback = createFallbackAmbientNarration(playerResult, killerResult);
 
   const ai = await completeRoleJson(

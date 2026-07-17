@@ -19,6 +19,7 @@ import { completeRoleJson } from './openaiClient';
 import { normalizeActionPlanJson, unwrapJsonObject } from './unwrapJsonObject';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from './turnCoordinator';
 import { formatWorldInfoPromptBlock } from './worldInfoPrompt';
+import { formatConfirmedWorldEventsPromptBlock } from './worldEventPrompt';
 
 function buildPlotContext(state: GameState, plan?: ActionPlan): string {
   const recentTitles = state.log.slice(-4).map(l => l.title).join(' / ');
@@ -161,7 +162,9 @@ async function narrateActionAi(
     `8.5. 【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造 23:06 这类当前上下文里不存在的时间。`,
     '9. 文风：第一人称限知视角，写可观察事实（声音/光线/距离/动作），不写"我害怕"。',
     '   220-520 中文字符。只输出 JSON：{"title":"...","text":"..."}；如果本段自然产生关键新信息，可以额外带 1 个 clue 字段：{"id":"dyn_xxx","title":"线索标题","detail":"具体情报","weight":6}。',
-  ].join('\n') + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
+  ].join('\n')
+    + '\n' + formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents)
+    + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
   const ai = await completeRoleJson('narrator', system,
     { narrationContext: context, playerResult, state }, { temperature: 0.75 });
   if (!ai) throw new Error('action narration AI returned null');
@@ -215,7 +218,9 @@ async function narrateAmbientAi(
     '   只描述外部现象：脚步声位置/节奏变化、门外对话碎片、楼道灯光/气味/声音异常。',
     '',
     ambientContext,
-  ].join('\n') + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
+  ].join('\n')
+    + '\n' + formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents)
+    + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
   const ai = await completeRoleJson('narrator', system,
     { narrationContext: context, killerResult, state }, { temperature: 0.85 });
   if (!ai) throw new Error('ambient narration AI returned null');
