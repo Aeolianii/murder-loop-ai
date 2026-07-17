@@ -12,7 +12,7 @@ function resetStore() {
     busy: false,
     inputBusy: false,
     serverStatus: 'unknown',
-    lastDebug: null,
+    lastTurnDebug: null,
   });
 }
 
@@ -51,7 +51,7 @@ assert(afterSubmit.frontendState.storyLog.filter(node => node.type === 'player_i
 assert(afterSubmit.frontendState.storyLog.at(-1)?.id === 'server-narration', 'submitAction should append server narration');
 assert(afterSubmit.busy === false && afterSubmit.inputBusy === false, 'submitAction should clear busy flags');
 assert(afterSubmit.serverStatus === 'online', 'submitAction should mark server online');
-assert((afterSubmit.lastDebug as HarnessTurnResponse).time === turnResponse.time, 'submitAction should store the last response for debugging');
+assert((afterSubmit.lastTurnDebug as HarnessTurnResponse).time === turnResponse.time, 'submitAction should store the last turn response for debugging');
 
 const rewindResponse: HarnessTurnResponse = {
   time: '23:00',
@@ -83,4 +83,4 @@ const afterReset = useGameStore.getState();
 
 assert(afterReset.frontendState.time === '23:00', 'reset should restore opening time');
 assert(afterReset.frontendState.phase === 'intro', 'reset should restore intro phase');
-assert(afterReset.lastDebug === null, 'reset should clear lastDebug');
+assert(afterReset.lastTurnDebug === null, 'reset should clear lastTurnDebug');

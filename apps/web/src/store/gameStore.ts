@@ -7,7 +7,7 @@ import type { GameState } from '../types';
 
 let stateQueue = Promise.resolve();
 
-function enqueueTurn<T>(work: () => Promise<T>) {
+function enqueueHarnessRequest<T>(work: () => Promise<T>) {
   const next = stateQueue.then(work, work);
   stateQueue = next.then(() => undefined, () => undefined);
   return next;
@@ -18,7 +18,7 @@ interface GameStore {
   busy: boolean;
   inputBusy: boolean;
   serverStatus: 'unknown' | 'online' | 'fallback';
-  lastDebug: unknown | null;
+  lastTurnDebug: unknown | null;
   submitAction: (text: string) => Promise<HarnessTurnResponse | null>;
   rewind: () => Promise<HarnessTurnResponse | null>;
   reset: () => void;
@@ -36,25 +36,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
   busy: false,
   inputBusy: false,
   serverStatus: 'unknown',
-  lastDebug: null,
+  lastTurnDebug: null,
   submitAction: async (text) => {
     const input = text.trim();
     const current = get().frontendState;
     if (!input || get().inputBusy || current.ending) return null;
 
     const pendingState = beginHarnessTurn(current, input);
-    set({ frontendState: pendingState, busy: true, inputBusy: true, lastDebug: null });
+    set({ frontendState: pendingState, busy: true, inputBusy: true, lastTurnDebug: null });
 
     try {
-      const result = await enqueueTurn(() => postHarnessTurn(input, current.coreState));
+      const result = await enqueueHarnessRequest(() => postHarnessTurn(input, current.coreState));
       const nextState = applyHarnessTurnResponse(pendingState, result);
       setAndPersist(set, nextState);
-      set({ serverStatus: 'online', lastDebug: result });
+      set({ serverStatus: 'online', lastTurnDebug: result });
       return result;
     } catch (error) {
       const errorState = applyHarnessTurnResponse(pendingState, {}, error);
       setAndPersist(set, errorState);
-      set({ serverStatus: 'fallback', lastDebug: error });
+      set({ serverStatus: 'fallback', lastTurnDebug: error });
       return null;
     } finally {
       set({ inputBusy: false, busy: false });
@@ -62,17 +62,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   rewind: async () => {
     const current = get().frontendState;
-    set({ frontendState: { ...current, isParsing: true }, busy: true, inputBusy: true, lastDebug: null });
+    set({ frontendState: { ...current, isParsing: true }, busy: true, inputBusy: true, lastTurnDebug: null });
 
     try {
-      const result = await enqueueTurn(() => postHarnessTurn('', current.coreState));
+      const result = await enqueueHarnessRequest(() => postHarnessTurn('', current.coreState));
       const nextState = rewindFrontendStateFromResponse(current, result);
       setAndPersist(set, nextState);
-      set({ serverStatus: 'online', lastDebug: result });
+      set({ serverStatus: 'online', lastTurnDebug: result });
       return result;
     } catch (error) {
       setAndPersist(set, current);
-      set({ serverStatus: 'fallback', lastDebug: error });
+      set({ serverStatus: 'fallback', lastTurnDebug: error });
       return null;
     } finally {
       set({ inputBusy: false, busy: false });
@@ -85,7 +85,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       busy: false,
       inputBusy: false,
       serverStatus: 'unknown',
-      lastDebug: null,
+      lastTurnDebug: null,
     });
   },
   clearSave: () => {
@@ -96,7 +96,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       busy: false,
       inputBusy: false,
       serverStatus: 'unknown',
-      lastDebug: null,
+      lastTurnDebug: null,
     });
   },
   setFrontendState: (frontendState) => setAndPersist(set, frontendState),
