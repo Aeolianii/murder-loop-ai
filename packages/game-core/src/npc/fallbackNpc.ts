@@ -23,9 +23,9 @@ export function fallbackNpcReply(speaker: NpcReply['speaker'], input: string, st
 
   return {
     speaker: 'linyue',
-    text: '林越很快回了消息。他没有打电话，只发来几行字：别开门，别让手机响。我不上楼，我去楼下找能拍到门口的位置，同时报警。你把照片再发我一遍。',
-    intent: '提供外部支援但不上楼',
-    riskWarning: state.linYuePhase === 'received_photo' ? '林越已经被卷入，不能让他靠近 503。' : '林越还没有拿到足够证据。',
-    suggestedExternalAction: input.includes('上楼') ? '改为让林越留在楼下等待警察。' : '让林越备份照片并报警。',
+    text: '林越直接回：不太对劲。楼下停车场有真警察，但还有两个人穿警服的不像一路人，可能是假警察或者冒充警察。你别开门，别靠门缝，继续保持门窗反锁，等官方回拨核实。我会留在楼下，把照片和你的位置交给真正的警察。',
+    intent: '识别疑似假警察并协助真警察',
+    riskWarning: state.linYuePhase === 'received_photo' ? '林越已经看见异常警服人员，不能让他靠近 503 或单独上楼。' : '林越还没有拿到足够证据，但门外身份必须先按冒充警察处理。',
+    suggestedExternalAction: input.includes('上楼') ? '让林越留在楼下找真警察，不要上楼。' : '让林越备份照片、报警，并通过真警察或官方回拨核实门外身份。',
   };
 }
