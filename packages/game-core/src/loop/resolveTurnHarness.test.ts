@@ -399,7 +399,66 @@ async function testResolveTurnHarnessAppliesPlayerWorldInputs() {
   assert.equal(world.objects.package_photo.flags.exists, true);
   assert.equal(world.objects.package_photo.flags.sharedWithLinYue, true);
   assert.equal(world.knowledge.lin_yue.facts.package_photo.source, 'message');
+  assert.equal(world.events.some((event) => event.id === 'conflict.chen_intercepts_linyue'), false);
   assert.equal(state.world, undefined);
+}
+
+async function testResolveTurnHarnessOptionallyAdvancesWorldTick() {
+  const state = createInitialGameState();
+  state.world = createInitialWorldState();
+  state.world.characters.chen_huaimin.location = 'corridor_5f';
+  state.world.characters.lin_yue.location = 'corridor_5f';
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-share-photo',
+      raw: 'photograph the package and send the package photo to Lin Yue',
+      summary: 'Photograph the package and send the photo to Lin Yue',
+      actions: [
+        {
+          id: 'action-photo-package',
+          raw: 'photograph the package',
+          intent: 'preserve_evidence',
+          target: 'package',
+          method: 'take a clear photo of the package',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+        {
+          id: 'action-send-linyue',
+          raw: 'send the package photo to Lin Yue',
+          intent: 'communicate',
+          target: 'linyue',
+          method: 'send the package photo to Lin Yue',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+      ],
+      confidence: 0.98,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-wait',
+      type: 'wait_for_fatigue',
+      title: 'Wait outside',
+      rationale: 'Keep the test focused on optional world tick',
+      visibleToPlayer: false,
+      risk: 'low',
+    }),
+  }, { advanceWorldTick: true });
+
+  const resolution = await resolveTurnHarness(state, 'share the package photo with Lin Yue', harness);
+  const world = resolution.finalState.world;
+
+  assert.ok(world);
+  assert.ok(world.events.some((event) => event.id === 'conflict.chen_intercepts_linyue'));
+  assert.ok(world.characters.lin_yue.goalStack.includes('preserve_photo'));
+  assert.ok(world.characters.chen_huaimin.goalStack.includes('suppress_lin_yue'));
+  assert.notEqual(resolution.finalState.linYuePhase, 'endangered');
+  assert.equal(state.world.events.length, 0);
 }
 
 await testResolveTurnHarnessReturnsTraceAndFinalState();
@@ -413,3 +472,4 @@ await testStoryNodeShortCircuitsAfterParser();
 await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();
 await testResolveTurnHarnessPersistsSyncedWorldState();
 await testResolveTurnHarnessAppliesPlayerWorldInputs();
+await testResolveTurnHarnessOptionallyAdvancesWorldTick();

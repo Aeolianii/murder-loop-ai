@@ -36,6 +36,7 @@ import { resolveStoryNode } from '../storyNodes/resolveStoryNode';
 import type { StoryNodeResolution } from '../storyNodes/storyNodeTypes';
 import { ensureWorldState } from '../world/syncGameWorld';
 import { applyWorldInputs, buildWorldInputsFromPlayerPlan } from '../world/worldInputs';
+import { advanceWorldTick } from '../world/worldSimulator';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
 export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
@@ -83,6 +84,10 @@ export interface AiAdapters {
     input: string,
     state: GameState,
   ) => Promise<NpcReply>;
+}
+
+export interface HarnessOptions {
+  advanceWorldTick?: boolean;
 }
 
 function replaceLogEntry(
@@ -187,13 +192,16 @@ function buildStoryNodeTurnResolution(
   };
 }
 
-function applyPlayerPlanToWorldState(state: GameState, plan: ActionPlan): GameState {
-  const world = ensureWorldState(state);
+function applyPlayerPlanToWorldState(state: GameState, plan: ActionPlan, shouldAdvanceWorldTick = false): GameState {
+  let world = ensureWorldState(state);
   const inputs = buildWorldInputsFromPlayerPlan(plan, world);
-  if (inputs.length === 0) {
-    return { ...state, world };
+  if (inputs.length > 0) {
+    world = applyWorldInputs(world, inputs);
   }
-  return { ...state, world: applyWorldInputs(world, inputs) };
+  if (shouldAdvanceWorldTick) {
+    world = advanceWorldTick(world);
+  }
+  return { ...state, world };
 }
 
 // ============================================================================
@@ -275,7 +283,7 @@ function saveConversationCheckpoint(state: GameState): void {
  * const result = await resolveTurnHarness(state, input, harness);
  * ```
  */
-export function createHarness(aiAdapters?: AiAdapters) {
+export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions = {}) {
   const bus = new GameEventBus();
   const registry = new AgentRegistry(bus);
   const dispatcher = new HarnessDispatcher(bus, registry);
@@ -386,7 +394,15 @@ export function createHarness(aiAdapters?: AiAdapters) {
     }
   }
 
-  return { bus, registry, dispatcher, narrationAiUsage };
+  return {
+    bus,
+    registry,
+    dispatcher,
+    narrationAiUsage,
+    options: {
+      advanceWorldTick: Boolean(options.advanceWorldTick),
+    },
+  };
 }
 
 /**
@@ -417,7 +433,7 @@ export async function resolveTurnHarness(
   });
 
   ctx.plan = plan;
-  ctx.state = applyPlayerPlanToWorldState(ctx.state, plan);
+  ctx.state = applyPlayerPlanToWorldState(ctx.state, plan, harness.options.advanceWorldTick);
 
   const storyNode = resolveStoryNode(ctx.state, plan);
   if (storyNode) {
