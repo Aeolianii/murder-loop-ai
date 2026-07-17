@@ -9,7 +9,56 @@
 但规则系统拥有最终解释权。
 ```
 
-当前版本：`v1.6`
+当前版本：`v1.7`
+
+## v1.7 更新摘要
+
+本版本引入了 Behavior Network / World State 状态机壳，用来承接“玩家动作 → 世界输入 → 世界 tick → 叙事上下文”的新链路。旧 `GameState` 仍然是主规则状态，状态机目前以薄同步层方式运行：它会写入 `state.world`，为叙事和后台日志提供结构化世界事件，但不会反写旧主状态。
+
+核心变化：
+
+- 新增 `GameState ↔ WorldState` 薄同步层，回合结束时会持久化 `state.world`，并保留旧规则系统的权威性。
+- 新增“玩家动作 → World 输入”桥接层：拍照、发给林越、报警、锁门等动作会映射成 World Event。
+- harness 支持可选 `advanceWorldTick` 阶段：玩家输入进入 World 后，可以让 World 自主推进一次 tick。
+- API response 暴露 `worldTickTrace`，后台日志或调试工具可以直接看到本回合 World 自主推进产生的事件。
+- 叙事层开始只读消费 World Event / World Info，上下文里会明示 confirmed world events，避免 AI 靠猜测补事实。
+- 普通回合也会生成 `recommendedActions`，例如门外低声暴露“进不去”时，会提示玩家录音、套话、补充给警方或通知林越。
+- 修复若干状态一致性问题：只反锁门不会被叙事写成椅子堵门；警察未到场时，林越不会提前声称真警察已经在门外或停车场。
+
+### 状态机模式如何启用
+
+前端右上角的心电/脉冲图标是 World Tick 开关：
+
+- 灰色/未启用：只执行玩家动作到 World 输入同步，不推进 World 自主 tick。
+- 绿色/启用：每次玩家提交动作后，请求体会携带 `debug.advanceWorldTick: true`，后端在玩家动作之后推进一次 World tick。
+
+后端接口也可以直接启用：
+
+```http
+POST /api/harness/turn
+Content-Type: application/json
+
+{
+  "input": "我不靠近门缝，打开录音，把门外那句进不去录下来",
+  "state": { "...": "当前 GameState" },
+  "debug": {
+    "advanceWorldTick": true
+  }
+}
+```
+
+返回值中重点看：
+
+```ts
+{
+  coreState: {
+    world: WorldState
+  },
+  worldTickTrace: WorldEvent[]
+}
+```
+
+开发调试建议：正式游玩可以先打开状态机开关；如果叙事和状态不匹配，优先查看后台返回的 `worldTickTrace`、`coreState.world.events` 和本回合 `turn.plan`，判断问题出在动作解析、World 输入桥接、World tick，还是 Narration 对事实的表达。
 
 ## v1.6 更新摘要
 
