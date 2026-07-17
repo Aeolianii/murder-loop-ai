@@ -380,6 +380,7 @@ export interface TurnResolution {
   actionNarration?: Narration;
   ambientNarration?: Narration;
   recommendedActions?: RecommendedAction[];
+  worldTickTrace?: WorldEvent[];
   finalState: GameState;
 }
 

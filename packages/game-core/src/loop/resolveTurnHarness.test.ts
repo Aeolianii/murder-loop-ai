@@ -455,6 +455,9 @@ async function testResolveTurnHarnessOptionallyAdvancesWorldTick() {
 
   assert.ok(world);
   assert.ok(world.events.some((event) => event.id === 'conflict.chen_intercepts_linyue'));
+  const tickEventIds = resolution.worldTickTrace?.map((event) => event.id) ?? [];
+  assert.ok(tickEventIds.includes('conflict.chen_intercepts_linyue'));
+  assert.equal(tickEventIds.some((id) => id.startsWith('input.')), false);
   assert.ok(world.characters.lin_yue.goalStack.includes('preserve_photo'));
   assert.ok(world.characters.chen_huaimin.goalStack.includes('suppress_lin_yue'));
   assert.notEqual(resolution.finalState.linYuePhase, 'endangered');

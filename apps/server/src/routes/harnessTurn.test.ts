@@ -393,6 +393,7 @@ async function testDebugAdvanceWorldTickEnablesWorldTickForRoute() {
     false,
     'World tick should stay disabled unless debug.advanceWorldTick is true',
   );
+  assert.deepEqual(defaultBody.worldTickTrace, []);
 
   const response = await app.inject({
     method: 'POST',
@@ -410,6 +411,9 @@ async function testDebugAdvanceWorldTickEnablesWorldTickForRoute() {
     body.coreState.world.events.some((event: { id: string }) => event.id === 'conflict.chen_intercepts_linyue'),
     'debug.advanceWorldTick should advance the World once after player inputs',
   );
+  const tickEventIds = body.worldTickTrace.map((event: { id: string }) => event.id);
+  assert.ok(tickEventIds.includes('conflict.chen_intercepts_linyue'));
+  assert.equal(tickEventIds.some((id: string) => id.startsWith('input.')), false);
   assert.notEqual(
     body.coreState.linYuePhase,
     'endangered',

@@ -8,6 +8,7 @@ import type {
   NarrationContext,
   NpcReply,
   TurnResolution,
+  WorldEvent,
 } from '@murder-loop-ai/shared';
 import { createClueFromTemplate } from '@murder-loop-ai/content';
 import { chooseFallbackKillerStrategy } from '../killer/fallbackStrategy';
@@ -192,16 +193,23 @@ function buildStoryNodeTurnResolution(
   };
 }
 
-function applyPlayerPlanToWorldState(state: GameState, plan: ActionPlan, shouldAdvanceWorldTick = false): GameState {
+function applyPlayerPlanToWorldState(
+  state: GameState,
+  plan: ActionPlan,
+  shouldAdvanceWorldTick = false,
+): { state: GameState; worldTickTrace: WorldEvent[] } {
   let world = ensureWorldState(state);
   const inputs = buildWorldInputsFromPlayerPlan(plan, world);
   if (inputs.length > 0) {
     world = applyWorldInputs(world, inputs);
   }
+  let worldTickTrace: WorldEvent[] = [];
   if (shouldAdvanceWorldTick) {
+    const beforeTickEventCount = world.events.length;
     world = advanceWorldTick(world);
+    worldTickTrace = world.events.slice(beforeTickEventCount);
   }
-  return { ...state, world };
+  return { state: { ...state, world }, worldTickTrace };
 }
 
 // ============================================================================
@@ -234,6 +242,8 @@ export interface TurnContext {
   narrationContext?: NarrationContext;
   /** 导演评分结果 */
   directorResult?: { score: unknown; passed: boolean; violations: string[]; moodSignal?: string };
+  /** Autonomous World tick events only; player input bridge events are excluded. */
+  worldTickTrace?: WorldEvent[];
 }
 
 // ============================================================================
@@ -433,7 +443,9 @@ export async function resolveTurnHarness(
   });
 
   ctx.plan = plan;
-  ctx.state = applyPlayerPlanToWorldState(ctx.state, plan, harness.options.advanceWorldTick);
+  const worldUpdate = applyPlayerPlanToWorldState(ctx.state, plan, harness.options.advanceWorldTick);
+  ctx.state = worldUpdate.state;
+  ctx.worldTickTrace = worldUpdate.worldTickTrace;
 
   const storyNode = resolveStoryNode(ctx.state, plan);
   if (storyNode) {
@@ -441,6 +453,7 @@ export async function resolveTurnHarness(
     if (startedWithReviveProtection) {
       clearReviveProtection(resolution.finalState);
     }
+    resolution.worldTickTrace = ctx.worldTickTrace ?? [];
     recordTurnMemory(resolution.finalState, {
       playerInput: ctx.input,
       summary: plan.summary,
@@ -484,6 +497,7 @@ export async function resolveTurnHarness(
       narration: { title: fatalResult.title, text: fatalResult.text },
       actionNarration: { title: fatalResult.title, text: fatalResult.text },
       ambientNarration: { title: '', text: '' },
+      worldTickTrace: ctx.worldTickTrace ?? [],
       finalState: deathState,
     };
   }
@@ -623,6 +637,7 @@ export async function resolveTurnHarness(
     narration: actionNarration,
     actionNarration,
     ambientNarration,
+    worldTickTrace: ctx.worldTickTrace ?? [],
     finalState,
   };
 }
