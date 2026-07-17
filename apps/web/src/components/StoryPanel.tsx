@@ -18,9 +18,9 @@ export function StoryPanel({ log }: StoryPanelProps) {
   return (
     <div 
       ref={containerRef}
-      className="flex-1 overflow-y-auto px-4 md:px-12 py-8 scroll-smooth"
+      className="flex-1 overflow-y-auto px-4 py-3 scroll-smooth md:px-12 md:py-8"
     >
-      <div className="max-w-2xl mx-auto space-y-8 pb-12">
+      <div className="mx-auto max-w-2xl space-y-3 pb-5 md:space-y-8 md:pb-12">
         <AnimatePresence initial={false}>
           {log.map((node, index) => (
             <motion.div
@@ -35,16 +35,16 @@ export function StoryPanel({ log }: StoryPanelProps) {
               {node.type === 'narrative' && (
                 <div className="w-full">
                   {node.timestamp && (
-                    <div className="text-zinc-600 font-mono text-[10px] md:text-xs mb-3 tracking-widest">— {node.timestamp}</div>
+                    <div className="mb-2 font-mono text-[10px] tracking-widest text-zinc-600 md:mb-3 md:text-xs">— {node.timestamp}</div>
                   )}
-                  <p className="font-serif text-[#d6d6d6] text-lg md:text-[22px] leading-[1.8] md:leading-[2] tracking-wide whitespace-pre-wrap">
+                  <p className="whitespace-pre-wrap font-serif text-[17px] leading-[1.75] tracking-wide text-[#d6d6d6] md:text-[22px] md:leading-[2]">
                     {node.content}
                   </p>
                 </div>
               )}
               
               {node.type === 'player_input' && (
-                <div className="max-w-[82%] bg-zinc-900/90 border border-white/10 rounded-lg px-5 py-3 text-zinc-200 font-sans text-sm md:text-base shadow-lg mr-2">
+                <div className="mr-1 max-w-[90%] rounded-lg border border-white/10 bg-zinc-900/90 px-4 py-2.5 font-sans text-sm text-zinc-200 shadow-lg md:mr-2 md:max-w-[82%] md:px-5 md:py-3 md:text-base">
                   <div className="font-mono text-[10px] text-zinc-500 tracking-[0.18em] uppercase mb-1">你发出</div>
                   <div className="leading-relaxed whitespace-pre-wrap">“{node.content}”</div>
                 </div>
@@ -52,12 +52,12 @@ export function StoryPanel({ log }: StoryPanelProps) {
 
               {node.type === 'action_result' && (
                 <div className="pl-4 border-l border-zinc-700/50 mt-2">
-                  <p className="font-mono text-zinc-400 text-sm">{node.content}</p>
+                  <p className="font-mono text-xs leading-relaxed text-zinc-400 md:text-sm">{node.content}</p>
                 </div>
               )}
 
               {node.type === 'system' && (
-                <div className="w-full text-center my-4">
+                <div className="my-1.5 w-full text-center md:my-4">
                   <span className="font-mono text-xs text-zinc-600 tracking-[0.2em] uppercase">
                     [ {node.content} ]
                   </span>

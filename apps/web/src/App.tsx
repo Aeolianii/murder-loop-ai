@@ -165,7 +165,7 @@ export default function App() {
         onClose={handleClueModalClose}
       />
 
-      <div className="flex flex-col h-screen bg-[#08080a] overflow-hidden text-zinc-200">
+      <div className="relative flex h-[100svh] flex-col overflow-hidden bg-[#08080a] text-zinc-200 lg:h-screen">
       <Header
         time={state.time}
         location={state.location}
@@ -173,25 +173,26 @@ export default function App() {
       />
 
       {/* Mobile Sidebar Toggle */}
-      <div className="lg:hidden absolute top-3 right-20 z-50">
+      <div className="absolute right-3 top-3 z-50 lg:hidden">
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 bg-black/50 backdrop-blur rounded-lg border border-white/5 text-zinc-400 hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-black/55 text-zinc-300 backdrop-blur transition-colors hover:text-white"
+          aria-label={mobileMenuOpen ? '关闭情报面板' : '打开情报面板'}
         >
           {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </div>
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col min-w-0 border-r border-white/5 relative bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-zinc-900/10 via-[#08080a] to-[#08080a]">
+        <main className="relative flex min-w-0 flex-1 flex-col bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-zinc-900/10 via-[#08080a] to-[#08080a] lg:border-r lg:border-white/5">
           <StoryPanel log={state.storyLog} />
 
           <div className="relative">
             {/* Soft gradient fade for text going behind input */}
             <div className="absolute -top-12 left-0 right-0 h-12 bg-gradient-to-t from-[#0c0c0e] to-transparent pointer-events-none" />
             {state.phase === 'death' || (state.ending && state.phase !== 'loop_started') ? (
-              <div className="shrink-0 z-10 pb-10 pt-20 px-4 md:px-12 bg-gradient-to-t from-[#08080a] to-transparent">
+              <div className="z-10 shrink-0 bg-gradient-to-t from-[#08080a] to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-8 md:px-12 md:pb-10 md:pt-20">
                 <div className="max-w-2xl mx-auto text-center flex flex-col items-center gap-3">
                   <p className="text-red-400/80 font-serif text-lg tracking-wide">
                     {state.phase === 'death' ? '你死了。' : '这一轮结束了。'}
@@ -235,7 +236,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-              className="absolute inset-y-0 right-0 w-80 z-40 lg:hidden shadow-2xl bg-[#08080a]"
+              className="absolute inset-x-0 bottom-0 top-0 z-40 bg-[#08080a] shadow-2xl lg:hidden"
             >
                <Sidebar clues={state.clues} coordination={state.coordination} sidebar={state.sidebar} recap={state.recap} onClueSelect={handleClueSelect} readClues={readClues} />
             </motion.div>

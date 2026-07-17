@@ -23,9 +23,9 @@ export function Header({ time, location, onRestart }: HeaderProps) {
   };
 
   return (
-    <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-black/40 backdrop-blur-md sticky top-0 z-20">
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2 text-zinc-300 font-mono text-lg tracking-wider">
+    <header className="sticky top-0 z-20 flex items-center justify-between border-b border-white/5 bg-black/40 px-4 py-3 pr-16 backdrop-blur-md md:px-6 md:py-4 lg:pr-6">
+      <div className="flex min-w-0 items-center gap-4 md:gap-6">
+        <div className="flex items-center gap-2 font-mono text-base tracking-wider text-zinc-300 md:text-lg">
           <Clock className="w-4 h-4 text-zinc-500" />
           <motion.span
             key={time}
@@ -34,19 +34,19 @@ export function Header({ time, location, onRestart }: HeaderProps) {
             {time}
           </motion.span>
         </div>
-        <div className="h-4 w-px bg-white/10 hidden sm:block" />
-        <div className="hidden sm:flex items-center gap-2 text-zinc-400 font-sans text-sm">
+        <div className="hidden h-4 w-px bg-white/10 sm:block" />
+        <div className="hidden min-w-0 items-center gap-2 truncate font-sans text-sm text-zinc-400 sm:flex">
           <MapPin className="w-3.5 h-3.5" />
           {location}
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 md:gap-3">
         <VolumeControl />
         {onRestart && (
           <button
             type="button"
             onClick={handleRestartClick}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            className={`flex h-9 w-9 items-center justify-center rounded text-xs font-medium transition-colors md:h-auto md:w-auto md:gap-1.5 md:px-3 md:py-1.5 ${
               confirming
                 ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                 : 'text-zinc-500 hover:text-zinc-300 border border-transparent hover:border-white/10'
@@ -54,8 +54,8 @@ export function Header({ time, location, onRestart }: HeaderProps) {
             title="清除游戏上下文，重新开始"
             aria-label="重新开始游戏"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            {confirming ? '确认重置？' : '重新开始'}
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">{confirming ? '确认重置？' : '重新开始'}</span>
           </button>
         )}
       </div>

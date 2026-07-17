@@ -24,7 +24,7 @@ export const INITIAL_STATE: GameState = {
     {
       id: 'msg-0',
       type: 'system',
-      content: '系统初始化完成。循环载入。',
+      content: '你睁开眼，雨声又一次落在窗外。',
     },
     {
       id: 'msg-1',

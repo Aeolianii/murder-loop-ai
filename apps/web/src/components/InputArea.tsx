@@ -19,7 +19,7 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
     if (!textarea) return;
 
     textarea.style.height = 'auto';
-    textarea.style.height = input ? `${Math.min(textarea.scrollHeight, 112)}px` : '64px';
+    textarea.style.height = input ? `${Math.min(textarea.scrollHeight, 88)}px` : '44px';
     textarea.scrollTop = textarea.scrollHeight;
   }, [input]);
 
@@ -37,7 +37,7 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
   // Keyboard shortcut hint logic could go here
   
   return (
-    <div className="shrink-0 z-10 relative pb-10 pt-20 px-4 md:px-12 bg-gradient-to-t from-[#08080a] via-[#08080a] to-transparent">
+    <div className="relative z-10 shrink-0 bg-gradient-to-t from-[#08080a] via-[#08080a] to-transparent px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 md:px-12 md:pb-10 md:pt-20">
       <div className="max-w-2xl mx-auto">
         <AnimatePresence mode="wait">
           {confirmationText ? (
@@ -46,17 +46,17 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="border-l border-indigo-900/40 pl-5 py-2 flex flex-col sm:flex-row gap-6 items-start sm:items-end justify-between relative"
+              className="relative flex flex-col items-start justify-between gap-4 border-l border-indigo-900/40 py-2 pl-4 sm:flex-row sm:items-end sm:gap-6 md:pl-5"
             >
               <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-gradient-to-b from-transparent via-indigo-500/30 to-transparent"></div>
-              <div className="flex-1 flex gap-4 text-sm mt-1">
+              <div className="mt-1 flex flex-1 gap-3 text-sm md:gap-4">
                 <BrainCircuit className="w-5 h-5 text-indigo-500/60 shrink-0 mt-1" />
                 <div>
                   <div className="text-zinc-600 font-mono text-[10px] mb-2 uppercase tracking-[0.2em]">系统解析 // System Parsing</div>
                   <div className="text-[#c9c9c9] font-serif text-base tracking-wide leading-relaxed">{confirmationText}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-5 shrink-0 mb-1">
+              <div className="mb-1 flex shrink-0 items-center gap-4 self-end md:gap-5">
                 <button 
                   onClick={onCancelAction}
                   className="font-mono text-xs text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-widest relative group"
@@ -84,7 +84,7 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
               onSubmit={handleSubmit}
               className="relative group w-full"
             >
-              <div className="relative flex items-end justify-between transition-all duration-700 bg-gradient-to-r from-zinc-900/40 via-transparent to-transparent border-l-2 border-transparent group-focus-within:border-zinc-500/30 pl-6 py-3">
+              <div className="relative flex items-end justify-between border-l-2 border-transparent bg-gradient-to-r from-zinc-900/40 via-transparent to-transparent py-2 pl-4 transition-all duration-700 group-focus-within:border-zinc-500/30 md:py-3 md:pl-6">
                 
                 {/* Subtle prompt marker */}
                 <div className="absolute left-[-2px] top-1/2 -translate-y-1/2 w-[2px] h-0 bg-zinc-300 transition-all duration-700 group-focus-within:h-3/4"></div>
@@ -102,11 +102,11 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
                       handleSubmit(e);
                     }
                   }}
-                  className="flex-1 max-h-28 bg-transparent border-none outline-none resize-none font-serif text-[22px] md:text-3xl text-[#e2e2e2] placeholder:text-zinc-700/60 placeholder:font-serif py-2.5 md:py-3 transition-all duration-500 overflow-y-auto leading-[1.35] tracking-wide"
-                  style={{ minHeight: '64px' }}
+                  className="max-h-24 flex-1 resize-none overflow-y-auto border-none bg-transparent py-2 font-serif text-xl leading-[1.35] tracking-wide text-[#e2e2e2] outline-none transition-all duration-500 placeholder:font-serif placeholder:text-zinc-700/60 md:max-h-28 md:py-3 md:text-3xl"
+                  style={{ minHeight: '44px' }}
                 />
                 
-                <div className="flex items-center pl-4 shrink-0 transition-opacity duration-500 opacity-0 group-focus-within:opacity-100 md:opacity-100">
+                <div className="flex shrink-0 items-center pl-2 opacity-100 transition-opacity duration-500 md:pl-4">
                   <button
                     type="submit"
                     onPointerDown={(event) => {
@@ -115,7 +115,7 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
                     }}
                     onClick={(event) => event.preventDefault()}
                     disabled={!input.trim() || isParsing}
-                    className="w-12 h-12 rounded-full border border-zinc-800/50 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-800/30 disabled:opacity-30 disabled:hover:text-zinc-500 disabled:hover:border-zinc-800/50 disabled:hover:bg-transparent transition-all duration-500"
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-800/50 text-zinc-500 transition-all duration-500 hover:border-zinc-600 hover:bg-zinc-800/30 hover:text-zinc-200 disabled:opacity-30 disabled:hover:border-zinc-800/50 disabled:hover:bg-transparent disabled:hover:text-zinc-500 md:h-12 md:w-12"
                   >
                     {isParsing ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="font-serif text-lg tracking-widest ml-1">写</span>}
                   </button>

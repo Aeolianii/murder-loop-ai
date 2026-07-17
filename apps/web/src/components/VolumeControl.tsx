@@ -54,7 +54,7 @@ export function VolumeControl() {
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2 md:gap-3">
       <button
         onClick={toggleMute}
         className="text-zinc-500 hover:text-zinc-300 transition-colors"
@@ -63,7 +63,7 @@ export function VolumeControl() {
         {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
       </button>
 
-      <div className="flex items-center gap-1.5" title="背景音乐">
+      <div className="hidden items-center gap-1.5 sm:flex" title="背景音乐">
         <Music className="w-3 h-3 text-zinc-500" />
         <input
           type="range"
@@ -76,7 +76,7 @@ export function VolumeControl() {
         />
       </div>
 
-      <div className="flex items-center gap-1.5" title="互动音效">
+      <div className="hidden items-center gap-1.5 sm:flex" title="互动音效">
         <Zap className="w-3 h-3 text-zinc-500" />
         <input
           type="range"
