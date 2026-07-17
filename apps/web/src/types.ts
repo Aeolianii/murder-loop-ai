@@ -22,6 +22,7 @@ export type EndingReason =
   | 'police_arrived_with_evidence'
   | 'police_arrived_without_evidence'
   | 'escaped_without_evidence'
+  | 'phone_battery_depleted'
   | 'unknown';
 
 export type KillerStatus =
@@ -39,6 +40,13 @@ export interface StoryNode {
   type: 'narrative' | 'action_result' | 'system' | 'player_input';
   content: string;
   timestamp?: string; // e.g. "23:00"
+  recommendedActions?: Array<{
+    id: string;
+    label: string;
+    rationale: string;
+    intent?: string;
+    target?: string;
+  }>;
 }
 
 export interface Clue {

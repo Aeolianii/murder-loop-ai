@@ -28,6 +28,20 @@ function waitAction(): ActionPlan['actions'][number] {
   };
 }
 
+function communicateLinYueAction(raw: string): ActionPlan['actions'][number] {
+  return {
+    id: 'act-communicate-linyue',
+    raw,
+    intent: 'communicate',
+    target: 'linyue',
+    method: raw,
+    confidence: 1,
+    timeCost: 1,
+    noise: 0,
+    risk: 'low',
+  };
+}
+
 function addPackagePhoto(state: GameState) {
   state.room.package.state.photographed = true;
   state.clues.push({
@@ -105,5 +119,93 @@ function testDeadlineWithEvidenceAndDefenseUsesConvictionEnding() {
   assert.equal(result.state.phase, 'survived');
 }
 
+function testDeadlineWithLinYuePoliceAssistCanSurviveWithEvidenceAndDefense() {
+  const state = createInitialGameState();
+  state.minute = DEADLINE_MINUTE - 1;
+  state.room.front_door.state.barricaded = true;
+  state.room.window.state.locked = true;
+  state.linYuePhase = 'calling_police';
+  addPackagePhoto(state);
+
+  const result = applyPlayerActions(state, actionPlan([waitAction()]));
+
+  assert.equal(result.state.ending, 'escaped_with_evidence');
+  assert.equal(result.state.endingReason, 'deadline_survived_with_evidence');
+  assert.equal(result.state.phase, 'survived');
+}
+
 testDeadlineWithoutSurvivalConditionsUsesDeathEnding();
 testDeadlineWithEvidenceAndDefenseUsesConvictionEnding();
+testDeadlineWithLinYuePoliceAssistCanSurviveWithEvidenceAndDefense();
+
+function testPhoneBatteryDepletionUsesDeathEnding() {
+  const state = createInitialGameState();
+  state.phoneBattery = 1;
+  state.phoneFunctional = true;
+  state.room.phone.state.battery = 1;
+
+  const result = applyPlayerActions(state, actionPlan([waitAction()]));
+
+  assert.equal(result.state.ending, 'death');
+  assert.equal(result.state.endingReason, 'phone_battery_depleted');
+  assert.equal(result.state.phase, 'death');
+}
+
+testPhoneBatteryDepletionUsesDeathEnding();
+
+function testAskingLinYueAboutRetractedMessageKeepsDialogueOpen() {
+  const state = createInitialGameState();
+  state.linYuePhase = 'worried';
+
+  const result = applyPlayerActions(
+    state,
+    actionPlan([communicateLinYueAction('你刚才为什么撤回？那个包裹哪里不对劲？')]),
+  );
+
+  assert.equal(result.state.linYuePhase, 'calling_player');
+  assert.match(result.text, /不知道.*不对劲|不对劲.*不知道/);
+  assert.match(result.text, /上楼|上去/);
+}
+
+function testWarningLinYueNotToComeMakesHimAssistPolice() {
+  const state = createInitialGameState();
+  state.linYuePhase = 'worried';
+  state.room.package.state.photographed = true;
+
+  const result = applyPlayerActions(
+    state,
+    actionPlan([communicateLinYueAction('别上楼，不要靠近门口，留在楼下帮我报警，我把包裹照片发给你备份')]),
+  );
+
+  assert.equal(result.state.linYuePhase, 'calling_police');
+  assert.ok(result.state.clues.some((clue) => clue.id === 'linyue_has_photo'));
+  assert.match(result.text, /不上楼|不要上楼|楼下/);
+  assert.match(result.text, /报警|备份/);
+}
+
+function testIgnoringRetractedMessageMakesLinYueComeToApartment() {
+  const state = createInitialGameState();
+  state.linYuePhase = 'worried';
+
+  const result = applyPlayerActions(state, actionPlan([waitAction()]));
+
+  assert.equal(result.state.linYuePhase, 'coming_to_apartment');
+  assert.match(result.text, /林越/);
+  assert.match(result.text, /上楼|过来/);
+}
+
+function testLettingLinYueContinueTowardApartmentPutsHimInDanger() {
+  const state = createInitialGameState();
+  state.linYuePhase = 'coming_to_apartment';
+
+  const result = applyPlayerActions(state, actionPlan([waitAction()]));
+
+  assert.equal(result.state.linYuePhase, 'endangered');
+  assert.match(result.text, /林越/);
+  assert.match(result.text, /危险|失联|楼道/);
+}
+
+testAskingLinYueAboutRetractedMessageKeepsDialogueOpen();
+testWarningLinYueNotToComeMakesHimAssistPolice();
+testIgnoringRetractedMessageMakesLinYueComeToApartment();
+testLettingLinYueContinueTowardApartmentPutsHimInDanger();

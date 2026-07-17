@@ -1,4 +1,5 @@
 import type {
+  ClueRecord,
   ActionPlan,
   AmbientResolution,
   GameState,
@@ -8,6 +9,7 @@ import type {
   NpcReply,
   TurnResolution,
 } from '@murder-loop-ai/shared';
+import { createClueFromTemplate } from '@murder-loop-ai/content';
 import { chooseFallbackKillerStrategy } from '../killer/fallbackStrategy';
 import { applyKillerStrategy } from '../killer/applyKillerStrategy';
 import {
@@ -30,6 +32,8 @@ import { UIAdapterAgent } from '../agents/UIAdapterAgent';
 import { SidebarAgent } from '../agents/SidebarAgent';
 import { recordDeathMemory, recordTurnMemory } from '../memory/loopMemory';
 import { clearReviveProtection, hasReviveProtection } from './reviveProtection';
+import { resolveStoryNode } from '../storyNodes/resolveStoryNode';
+import type { StoryNodeResolution } from '../storyNodes/storyNodeTypes';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
 export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
@@ -88,6 +92,97 @@ function replaceLogEntry(
   const index = state.log.findIndex((entry) => entry.id === id);
   if (index < 0) return;
   state.log[index] = { ...state.log[index], ...patch };
+}
+
+function buildStoryNodeTurnResolution(
+  state: GameState,
+  plan: ActionPlan,
+  storyNode: StoryNodeResolution,
+): TurnResolution {
+  const finalState = structuredClone(state) as GameState;
+  const addedClues: ClueRecord[] = [];
+
+  finalState.minute += storyNode.timePassed;
+  finalState.threat = Math.max(0, Math.min(100, finalState.threat + storyNode.threatDelta));
+  if (typeof storyNode.stressDelta === 'number') {
+    finalState.player.stress = Math.max(0, Math.min(100, finalState.player.stress + storyNode.stressDelta));
+  }
+  if (storyNode.phase) {
+    finalState.phase = storyNode.phase;
+  }
+  storyNode.statePatch?.(finalState);
+
+  for (const clueId of storyNode.addedClueIds) {
+    if (finalState.clues.some((clue) => clue.id === clueId)) continue;
+    const clue = createClueFromTemplate(clueId, finalState.run, finalState.minute);
+    if (!clue) continue;
+    finalState.clues.push(clue);
+    addedClues.push(clue);
+  }
+
+  finalState.log = [
+    ...finalState.log,
+    {
+      id: `story-node-${storyNode.nodeId}-${finalState.run}-${finalState.minute}-${Math.random().toString(36).slice(2, 8)}`,
+      run: finalState.run,
+      minute: finalState.minute,
+      title: storyNode.title,
+      text: storyNode.text,
+      tone: storyNode.tone,
+      channel: 'action',
+      isAiNarration: false,
+    },
+  ];
+
+  const playerResult = {
+    title: storyNode.title,
+    text: storyNode.text,
+    tone: storyNode.tone,
+    addedClues,
+    timePassed: storyNode.timePassed,
+    threatDelta: storyNode.threatDelta,
+    events: [
+      {
+        kind: 'clue' as const,
+        subject: storyNode.nodeId,
+        summary: `剧情节点命中：${storyNode.title}`,
+        sensoryHints: [],
+        visibility: 'player' as const,
+      },
+    ],
+    state: finalState,
+  };
+  const killerStrategy: KillerStrategy = {
+    id: `story-node-skip-${storyNode.nodeId}`,
+    type: 'story_node_skipped',
+    title: '剧情节点短路',
+    rationale: '规则剧情节点已返回固定文本，本回合跳过 KillerAgent。',
+    visibleToPlayer: false,
+    risk: 'low',
+  };
+  const killerResult = {
+    title: '',
+    text: '',
+    tone: 'system' as const,
+    addedClues: [],
+    timePassed: 0,
+    threatDelta: 0,
+    events: [],
+    state: finalState,
+  };
+  const narration = { title: storyNode.title, text: storyNode.text };
+
+  return {
+    plan,
+    playerResult,
+    killerStrategy,
+    killerResult,
+    narration,
+    actionNarration: narration,
+    ambientNarration: { title: '', text: '' },
+    recommendedActions: storyNode.recommendedActions,
+    finalState,
+  };
 }
 
 // ============================================================================
@@ -311,6 +406,25 @@ export async function resolveTurnHarness(
   });
 
   ctx.plan = plan;
+
+  const storyNode = resolveStoryNode(ctx.state, plan);
+  if (storyNode) {
+    const resolution = buildStoryNodeTurnResolution(ctx.state, plan, storyNode);
+    if (startedWithReviveProtection) {
+      clearReviveProtection(resolution.finalState);
+    }
+    recordTurnMemory(resolution.finalState, {
+      playerInput: ctx.input,
+      summary: plan.summary,
+      title: storyNode.title,
+      text: storyNode.text,
+    });
+    await harness.dispatcher.runCommand('TurnCompleted', {
+      finalState: resolution.finalState,
+      moodSignal: undefined,
+    });
+    return resolution;
+  }
 
   // Step 1.5: 致命行为检测 — AI 或规则判定危及生命的行为直接死亡
   const fatalResult = null as null | { endingId: import('@murder-loop-ai/shared').EndingId; title: string; text: string };

@@ -220,6 +220,77 @@ async function testParserTimeCostCanAdvanceUpToFiveMinutes() {
   assert.equal(resolution.finalState.minute, startMinute + 5);
 }
 
+async function testStoryNodeShortCircuitsAfterParser() {
+  const state = createInitialGameState();
+  state.phoneBattery = 20;
+  state.phoneFunctional = true;
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-call',
+      raw: '打电话给林越',
+      summary: '用手机联系林越',
+      actions: [{
+        id: 'action-call',
+        raw: '打电话给林越',
+        intent: 'communicate',
+        target: 'phone',
+        method: '用手机联系林越',
+        confidence: 0.96,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.96,
+      warnings: [],
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, '打电话给林越', harness);
+  const traceEvents = harness.dispatcher.getTrace().map((entry) => entry.eventType);
+
+  assert.equal(resolution.playerResult.title, '手机快没电了');
+  assert.equal(resolution.playerResult.timePassed, 0);
+  assert.equal(resolution.finalState.minute, state.minute);
+  assert.ok(resolution.finalState.clues.some((clue) => clue.id === 'battery_critical'));
+  assert.ok(resolution.recommendedActions?.some((action) => action.label.includes('充电')));
+  assert.ok(!traceEvents.includes('ActionParsed'));
+  assert.ok(!traceEvents.includes('RulesApplied'));
+  assert.ok(!traceEvents.includes('NarrationRequested'));
+}
+
+async function testLinYueWarningAfterRetractionReachesPoliceAssistPhase() {
+  const state = createInitialGameState();
+  state.minute = 23 * 60 + 13;
+  state.linYuePhase = 'worried';
+  state.room.package.state.photographed = true;
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-warn-linyue',
+      raw: '追问林越为什么撤回，但让他别上楼，留在楼下报警并备份照片',
+      summary: '劝阻林越并让他协助报警',
+      actions: [{
+        id: 'action-warn-linyue',
+        raw: '追问林越为什么撤回，但让他别上楼，留在楼下报警并备份照片',
+        intent: 'communicate',
+        target: 'linyue',
+        method: '追问撤回消息，阻止林越上楼，让他留在楼下报警和备份照片',
+        confidence: 0.98,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.98,
+      warnings: [],
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, '追问并劝住林越', harness);
+
+  assert.equal(resolution.finalState.linYuePhase, 'calling_police');
+  assert.ok(resolution.finalState.clues.some((clue) => clue.id === 'linyue_has_photo'));
+  assert.ok(resolution.playerResult.text.includes('不上楼'));
+}
+
 await testResolveTurnHarnessReturnsTraceAndFinalState();
 await testMalformedParserAiOutputFallsBackToValidPlan();
 await testSelfCareDoesNotTriggerHardcodedDeath();
@@ -227,3 +298,5 @@ await testReviveProtectionBlocksImmediateForcedEntryDeath();
 await testReviveProtectionBlocksDeadlineDeathOnFirstTurn();
 await testParserTimeCostAdvancesOneMinuteForSimpleAction();
 await testParserTimeCostCanAdvanceUpToFiveMinutes();
+await testStoryNodeShortCircuitsAfterParser();
+await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();

@@ -88,6 +88,7 @@ export type EndingReason =
   | 'police_arrived_with_evidence'
   | 'police_arrived_without_evidence'
   | 'escaped_without_evidence'
+  | 'phone_battery_depleted'
   | 'unknown';
 
 export type ScoreRank = 'S' | 'A' | 'B' | 'C' | 'D' | 'F';
@@ -257,6 +258,14 @@ export interface RuleResult {
   state: GameState;
 }
 
+export interface RecommendedAction {
+  id: string;
+  label: string;
+  rationale: string;
+  intent?: ActionIntent;
+  target?: ActionTarget;
+}
+
 export interface CombatContext {
   playerWeapon: string | null;
   killerArmed: boolean;
@@ -364,6 +373,7 @@ export interface TurnResolution {
   narration: Narration;
   actionNarration?: Narration;
   ambientNarration?: Narration;
+  recommendedActions?: RecommendedAction[];
   finalState: GameState;
 }
 

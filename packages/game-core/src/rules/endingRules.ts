@@ -5,6 +5,8 @@ import { event } from '../narration/buildNarrationContext';
 export function hasConvictingEvidence(state: GameState): boolean {
   const hasPackagePhoto = state.clues.some(c => c.id === 'package_photo') || Boolean(state.room.package.state.photographed);
   const hasExternalRecord = state.clues.some(c => c.id === 'linyue_has_photo')
+    || state.linYuePhase === 'calling_police'
+    || state.linYuePhase === 'safe'
     || Boolean(state.room.phone.state.recording)
     || Boolean(state.room.package.state.backedUp)
     || state.clues.some(c => c.id === 'police_verified')

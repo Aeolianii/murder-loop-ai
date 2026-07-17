@@ -24,7 +24,7 @@ export const CLUE_ASSETS: Record<string, ClueAsset> = {
   police_verified: {
     imageUrl: new URL('../../../image/校验警方.png', import.meta.url).href,
   },
-  chen_probe: {
+  unknown_number_probe: {
     imageUrl: new URL('../../../image/陌生号码试探包裹.png', import.meta.url).href,
   },
 };

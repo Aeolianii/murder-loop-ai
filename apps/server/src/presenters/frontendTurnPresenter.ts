@@ -1,4 +1,4 @@
-import { minuteLabel, type GameState, type StoryLogEntry } from '@murder-loop-ai/shared';
+import { minuteLabel, type GameState, type RecommendedAction, type StoryLogEntry } from '@murder-loop-ai/shared';
 import type { createHarness } from '@murder-loop-ai/game-core';
 
 export interface FrontendStoryNode {
@@ -6,6 +6,7 @@ export interface FrontendStoryNode {
   type: 'narrative' | 'action_result' | 'system' | 'player_input';
   content: string;
   timestamp?: string;
+  recommendedActions?: RecommendedAction[];
 }
 
 export async function buildSidebarPayload(

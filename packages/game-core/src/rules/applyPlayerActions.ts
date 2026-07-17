@@ -70,6 +70,22 @@ function extractReplyText(raw: string) {
     .trim();
 }
 
+function includesAny(text: string, words: string[]) {
+  return words.some((word) => text.includes(word));
+}
+
+function isAskingAboutLinYueRetraction(text: string) {
+  return includesAny(text, ['撤回', '为什么', '包裹你别', '哪里不对', '怎么了', '说清楚']);
+}
+
+function isWarningLinYueNotToCome(text: string) {
+  return includesAny(text, ['别上楼', '不要上楼', '别过来', '不要过来', '别来', '别靠近', '留在楼下', '安全位置']);
+}
+
+function isAskingLinYueToAssistPolice(text: string) {
+  return includesAny(text, ['报警', '打110', '叫警察', '等警察', '备份', '留证', '录下来', '记录']);
+}
+
 function pushEntry(state: GameState, result: Omit<RuleResult, 'state'>) {
   const entry: StoryLogEntry = {
     id: `log-${state.run}-${state.minute}-${Math.random().toString(36).slice(2, 8)}`,
@@ -81,6 +97,23 @@ function pushEntry(state: GameState, result: Omit<RuleResult, 'state'>) {
       channel: result.tone === 'system' ? 'system' : 'action',
     };
   state.log.push(entry);
+}
+
+function advanceLinYueRiskIfIgnored(state: GameState, plan: ActionPlan, texts: string[]) {
+  const contactedLinYue = plan.actions.some((action) => action.intent === 'communicate' && action.target === 'linyue');
+  if (contactedLinYue) return;
+
+  if (state.linYuePhase === 'worried') {
+    state.linYuePhase = 'coming_to_apartment';
+    texts.push('林越没有再发消息。几分钟后，聊天框里只跳出一句：“你别怕，我上楼看看。”');
+    return;
+  }
+
+  if (state.linYuePhase === 'coming_to_apartment') {
+    state.linYuePhase = 'endangered';
+    state.threat = clamp(state.threat + 8);
+    texts.push('林越的头像停在“正在输入”，却迟迟没有新消息。楼道里传来一声被雨声吞掉的闷响，他可能已经进入危险。');
+  }
 }
 
 export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleResult {
@@ -145,15 +178,47 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
         break;
       case 'communicate':
         if (action.target === 'linyue') {
-          state.linYuePhase = state.evidencePhase === 'package_photographed' || state.evidencePhase === 'evidence_backed_up' || state.room.package.state.photographed ? 'received_photo' : 'worried';
+          const messageText = `${action.raw} ${action.method ?? ''}`;
+          const hasPhotoForLinYue = state.evidencePhase === 'package_photographed'
+            || state.evidencePhase === 'evidence_backed_up'
+            || Boolean(state.room.package.state.photographed)
+            || messageText.includes('照片')
+            || messageText.includes('拍');
+          const warnedNotToCome = isWarningLinYueNotToCome(messageText);
+          const askedToAssistPolice = isAskingLinYueToAssistPolice(messageText);
+          const askedAboutRetraction = isAskingAboutLinYueRetraction(messageText);
+
+          if (warnedNotToCome && askedToAssistPolice) {
+            state.linYuePhase = 'calling_police';
+          } else if (askedAboutRetraction && state.linYuePhase === 'worried') {
+            state.linYuePhase = 'calling_player';
+          } else if (messageText.includes('上来') || messageText.includes('来看看') || messageText.includes('你过来')) {
+            state.linYuePhase = 'coming_to_apartment';
+          } else {
+            state.linYuePhase = hasPhotoForLinYue ? 'received_photo' : 'worried';
+          }
           state.killerKnowledge.knowsPlayerContactedLinYue = action.noise > 0 && state.killerKnowledge.suspectsPlayerIsAlert;
-          if (state.linYuePhase === 'received_photo') addClue(state, addedClues, 'linyue_has_photo');
-          title = '林越收到消息';
-          texts.push('联系林越：照片/信息已发送；林越回复会在楼下报警，不上楼。');
+          if (hasPhotoForLinYue || state.linYuePhase === 'calling_police') addClue(state, addedClues, 'linyue_has_photo');
+          if (state.linYuePhase === 'calling_police') {
+            title = '林越被劝住';
+            tone = 'clue';
+            texts.push('联系林越：你明确让他不要上楼，也不要靠近门口。林越终于停下：“好，我不上楼。我在楼下安全的地方报警，也帮你备份照片和聊天记录。”');
+          } else if (state.linYuePhase === 'calling_player') {
+            title = '林越坦白怀疑';
+            tone = 'clue';
+            texts.push('追问林越：他隔了几秒才回。“我不知道那是什么，但它不对劲。我刚才想说别碰，又怕你害怕。我现在上去看看。”');
+          } else if (state.linYuePhase === 'coming_to_apartment') {
+            title = '林越准备上楼';
+            tone = 'threat';
+            texts.push('联系林越：他把你的话理解成需要当面确认。“你别开门，我上来看看。”这句话落下时，你意识到他正在靠近危险。');
+          } else {
+            title = '林越收到消息';
+            texts.push('联系林越：照片/信息已发送；林越回复会在楼下报警，不上楼。');
+          }
         } else if (action.target === 'chen_huaimin') {
           state.suspicion = clamp(state.suspicion + 10);
           state.killerKnowledge.suspectsPlayerIsAlert = true;
-          addClue(state, addedClues, 'chen_probe');
+          addClue(state, addedClues, 'unknown_number_probe');
           title = '房东在试探';
           tone = 'threat';
           const replyText = extractReplyText(action.raw);
@@ -163,7 +228,7 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
       case 'deceive':
         state.suspicion = clamp(state.suspicion + 6);
         state.killerKnowledge.suspectsPlayerIsAlert = true;
-        addClue(state, addedClues, 'chen_probe');
+        addClue(state, addedClues, 'unknown_number_probe');
         title = '假装不知道';
         tone = 'threat';
         texts.push('伪装无知：对外表现为刚醒、没处理包裹；陈怀民暂停追问，但疑心上升。');
@@ -349,10 +414,11 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
   }
 
   if (state.minute >= DEADLINE_MINUTE && !state.ending) {
-    const hasEvidence = state.clues.some(c => c.id === 'package_photo') &&
-      (state.clues.some(c => c.id === 'linyue_has_photo') || state.room.phone.state.recording || state.room.package.state.backedUp);
+    const hasEvidence = hasConvictingEvidence(state);
     const hasDefense = Boolean(state.room.front_door.state.barricaded) && Boolean(state.room.window.state.locked);
-    const policeTrusted = state.policePhase === 'real_police_en_route' || state.clues.some(c => c.id === 'police_verified');
+    const policeTrusted = state.policePhase === 'real_police_en_route'
+      || state.clues.some(c => c.id === 'police_verified')
+      || state.linYuePhase === 'calling_police';
 
     if (hasEvidence && hasDefense && policeTrusted) {
       return markEnding(state, 'escaped_with_evidence', 'deadline_survived_with_evidence', '23:47 没有吞掉我', '电子钟跳到 23:47 的时候，我几乎不敢眨眼。门外的人没有等到我开门，锁芯也没有再转动。录音、照片和官方回拨把这间屋子从孤岛变成了现场。我还活着，但我知道这不只是因为运气——是因为这一轮，我终于把证据送出了房间。');
@@ -389,6 +455,8 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
         ? 'killer_pressure'
         : 'investigating';
 
+  advanceLinYueRiskIfIgnored(state, plan, texts);
+
   const result = {
     title,
     text: texts.join('\n\n') || '我把这个想法压低到一次可执行的动作。房间仍旧安静，但安静本身也在变化。窗外的雨、门外的走廊、手机屏幕上没有发出的消息，都像在等我做下一个决定。',
@@ -418,6 +486,13 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
         state.room.phone.state.recording = false;
         state.room.phone.state.muted = true;
       }
+      return markEnding(
+        state,
+        'death',
+        'phone_battery_depleted',
+        '手机黑屏',
+        '屏幕最后闪了一下，红色电池图标熄灭。报警、录音、照片和外界的声音一起断掉。房间重新变成一座孤岛，而门外的人还在。',
+      );
     }
   }
   pushEntry(state, result);

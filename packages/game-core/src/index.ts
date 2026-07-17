@@ -11,6 +11,8 @@ export * from './memory/loopMemory';
 export * from './context/ContextBuilder';
 export * from './scoring/scoreRun';
 export * from './loop/resolveTurn';
+export * from './storyNodes/resolveStoryNode';
+export * from './storyNodes/storyNodeTypes';
 export * from './npc/fallbackNpc';
 export * from './ambient/advanceAmbientTurn';
 export * from './machines/gamePhaseMachine';

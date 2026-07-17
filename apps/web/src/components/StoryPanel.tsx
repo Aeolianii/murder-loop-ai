@@ -51,8 +51,21 @@ export function StoryPanel({ log }: StoryPanelProps) {
               )}
 
               {node.type === 'action_result' && (
-                <div className="pl-4 border-l border-zinc-700/50 mt-2">
+                <div className="pl-4 border-l border-zinc-700/50 mt-2 space-y-3">
                   <p className="font-mono text-xs leading-relaxed text-zinc-400 md:text-sm">{node.content}</p>
+                  {node.recommendedActions && node.recommendedActions.length > 0 && (
+                    <div className="space-y-2 border-t border-zinc-800/80 pt-3">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">下一步建议</div>
+                      <div className="space-y-2">
+                        {node.recommendedActions.map((action) => (
+                          <div key={action.id} className="rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                            <div className="text-xs leading-relaxed text-zinc-300 md:text-sm">{action.label}</div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-zinc-500 md:text-xs">{action.rationale}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

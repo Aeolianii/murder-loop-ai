@@ -3,7 +3,7 @@ import { ActionPlanSchema, KillerStrategySchema, NarrationSchema } from '@murder
 import { clueBook } from '@murder-loop-ai/content';
 import { buildKillerContext, buildParserContext, chooseFallbackKillerStrategy, createFallbackActionNarration, createFallbackAmbientNarration, createHarness, createInitialGameState, fallbackParseAction, resolveTurnHarness } from '@murder-loop-ai/game-core';
 import type { AiAdapters } from '@murder-loop-ai/game-core';
-import { minuteLabel, type ActionPlan, type GameState, type KillerStrategy, type Narration, type NarrationContext, type RuleResult, type StoryLogEntry } from '@murder-loop-ai/shared';
+import { minuteLabel, type ActionPlan, type GameState, type KillerStrategy, type Narration, type NarrationContext, type RecommendedAction, type RuleResult, type StoryLogEntry, type TurnResolution } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from '../ai/turnCoordinator';
 import { scoreNarrationWithDirector } from '../ai/directorScorer';
@@ -26,6 +26,27 @@ interface FrontendStoryNode {
   type: 'narrative' | 'action_result' | 'system' | 'player_input';
   content: string;
   timestamp?: string;
+  recommendedActions?: RecommendedAction[];
+}
+
+function attachRecommendedActions(
+  nodes: FrontendStoryNode[],
+  resolution: TurnResolution,
+): FrontendStoryNode[] {
+  if (!resolution.recommendedActions?.length) return nodes;
+  let index = -1;
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    if (nodes[i].type === 'action_result') {
+      index = i;
+      break;
+    }
+  }
+  if (index < 0) return nodes;
+  return nodes.map((node, nodeIndex) =>
+    nodeIndex === index
+      ? { ...node, recommendedActions: resolution.recommendedActions }
+      : node
+  );
 }
 
 function toFrontendNode(entry: StoryLogEntry): FrontendStoryNode {
@@ -298,6 +319,17 @@ export async function frontendAdapterRoute(app: FastifyInstance, options: Fronte
       resolution.ambientNarration,
     );
     const newNodes = finalState.log.slice(beforeLogLength).map(toFrontendNode);
+    const storyLog = attachRecommendedActions(
+      [
+        {
+          id: `input-${Date.now()}`,
+          type: 'player_input',
+          content: actionText,
+        },
+        ...newNodes,
+      ],
+      resolution,
+    );
     const endingEntry = finalState.ending ? finalState.log[finalState.log.length - 1] : null;
     const trace = harness.dispatcher.getTrace().map(e => ({
       taskId: e.eventType,
@@ -318,14 +350,7 @@ export async function frontendAdapterRoute(app: FastifyInstance, options: Fronte
         description: clue.detail,
         status: index === finalState.clues.length - 1 ? 'new' : 'known',
       })),
-      storyLog: [
-        {
-          id: `input-${Date.now()}`,
-          type: 'player_input',
-          content: actionText,
-        },
-        ...newNodes,
-      ] satisfies FrontendStoryNode[],
+      storyLog: storyLog satisfies FrontendStoryNode[],
       actionConfirmation: null,
       ending: finalState.ending,
       deathTitle: finalState.phase === 'death' ? endingEntry?.title ?? '23:47' : null,

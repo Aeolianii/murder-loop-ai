@@ -391,6 +391,26 @@ function addTurnDynamicClues(resolution: TurnResolution, visibleEntries: StoryLo
   ], visibleFactCorpus);
 }
 
+function attachRecommendedActions(
+  nodes: FrontendStoryNode[],
+  resolution: TurnResolution,
+): FrontendStoryNode[] {
+  if (!resolution.recommendedActions?.length) return nodes;
+  let index = -1;
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    if (nodes[i].type === 'action_result') {
+      index = i;
+      break;
+    }
+  }
+  if (index < 0) return nodes;
+  return nodes.map((node, nodeIndex) =>
+    nodeIndex === index
+      ? { ...node, recommendedActions: resolution.recommendedActions }
+      : node
+  );
+}
+
 // ============================================================================
 // 路由
 // ============================================================================
@@ -471,6 +491,14 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const agentTrace = harness.dispatcher.getAgentTrace();
     const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
 
+    const storyLog = attachRecommendedActions(
+      [
+        { id: `input-${Date.now()}`, type: 'player_input', content: input },
+        ...visibleEntries.map(toFrontendNode),
+      ],
+      resolution,
+    );
+
     return {
       recap,
       coreState: resolution.finalState, time: minuteLabel(resolution.finalState.minute),
@@ -480,10 +508,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       deathTitle: resolution.finalState.phase === 'death' ? endingEntry?.title ?? '23:47' : null,
       deathSummary: resolution.finalState.phase === 'death' ? endingEntry?.text ?? null : null,
       deathMethod: null, score: resolution.finalState.score,
-      storyLog: [
-        { id: `input-${Date.now()}`, type: 'player_input', content: input },
-        ...visibleEntries.map(toFrontendNode),
-      ] satisfies FrontendStoryNode[],
+      storyLog: storyLog satisfies FrontendStoryNode[],
       turn: { plan: resolution.plan, killerStrategy: resolution.killerStrategy, actionNarration: resolution.actionNarration ?? resolution.narration, ambientNarration: resolution.ambientNarration ?? null },
       agentTrace,
       coordination: { warnings: [...routeWarnings, ...trace.flatMap(t => t.warnings)], trace, agentTiming, judgements: routeJudgements },
