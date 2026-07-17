@@ -346,6 +346,62 @@ async function testResolveTurnHarnessPersistsSyncedWorldState() {
   assert.equal(state.world.events.length, 1);
 }
 
+async function testResolveTurnHarnessAppliesPlayerWorldInputs() {
+  const state = createInitialGameState();
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-share-photo',
+      raw: 'photograph the package and send the package photo to Lin Yue',
+      summary: 'Photograph the package and send the photo to Lin Yue',
+      actions: [
+        {
+          id: 'action-photo-package',
+          raw: 'photograph the package',
+          intent: 'preserve_evidence',
+          target: 'package',
+          method: 'take a clear photo of the package',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+        {
+          id: 'action-send-linyue',
+          raw: 'send the package photo to Lin Yue',
+          intent: 'communicate',
+          target: 'linyue',
+          method: 'send the package photo to Lin Yue',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+      ],
+      confidence: 0.98,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-wait',
+      type: 'wait_for_fatigue',
+      title: 'Wait outside',
+      rationale: 'Keep the test focused on player world inputs',
+      visibleToPlayer: false,
+      risk: 'low',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, 'share the package photo with Lin Yue', harness);
+  const world = resolution.finalState.world;
+
+  assert.ok(world);
+  assert.ok(world.events.some((event) => event.id.startsWith('input.player_photographed_package')));
+  assert.ok(world.events.some((event) => event.id.startsWith('input.player_sent_photo_to_linyue')));
+  assert.equal(world.objects.package_photo.flags.exists, true);
+  assert.equal(world.objects.package_photo.flags.sharedWithLinYue, true);
+  assert.equal(world.knowledge.lin_yue.facts.package_photo.source, 'message');
+  assert.equal(state.world, undefined);
+}
+
 await testResolveTurnHarnessReturnsTraceAndFinalState();
 await testMalformedParserAiOutputFallsBackToValidPlan();
 await testSelfCareDoesNotTriggerHardcodedDeath();
@@ -356,3 +412,4 @@ await testParserTimeCostCanAdvanceUpToFiveMinutes();
 await testStoryNodeShortCircuitsAfterParser();
 await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();
 await testResolveTurnHarnessPersistsSyncedWorldState();
+await testResolveTurnHarnessAppliesPlayerWorldInputs();

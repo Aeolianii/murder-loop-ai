@@ -35,6 +35,7 @@ import { clearReviveProtection, hasReviveProtection } from './reviveProtection';
 import { resolveStoryNode } from '../storyNodes/resolveStoryNode';
 import type { StoryNodeResolution } from '../storyNodes/storyNodeTypes';
 import { ensureWorldState } from '../world/syncGameWorld';
+import { applyWorldInputs, buildWorldInputsFromPlayerPlan } from '../world/worldInputs';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
 export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
@@ -184,6 +185,15 @@ function buildStoryNodeTurnResolution(
     recommendedActions: storyNode.recommendedActions,
     finalState,
   };
+}
+
+function applyPlayerPlanToWorldState(state: GameState, plan: ActionPlan): GameState {
+  const world = ensureWorldState(state);
+  const inputs = buildWorldInputsFromPlayerPlan(plan, world);
+  if (inputs.length === 0) {
+    return { ...state, world };
+  }
+  return { ...state, world: applyWorldInputs(world, inputs) };
 }
 
 // ============================================================================
@@ -407,6 +417,7 @@ export async function resolveTurnHarness(
   });
 
   ctx.plan = plan;
+  ctx.state = applyPlayerPlanToWorldState(ctx.state, plan);
 
   const storyNode = resolveStoryNode(ctx.state, plan);
   if (storyNode) {
