@@ -1,4 +1,4 @@
-import type { WorldState } from './worldTypes';
+import type { WorldEvent, WorldState } from './worldTypes';
 
 export type GamePhase =
   | 'intro'
@@ -314,6 +314,8 @@ export interface NarrationContext {
   playerSituation: string;
   /** Structured memory visible to narration only; rules and endings must ignore it. */
   memorySummary?: string[];
+  /** Confirmed Behavior Network events visible to narration only; these are read-only facts. */
+  confirmedWorldEvents?: WorldEvent[];
   /** Selected world facts for this turn. These are context only, not rule authority. */
   worldInfo?: Array<{ id: string; title: string; content: string; tags: string[]; priority: number }>;
   forbiddenFacts: string[];

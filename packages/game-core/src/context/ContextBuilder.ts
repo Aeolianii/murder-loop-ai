@@ -137,8 +137,12 @@ export function buildNarratorContext(input: {
     input.playerActionSummary,
     input.playerInput,
   );
+  const confirmedWorldEvents = input.state.world?.pendingNarration.length
+    ? input.state.world.pendingNarration
+    : input.state.world?.events.slice(-8);
   return {
     ...context,
+    confirmedWorldEvents,
     worldInfo: selectWorldInfoCards({
       agent: 'narrator',
       input: input.playerInput ?? input.playerActionSummary,
@@ -149,6 +153,7 @@ export function buildNarratorContext(input: {
     forbiddenFacts: [
       ...context.forbiddenFacts,
       'Narrator may use memorySummary for continuity but must not decide endings, deaths, arrests, or rule outcomes.',
+      'Narrator may describe confirmedWorldEvents but must not add facts, move characters, resolve conflicts, or write world state.',
     ],
   };
 }

@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import type { RuleEvent, RuleResult } from '@murder-loop-ai/shared';
 import type { AgentTraceEntryContract } from '@murder-loop-ai/ai-contracts';
 import { createInitialGameState } from '../state/createInitialState';
+import { createInitialWorldState } from '../world/worldSimulator';
 import {
   buildDirectorContext,
   buildKillerContext,
@@ -130,6 +131,36 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   assert(context.worldInfo?.some((card) => card.id === 'object.package'));
   assert(context.worldInfo?.some((card) => card.id === 'rule.narrator_no_rule_change'));
   assert(context.forbiddenFacts.some((line) => line.includes('must not decide endings')));
+}
+
+{
+  const state = createInitialGameState();
+  state.world = createInitialWorldState();
+  state.world.pendingNarration = [{
+    id: 'conflict.chen_intercepts_linyue',
+    minute: state.minute + 1,
+    type: 'conflict',
+    actors: ['chen_huaimin', 'lin_yue'],
+    location: 'corridor_5f',
+    facts: ['chen_intercepts_linyue', 'linyue_has_external_evidence'],
+    visibility: 'player',
+    effects: [],
+    narrationHint: 'Narrate only the confirmed corridor encounter.',
+  }];
+  const playerResult = ruleResult([event('package_opened', 'player')], state);
+  const killerResult = ruleResult([event('knock_heard', 'player')], state);
+
+  const context = buildNarratorContext({
+    state,
+    playerResult,
+    killerResult,
+    playerActionSummary: 'send the photo to Lin Yue',
+  });
+
+  assert.equal(context.confirmedWorldEvents?.length, 1);
+  assert.equal(context.confirmedWorldEvents?.[0].id, 'conflict.chen_intercepts_linyue');
+  assert.deepEqual(context.confirmedWorldEvents?.[0].facts, ['chen_intercepts_linyue', 'linyue_has_external_evidence']);
+  assert(context.forbiddenFacts.some((line) => line.includes('confirmedWorldEvents')));
 }
 
 {
