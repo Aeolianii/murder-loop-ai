@@ -5,6 +5,8 @@ import { freshFrontendState, loadFrontendState, persistFrontendState, resetFront
 import { applyHarnessTurnResponse, beginHarnessTurn, rewindFrontendStateFromResponse } from '../turnViewModel';
 import type { GameState } from '../types';
 
+const WORLD_TICK_SWITCH_KEY = 'murder-loop.worldTickEnabled';
+
 let stateQueue = Promise.resolve();
 
 function enqueueHarnessRequest<T>(work: () => Promise<T>) {
@@ -19,6 +21,8 @@ interface GameStore {
   inputBusy: boolean;
   serverStatus: 'unknown' | 'online' | 'fallback';
   lastTurnDebug: unknown | null;
+  worldTickEnabled: boolean;
+  setWorldTickEnabled: (enabled: boolean) => void;
   submitAction: (text: string) => Promise<HarnessTurnResponse | null>;
   rewind: () => Promise<HarnessTurnResponse | null>;
   reset: () => void;
@@ -31,12 +35,27 @@ function setAndPersist(set: (partial: Partial<GameStore>) => void, frontendState
   set({ frontendState });
 }
 
+function loadWorldTickEnabled() {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(WORLD_TICK_SWITCH_KEY) === 'true';
+}
+
+function persistWorldTickEnabled(enabled: boolean) {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(WORLD_TICK_SWITCH_KEY, String(enabled));
+}
+
 export const useGameStore = create<GameStore>((set, get) => ({
   frontendState: loadFrontendState(),
   busy: false,
   inputBusy: false,
   serverStatus: 'unknown',
   lastTurnDebug: null,
+  worldTickEnabled: loadWorldTickEnabled(),
+  setWorldTickEnabled: (enabled) => {
+    persistWorldTickEnabled(enabled);
+    set({ worldTickEnabled: enabled });
+  },
   submitAction: async (text) => {
     const input = text.trim();
     const current = get().frontendState;
@@ -46,7 +65,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ frontendState: pendingState, busy: true, inputBusy: true, lastTurnDebug: null });
 
     try {
-      const result = await enqueueHarnessRequest(() => postHarnessTurn(input, current.coreState));
+      const result = await enqueueHarnessRequest(() => postHarnessTurn(input, current.coreState, {
+        advanceWorldTick: get().worldTickEnabled,
+      }));
       const nextState = applyHarnessTurnResponse(pendingState, result);
       setAndPersist(set, nextState);
       set({ serverStatus: 'online', lastTurnDebug: result });
@@ -86,6 +107,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       inputBusy: false,
       serverStatus: 'unknown',
       lastTurnDebug: null,
+      worldTickEnabled: get().worldTickEnabled,
     });
   },
   clearSave: () => {
@@ -97,6 +119,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       inputBusy: false,
       serverStatus: 'unknown',
       lastTurnDebug: null,
+      worldTickEnabled: get().worldTickEnabled,
     });
   },
   setFrontendState: (frontendState) => setAndPersist(set, frontendState),

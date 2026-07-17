@@ -41,6 +41,8 @@ export default function App() {
   const rewind = useGameStore(store => store.rewind);
   const reset = useGameStore(store => store.reset);
   const setFrontendState = useGameStore(store => store.setFrontendState);
+  const worldTickEnabled = useGameStore(store => store.worldTickEnabled);
+  const setWorldTickEnabled = useGameStore(store => store.setWorldTickEnabled);
   const [showCinematic, setShowCinematic] = useState(() => shouldShowIntroCinematic(useGameStore.getState().frontendState));
   const [endingCinematic, setEndingCinematic] = useState<EndingCinematicPayload | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -170,6 +172,8 @@ export default function App() {
         time={state.time}
         location={state.location}
         onRestart={handleRestart}
+        worldTickEnabled={worldTickEnabled}
+        onWorldTickToggle={setWorldTickEnabled}
       />
 
       {/* Mobile Sidebar Toggle */}
