@@ -1,0 +1,39 @@
+{
+  "name": "@murder-loop-ai/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@murder-loop-ai/ai-contracts": "0.1.0",
+    "@murder-loop-ai/content": "0.1.0",
+    "@murder-loop-ai/game-core": "0.1.0",
+    "@murder-loop-ai/shared": "0.1.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^4.3.4",
+    "framer-motion": "^12.0.0",
+    "howler": "^2.2.4",
+    "lucide-react": "^0.468.0",
+    "motion": "^12.23.24",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^4.1.14",
+    "vite": "^6.0.5",
+    "xstate": "^5.24.0",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "@types/howler": "^2.2.13",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "fluent-ffmpeg": "^2.1.3",
+    "typescript": "^5.6.3"
+  }
+}

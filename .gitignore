@@ -1,0 +1,5 @@
+node_modules/
+apps/server/.env
+audio set/
+image/
+apps/web/public/audio/

@@ -1,0 +1,21 @@
+{
+  "name": "@murder-loop-ai/game-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/memory/loopMemory.test.ts && tsx src/context/ContextBuilder.test.ts && tsx src/events/HarnessDispatcher.test.ts && tsx src/storyNodes/resolveStoryNode.test.ts && tsx src/loop/resolveTurnHarness.test.ts && tsx src/agents/SidebarAgent.test.ts && tsx src/npc/fallbackNpc.test.ts && tsx src/killer/applyKillerStrategy.test.ts && tsx src/killer/fallbackStrategy.test.ts && tsx src/killer/knowledge.test.ts && tsx src/rules/policeArrival.test.ts && tsx src/rules/applyPlayerActions.test.ts && tsx src/scoring/scoreRun.test.ts && tsx src/world/worldSimulator.test.ts && tsx src/world/worldInputs.test.ts && tsx src/world/syncGameWorld.test.ts"
+  },
+  "dependencies": {
+    "@murder-loop-ai/shared": "0.1.0",
+    "@murder-loop-ai/ai-contracts": "0.1.0",
+    "@murder-loop-ai/content": "0.1.0",
+    "xstate": "^5.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "murder-loop-ai",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:web": "npm run dev -w @murder-loop-ai/web",
+    "dev:server": "npm run dev -w @murder-loop-ai/server",
+    "build": "npm run build -ws --if-present",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "lint": "npm run lint -ws --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.7"
+  }
+}
