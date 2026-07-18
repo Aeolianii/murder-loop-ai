@@ -9,6 +9,7 @@ export type {
   KnowledgeState,
   LocationId,
   LocationState,
+  NpcLastPlan,
   ObjectId,
   ObjectState,
   WorldEvent,

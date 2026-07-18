@@ -39,6 +39,8 @@ import type { StoryNodeResolution } from '../storyNodes/storyNodeTypes';
 import { ensureWorldState } from '../world/syncGameWorld';
 import { applyWorldInputs, buildWorldInputsFromPlayerPlan } from '../world/worldInputs';
 import { advanceWorldTick } from '../world/worldSimulator';
+import type { NpcAdapter } from '../world/npcTypes';
+import { calculateTurnTime } from '../rules/applyPlayerActions';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
 export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
@@ -86,10 +88,12 @@ export interface AiAdapters {
     input: string,
     state: GameState,
   ) => Promise<NpcReply>;
+  npcAdapter?: NpcAdapter;
 }
 
 export interface HarnessOptions {
   advanceWorldTick?: boolean;
+  npcAdapter?: NpcAdapter;
 }
 
 function replaceLogEntry(
@@ -194,23 +198,28 @@ function buildStoryNodeTurnResolution(
   };
 }
 
-function applyPlayerPlanToWorldState(
+async function applyPlayerPlanToWorldState(
   state: GameState,
   plan: ActionPlan,
   shouldAdvanceWorldTick = false,
-): { state: GameState; worldTickTrace: WorldEvent[] } {
+  npcAdapter?: NpcAdapter,
+): Promise<{ state: GameState; worldTickTrace: WorldEvent[]; interrupted?: WorldEvent }> {
   let world = ensureWorldState(state);
   const inputs = buildWorldInputsFromPlayerPlan(plan, world);
-  if (inputs.length > 0) {
-    world = applyWorldInputs(world, inputs);
-  }
+  if (inputs.length > 0) world = applyWorldInputs(world, inputs);
   let worldTickTrace: WorldEvent[] = [];
+  let interrupted: WorldEvent | undefined;
   if (shouldAdvanceWorldTick) {
-    const beforeTickEventCount = world.events.length;
-    world = advanceWorldTick(world);
-    worldTickTrace = world.events.slice(beforeTickEventCount);
+    const totalMinutes = calculateTurnTime(plan.actions);
+    for (let i = 0; i < totalMinutes && !interrupted; i++) {
+      const beforeCount = world.events.length;
+      world = await advanceWorldTick(world, npcAdapter);
+      const newEvents = world.events.slice(beforeCount);
+      worldTickTrace.push(...newEvents);
+      interrupted = newEvents.find((e) => e.type === 'ending' || e.type === 'threat');
+    }
   }
-  return { state: { ...state, world }, worldTickTrace };
+  return { state: { ...state, world }, worldTickTrace, interrupted };
 }
 
 function consumePendingWorldNarration(state: GameState, confirmedWorldEvents?: WorldEvent[]): GameState {
@@ -538,6 +547,7 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
     narrationAiUsage,
     options: {
       advanceWorldTick: Boolean(options.advanceWorldTick),
+      npcAdapter: options.npcAdapter,
     },
   };
 }
@@ -570,7 +580,7 @@ export async function resolveTurnHarness(
   });
 
   ctx.plan = plan;
-  const worldUpdate = applyPlayerPlanToWorldState(ctx.state, plan, harness.options.advanceWorldTick);
+  const worldUpdate = await applyPlayerPlanToWorldState(ctx.state, plan, harness.options.advanceWorldTick, harness.options.npcAdapter);
   ctx.state = worldUpdate.state;
   ctx.worldTickTrace = worldUpdate.worldTickTrace;
 

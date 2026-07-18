@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { ActionPlan } from '@murder-loop-ai/shared';
-import { advanceWorldTick, createInitialWorldState } from './worldSimulator';
+import { advanceWorldTickSync as advanceWorldTick, createInitialWorldState } from './worldSimulator';
 import {
   applyWorldInputs,
   buildWorldInputsFromPlayerPlan,

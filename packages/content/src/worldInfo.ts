@@ -184,7 +184,7 @@ const reviewedCardContent: Record<string, { title?: string; content: string }> =
   },
   'npc.linYue': {
     title: '林越',
-    content: '林越是主角的前男友，也是外部求救和证据备份角色，不是凶手。他能协助报警、保存照片、观察楼下，但行动不当会有风险。',
+    content: '林越是青荷公寓的维修工，陈怀民的同事，也是外部求救和证据备份角色，不是凶手。他能协助报警、保存照片、观察楼下，但行动不当会有风险。',
   },
   'npc.chenHuaimin': {
     title: '陈怀民',
@@ -193,6 +193,14 @@ const reviewedCardContent: Record<string, { title?: string; content: string }> =
   'npc.police': {
     title: '真警察',
     content: '真警察是外部权威，但不是万能按钮。响应速度和可信度取决于玩家证据与叙述质量。',
+  },
+  'npc.liWentao': {
+    title: '李汶涛（前租客/已死）',
+    content: '李汶涛是前青荷公寓403住户，组织的前财务人员。他在发现组织内幕后寄出了包裹、设置了定时报警、给林越留了警告。他在一周前被处理，但他留下的证据链还在。',
+  },
+  'npc.zhaoHongyuan': {
+    title: '赵鸿远（幕后）',
+    content: '赵鸿远是青荷公寓的产权代理人，实为洗钱网络的控制者。他从不亲自出现在楼里，命令通过电话和陈怀民传达。他的信息延迟——需要下属汇报后才能反应——是玩家循环优势的关键。',
   },
 };
 

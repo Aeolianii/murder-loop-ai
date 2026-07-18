@@ -24,7 +24,7 @@ function clamp(value: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value));
 }
 
-function calculateTurnTime(actions: ActionPlan['actions']) {
+export function calculateTurnTime(actions: ActionPlan['actions']) {
   if (actions.length === 0) return 1;
   const onlyWaiting = actions.every((action) => action.intent === 'wait');
   if (onlyWaiting) return 1;

@@ -13,7 +13,7 @@ function addGoal(world: WorldState, characterId: keyof WorldState['characters'],
 function syncClockAndThreat(state: GameState, world: WorldState) {
   world.run = state.run;
   world.minute = state.minute;
-  world.threat = state.threat;
+  world.threat = Math.max(state.threat, world.threat);
 }
 
 function syncEvidence(state: GameState, world: WorldState) {

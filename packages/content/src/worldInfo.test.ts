@@ -14,7 +14,7 @@ import { getWorldInfoCards, selectWorldInfoCards } from './worldInfo';
   assert(!cards.some((card) => card.id === 'rule.evidence_backup'));
   assert(cards.find((card) => card.id === 'object.phone')?.content.includes('手机可用于拍照'));
   assert(cards.find((card) => card.id === 'clue.package_photo')?.content.includes('消耗一定电量'));
-  assert(cards.find((card) => card.id === 'npc.linYue')?.content.includes('主角的前男友'));
+  assert(cards.find((card) => card.id === 'npc.linYue')?.content.includes('青荷公寓的维修工'));
 }
 
 {

@@ -108,6 +108,7 @@ export const storyNodes: StoryNodeDefinition[] = [
     resolve: (state, plan) => {
       if (!isInWindow(state, 23 * 60 + 30, 23 * 60 + 43)) return null;
       if (state.policePhase === 'not_contacted') return null;
+      if (state.policePhase === 'verifying_report' || state.policePhase === 'real_police_en_route' || state.policePhase === 'arrived') return null;
       if (hasClue(state, 'police_verified')) return null;
       if (hasClue(state, 'false_police_overknows')) return null;
       if (!state.killerKnowledge.knowsPoliceCalled && state.threat < 45) return null;
@@ -144,7 +145,7 @@ export const storyNodes: StoryNodeDefinition[] = [
         threatDelta: 8,
         phase: 'false_police_arrived',
         statePatch: (nextState) => {
-          nextState.policePhase = 'misled';
+          (nextState as unknown as Record<string, unknown>).policeTrustDamaged = true;
         },
       };
     },

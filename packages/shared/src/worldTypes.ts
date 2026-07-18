@@ -45,6 +45,15 @@ export interface CharacterState {
   suspicion: number;
   stress: number;
   visibility: 'hidden' | 'partially_visible' | 'visible';
+  lastPlan?: NpcLastPlan | null;
+}
+
+export interface NpcLastPlan {
+  tick: number;
+  intent: string;
+  attentionWeights: Record<string, number>;
+  tasks: Array<{ action: string; target: string; reason: string; priority: number; precondition?: string }>;
+  destination?: LocationId;
 }
 
 export type KnowledgeSource = 'seen' | 'heard' | 'message' | 'inferred' | 'lied_by_other' | 'memory';

@@ -83,7 +83,7 @@ export function fallbackParseAction(input: string): ActionPlan {
     actions.push(createAction(raw, 'preserve_evidence', 'social_media', '将照片发布到社交平台留证并求证', 0.84, 2, 0, 'medium'));
   }
 
-  if (includesAny(text, ['林越', '前男友', '发给他', '让他报警', '让他在楼下', '别上楼', '不要上楼', '短信'])) {
+  if (includesAny(text, ['林越', '维修工', '发给他', '让他报警', '让他在楼下', '别上楼', '不要上楼', '短信'])) {
     actions.push(createAction(raw, 'communicate', 'linyue', '联系林越并传递外部任务', 0.88, 2, 0, 'medium'));
   }
 

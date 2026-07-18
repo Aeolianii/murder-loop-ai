@@ -25,9 +25,8 @@ export function projectKillerVisibleState(state: GameState) {
     phase: state.phase,
     threat: state.threat,
     killerPhase: state.killerPhase,
-    policePhase: state.policePhase,
+    policeActive: state.policePhase !== 'not_contacted',
     linYuePhase: state.killerKnowledge.knowsPlayerContactedLinYue ? state.linYuePhase : 'unknown',
-    minutesToDeadline: Math.max(0, DEADLINE_MINUTE - state.minute),
     knowledge: state.killerKnowledge,
   };
 }

@@ -10,6 +10,8 @@ import type {
   WorldEvent,
   WorldState,
 } from './worldTypes';
+import { NpcCoordinator } from './npcCoordinator';
+import type { NpcAdapter } from './npcTypes';
 
 function character(
   id: CharacterId,
@@ -349,16 +351,25 @@ function applyEvents(state: WorldState, events: WorldEvent[]) {
   }
 }
 
-export function advanceWorldTick(current: WorldState): WorldState {
+export async function advanceWorldTick(current: WorldState, npcAdapter?: NpcAdapter): Promise<WorldState> {
   const state = structuredClone(current) as WorldState;
   state.minute += 1;
   state.pendingNarration = [];
   state.affectedCharacters = [];
+  applyEvents(state, movementEvents(state));
+  applyEvents(state, detectWorldEvents(state));
+  const coordinator = new NpcCoordinator(npcAdapter ?? null);
+  return coordinator.runTick(state);
+}
 
+export function advanceWorldTickSync(current: WorldState): WorldState {
+  const state = structuredClone(current) as WorldState;
+  state.minute += 1;
+  state.pendingNarration = [];
+  state.affectedCharacters = [];
   applyEvents(state, movementEvents(state));
   applyEvents(state, detectWorldEvents(state));
   replanAffectedCharacters(state, state.affectedCharacters);
-
   return state;
 }
 

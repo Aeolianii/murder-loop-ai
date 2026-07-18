@@ -97,8 +97,9 @@ function buildNpcStatus(state: GameState): SidebarPayload['npcStatus'] {
   result.push({ name: '陈怀民', status: state.killerPhase, risk: chenRisk });
 
   // 警察
-  const policeRisk = state.policePhase === 'misled' ? 'danger' as const
+  const policeRisk = (state as unknown as Record<string, unknown>).policeTrustDamaged ? 'danger' as const
     : ['real_police_en_route', 'arrived'].includes(state.policePhase) ? 'safe' as const
+    : state.policePhase === 'misled' ? 'danger' as const
     : 'warning' as const;
   if (state.policePhase !== 'not_contacted') {
     result.push({ name: '警方', status: state.policePhase, risk: policeRisk });

@@ -39,8 +39,8 @@ describe('fallbackParseAction - 拍照 vs 录音 distinction', () => {
 });
 
 describe('fallbackParseAction - 复合动作分解', () => {
-  test('给包裹拍照发给前男友 → preserve_evidence + communicate/linyue', () => {
-    const result = fallbackParseAction('我给包裹拍了照片，发送给前男友');
+  test('给包裹拍照发给林越 → preserve_evidence + communicate/linyue', () => {
+    const result = fallbackParseAction('我给包裹拍了照片，发送给林越');
     expect(result.actions.some(a => a.intent === 'preserve_evidence')).toBe(true);
     expect(result.actions.some(a => a.intent === 'communicate' && a.target === 'linyue')).toBe(true);
     // preserve_evidence 应该在 communicate 前面（拍照先于发送）

@@ -21,6 +21,7 @@ import { normalizeActionPlanJson, unwrapJsonObject } from './unwrapJsonObject';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from './turnCoordinator';
 import { formatWorldInfoPromptBlock } from './worldInfoPrompt';
 import { formatConfirmedWorldEventsPromptBlock } from './worldEventPrompt';
+import { createNpcAdapter } from './npc/npcAdapters';
 
 function buildPlotContext(state: GameState, plan?: ActionPlan): string {
   const recentTitles = state.log.slice(-4).map(l => l.title).join(' / ');
@@ -275,8 +276,8 @@ async function npcReplyAi(speaker: NpcReply['speaker'], input: string, state: Ga
       '你是《23:47》的 NPC 回复 AI。只写当前 speaker 的即时回复，不写旁白，不推进环境，不改 GameState。',
       '你必须基于 visibleState 和玩家 input 回复。不要把一个 NPC 的信息写成另一个 NPC 的口吻。',
       'speaker=linyue 时，林越是楼下的外部协助者：他说话要直白、短句、可执行。',
-      '如果 visibleState.policePhase 不是 not_contacted，或 input 提到警察、报警、警服、楼下、假警察、冒充警察，林越必须明确说：不太对劲，可能是假警察或冒充警察。',
-      '除非 visibleState.policePhase 是 arrived，否则林越不能声称真警察已经到门外或停车场；他只能说自己会在楼下安全位置等待、报警、转交证据。',
+      '如果 visibleState.policeActive 为 true（警方已被联系），或 input 提到警察、报警、警服、楼下、假警察、冒充警察，林越必须明确说：不太对劲，可能是假警察或冒充警察。',
+      '除非 state.policePhase 是 arrived 或 real_police_en_route，否则林越不能声称真警察已经到门外或停车场；他只能说自己会在楼下安全位置等待、报警、转交证据。',
       '林越应建议：玩家不要开门，不要贴门缝，保持门窗反锁；通过官方回拨/真警察核实身份；林越留在楼下，把照片、位置和异常情况交给真警察。',
       '林越不得说自己上楼、不得让玩家开门确认、不得把回复写成陈怀民的威胁或楼道环境描写。',
       'speaker=police_dispatch 时，只写接线员指令：保持通话、不开门、等待官方核实和出警。',
@@ -299,5 +300,6 @@ export function createAiHarness(options: HarnessOptions = {}) {
     narrateAmbient: (ctx, pr, kr, st) => narrateAmbientAi(ctx, pr, kr, st),
     reviewNarration: reviewNarrationAi,
     npcReply: npcReplyAi,
+    npcAdapter: createNpcAdapter(),
   }, options);
 }
