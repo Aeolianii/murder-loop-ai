@@ -165,7 +165,7 @@ export async function runShadowCandidateWave(
     ),
   );
 
-  if (!compiler.brief) {
+  if (!compiler.brief && compiler.record.status === 'clarification_required') {
     return {
       status: 'compiler_unavailable',
       envelope: input.envelope,
@@ -177,11 +177,14 @@ export async function runShadowCandidateWave(
     };
   }
 
+  const turnBrief = compiler.brief ?? buildCompilerFallbackBrief(input.envelope);
+  const compilerFallback = !compiler.brief;
+
   const intentProjections = projectTurnIntent({
-    brief: compiler.brief,
+    brief: turnBrief,
     knowledge,
     canonicalConstraints: input.canonicalConstraints,
-    conditionalSignals: buildConditionalSignals(compiler.brief),
+    conditionalSignals: compilerFallback ? [] : buildConditionalSignals(turnBrief),
   });
   const controller = new AbortController();
   const deadlineMs = Date.parse(input.envelope.deadlineAt);
@@ -192,7 +195,13 @@ export async function runShadowCandidateWave(
   const mainCall = runCandidateCall({
     sourceAgent: 'main-world-model',
     domain: 'world_model',
-    projection: intentProjections.mainWorldModel,
+    projection: compilerFallback
+      ? {
+          ...intentProjections.mainWorldModel,
+          fallbackMode: 'raw_input',
+          rawInput: input.rawInput,
+        }
+      : intentProjections.mainWorldModel,
     adapter: input.adapters.mainWorldModel,
     envelope: input.envelope,
     signal: controller.signal,
@@ -224,8 +233,8 @@ export async function runShadowCandidateWave(
   );
   const arbitration = runShadowArbiter({
     envelope: input.envelope,
-    compilerVersion: compiler.brief.compilerVersion,
-    schemaVersion: compiler.brief.schemaVersion,
+    compilerVersion: turnBrief.compilerVersion,
+    schemaVersion: turnBrief.schemaVersion,
     mainProposals,
     specialistCandidates,
     requiredDomains: REQUIRED_SHADOW_DOMAINS,
@@ -242,7 +251,7 @@ export async function runShadowCandidateWave(
     status: 'completed',
     envelope: input.envelope,
     semantic: compiler.record,
-    turnBrief: compiler.brief,
+    turnBrief,
     mainProposals,
     specialistCandidates,
     callRecords: callRecords.map((record) => ({
@@ -268,7 +277,9 @@ export function finalizeShadowRun(input: FinalizeShadowRunInput): ShadowRunRepor
     completedAt: input.wave.completedAt,
   });
   const schemaAttempts = 1 + input.wave.callRecords.length;
-  const schemaSuccesses = 1 + input.wave.callRecords.filter((record) => (
+  const compilerSchemaSuccess = ['compiled', 'clarification_required', 'fallback_to_world_model']
+    .includes(input.wave.semantic.status) ? 1 : 0;
+  const schemaSuccesses = compilerSchemaSuccess + input.wave.callRecords.filter((record) => (
     record.status === 'completed' || record.status === 'partial'
   )).length;
   const arbitrationMetrics = buildShadowArbitrationMetrics(
@@ -299,6 +310,22 @@ export function finalizeShadowRun(input: FinalizeShadowRunInput): ShadowRunRepor
       arbitration: input.wave.arbitration,
       legacyEvents: input.legacyEvents,
     },
+  };
+}
+
+function buildCompilerFallbackBrief(envelope: TurnEnvelope): TurnBrief {
+  return {
+    ...envelope,
+    compilerVersion: 'semantic-compiler-fallback-v1',
+    schemaVersion: 'world-model-v1',
+    utteranceMode: 'command',
+    resolvedReferences: [],
+    orderedActions: [],
+    globalConstraints: [],
+    scopedConstraints: [],
+    communications: [],
+    candidateHandles: [],
+    ambiguities: [],
   };
 }
 

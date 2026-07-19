@@ -266,3 +266,51 @@ function registrations(
   assert.equal(observedAbort, true);
   assert.equal(wave.specialistCandidates.some((candidate) => candidate.sourceAgent === 'clue-specialist'), false);
 }
+
+{
+  const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
+  const fallbackRawInput = 'fallback-secret-raw-input';
+  let mainProjection: unknown;
+  const specialistProjections: unknown[] = [];
+  const specialists = registrations(async (_id, _domain, _context) => ({}));
+  for (const registration of specialists) {
+    const generate = registration.generate;
+    registration.generate = async (projection, context) => {
+      specialistProjections.push(projection);
+      return generate(projection, context);
+    };
+  }
+
+  const wave = await runShadowCandidateWave({
+    state: createInitialGameState(),
+    rawInput: fallbackRawInput,
+    envelope: turnEnvelope,
+    adapters: {
+      semanticCompiler: {
+        async compile() {
+          throw new Error('compiler unavailable');
+        },
+      },
+      mainWorldModel: async (projection) => {
+        mainProjection = projection;
+        return {};
+      },
+      specialists,
+    },
+    npcIds: ['lin_yue', 'police_dispatch'],
+    canonicalConstraints: ['canonical.rule_kernel_is_authoritative'],
+    compilerTimeoutMs: 20,
+  });
+
+  assert.equal(wave.status, 'completed', 'compiler failure should enter a second-wave fallback');
+  assert.equal(wave.semantic.status, 'failed');
+  assert.equal((mainProjection as { fallbackMode?: string }).fallbackMode, 'raw_input');
+  assert.equal((mainProjection as { rawInput?: string }).rawInput, fallbackRawInput);
+  assert.equal(specialistProjections.length, 7, 'all Specialists still run on conservative projections');
+  assert.equal(
+    specialistProjections.some((projection) => JSON.stringify(projection).includes(fallbackRawInput)),
+    false,
+    'no Specialist may receive raw input during compiler fallback',
+  );
+  assert.ok(wave.turnBrief?.compilerVersion.includes('fallback'));
+}

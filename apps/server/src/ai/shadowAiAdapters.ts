@@ -123,7 +123,7 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     'Never use narration as evidence. Clue candidates must cite observation IDs. Recommendations must cite visible event IDs. Display fragments must cite their atomic eventRefs and claimRefs.',
     'Echo the envelope and contract versions exactly. riskClass is reversible, high_impact, or irreversible. High-risk events must include deterministic evidenceRefs and causalParentIds.',
     sourceAgent === 'main-world-model'
-      ? 'Return JSON {"proposals":[...]} with one or more strict Proposal objects. sourceAgent must be "main-world-model".'
+      ? 'If projection.fallbackMode="raw_input", interpret projection.rawInput conservatively because the Semantic Compiler failed; do not infer hidden facts. Return JSON {"proposals":[...]} with one or more strict Proposal objects. sourceAgent must be "main-world-model".'
       : `Return JSON {"candidates":[...]} with strict SpecialistCandidate objects. sourceAgent and specialistId must both be "${sourceAgent}", candidateType must be "specialist", and domain must be "${domain}".`,
     'Do not wrap JSON in markdown and do not add commentary.',
   ].join('\n');
