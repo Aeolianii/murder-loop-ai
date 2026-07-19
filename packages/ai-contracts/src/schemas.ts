@@ -41,7 +41,7 @@ export const KillerStrategyTypeValues = [
 
 export const RuleEventKindValues = ['action', 'clue', 'state_change', 'sound', 'message', 'threat', 'ending'] as const;
 export const RuleEventVisibilityValues = ['player', 'killer', 'hidden'] as const;
-export const AgentNameValues = ['parser', 'rule', 'killer', 'narrator', 'director', 'npc', 'ui-adapter', 'sidebar'] as const;
+export const AgentNameValues = ['parser', 'rule', 'killer', 'narrator', 'director', 'npc', 'recommender', 'ui-adapter', 'sidebar'] as const;
 export const AgentModeValues = ['ai', 'fallback'] as const;
 export const EndingIdValues = ['death', 'escaped_no_evidence', 'escaped_with_evidence'] as const;
 export const EndingReasonValues = [
@@ -293,6 +293,55 @@ export const NarrationPairSchema = z.object({
   ambientNarration: NarrationSchema,
 });
 
+export const RecommendedActionSchema = z.object({
+  id: z.string().min(1).max(80),
+  label: z.string().min(1).max(180),
+  rationale: z.string().min(1).max(360),
+  intent: ActionIntentSchema.optional(),
+  target: ActionTargetSchema.optional(),
+}).strict();
+
+export const RecommendedActionsSchema = z.array(RecommendedActionSchema).max(3).superRefine((actions, context) => {
+  const ids = new Set<string>();
+  for (const action of actions) {
+    if (ids.has(action.id)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate recommendation id: ${action.id}` });
+    }
+    ids.add(action.id);
+  }
+});
+
+export const RecommendedActionsEnvelopeSchema = z.object({
+  actions: RecommendedActionsSchema,
+}).strict();
+
+export const RecommendationContextSchema = z.object({
+  playerInput: z.string(),
+  planSummary: z.string(),
+  actionNarration: NarrationSchema,
+  ambientNarration: NarrationSchema,
+  npcReply: NpcReplySchema.nullable(),
+  confirmedFacts: NarrationContextSchema.shape.confirmedFacts,
+  confirmedWorldEvents: NarrationContextSchema.shape.confirmedWorldEvents.unwrap(),
+  visibleState: z.object({
+    run: z.number(),
+    minute: z.number(),
+    injury: z.string(),
+    stress: z.number(),
+    ending: EndingIdSchema.nullable(),
+    phoneBattery: z.number(),
+    phoneFunctional: z.boolean(),
+    playerHolding: z.string().nullable(),
+  }).strict(),
+  knownClueTitles: z.array(z.string()),
+}).strict();
+
+export const RecommenderAgentInputSchema = z.object({
+  recommendationContext: RecommendationContextSchema,
+  // Fallback data must never prevent a valid Agent call. It is validated only if fallback actually returns it.
+  fallbackActions: z.unknown(),
+}).strict();
+
 export const DirectorAgentInputSchema = z.object({
   directorContext: z.object({
     stateSummary: z.object({
@@ -379,6 +428,9 @@ export type NarrationContextContract = z.infer<typeof NarrationContextSchema>;
 export type NpcReplyContract = z.infer<typeof NpcReplySchema>;
 export type NarrationContract = z.infer<typeof NarrationSchema>;
 export type NarrationPairContract = z.infer<typeof NarrationPairSchema>;
+export type RecommendedActionContract = z.infer<typeof RecommendedActionSchema>;
+export type RecommendedActionsContract = z.infer<typeof RecommendedActionsSchema>;
+export type RecommendationContextContract = z.infer<typeof RecommendationContextSchema>;
 export type DirectorOutputContract = z.infer<typeof DirectorOutputSchema>;
 export type ScoreRecapContract = z.infer<typeof ScoreRecapSchema>;
 export type AgentTraceWorldInfoContract = z.infer<typeof AgentTraceWorldInfoSchema>;

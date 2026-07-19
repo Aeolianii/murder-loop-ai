@@ -60,6 +60,13 @@ async function testFrontendAdapterUsesHarnessResolver() {
         chooseKillerStrategy: async () => strategy,
         narrateAction: async () => actionNarration,
         narrateAmbient: async () => ambientNarration,
+        recommendActions: async () => [{
+          id: 'agent-preserve-package-photo',
+          label: '先保存包裹照片，再核对寄件信息。',
+          rationale: '照片和寄件信息都是当前已经可见的包裹事实。',
+          intent: 'preserve_evidence',
+          target: 'package',
+        }],
       },
       coordination: {
         warnings: ['frontend adapter harness path'],
@@ -86,6 +93,8 @@ async function testFrontendAdapterUsesHarnessResolver() {
   assert.equal(body.storyLog[0].type, 'player_input');
   assert.equal(body.storyLog[1].type, 'action_result');
   assert.equal(body.storyLog[1].content, 'Package checked。The box sits where it was, its damp corner soft under your thumb.');
+  assert.equal(body.storyLog[1].recommendedActions[0].id, 'agent-preserve-package-photo');
+  assert.equal(body.storyLog[1].recommendedActions[0].label, '先保存包裹照片，再核对寄件信息。');
   assert.equal(body.coordination.trace[0].taskId, 'PlayerActionSubmitted');
   assert.equal(body.coordination.trace[0].source, 'ai');
   assert.ok(body.coordination.warnings.includes('frontend adapter harness path'));

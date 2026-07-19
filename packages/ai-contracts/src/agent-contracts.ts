@@ -8,11 +8,13 @@ import {
   NarrationPairSchema,
   NarratorAgentInputSchema,
   ParserAgentInputSchema,
+  RecommenderAgentInputSchema,
+  RecommendedActionsSchema,
   RuleAgentInputSchema,
   RuleResultSchema,
 } from './schemas';
 
-export type AgentContractName = 'parser' | 'rule' | 'killer' | 'narrator' | 'director';
+export type AgentContractName = 'parser' | 'rule' | 'killer' | 'narrator' | 'director' | 'recommender';
 
 export interface AgentContractField {
   name: string;
@@ -185,12 +187,41 @@ export const directorAgentContract: AgentContractSpec = {
   ],
 };
 
+export const recommenderAgentContract: AgentContractSpec = {
+  agent: 'recommender',
+  responsibility: 'Propose the next playable actions from player-visible facts after narration is finalized.',
+  callTiming: 'Primary handler for RecommendationsRequested after action and ambient narration are available.',
+  inputFields: [
+    { name: 'recommendationContext', type: 'RecommendationContext', meaning: 'Player-visible narration, confirmed facts, and projected state.', required: true, mutableByAgent: false },
+    { name: 'fallbackActions', type: 'RecommendedAction[]', meaning: 'Deterministic fallback used only when AI output fails validation or execution.', required: true, mutableByAgent: false },
+  ],
+  aiResponsibilities: [
+    'Return zero to three concrete actions that are immediately playable in the visible scene.',
+    'Ground identities, objects, and claimed facts in the supplied player-visible context.',
+    'Adapt verification steps to what a person actually claimed instead of selecting a canned scenario template.',
+  ],
+  outputSchemaName: 'RecommendedActionsSchema',
+  outputSchema: RecommendedActionsSchema,
+  forbidden: [
+    'Must not mutate state or decide action success.',
+    'Must not reveal killer identity, hidden intent, or facts absent from player-visible context.',
+    'Must not invent police identity, weapons, items, messages, quotations, or NPC knowledge.',
+    'Must not copy fallbackActions merely because they are present in the command payload; AI adapters receive only recommendationContext.',
+  ],
+  validationAndFallback: [
+    'Malformed actions, duplicate ids, illegal intents, or more than three actions reject the AI result.',
+    'On rejection, timeout, or provider failure, RecommenderAgent returns fallbackActions unchanged.',
+    'Valid AI output replaces fallbackActions; the two sources are never merged.',
+  ],
+};
+
 export const agentContractSpecs = {
   parser: parserAgentContract,
   rule: ruleAgentContract,
   killer: killerAgentContract,
   narrator: narratorAgentContract,
   director: directorAgentContract,
+  recommender: recommenderAgentContract,
 } as const;
 
 export const agentInputSchemas = {
@@ -199,6 +230,7 @@ export const agentInputSchemas = {
   killer: KillerAgentInputSchema,
   narrator: NarratorAgentInputSchema,
   director: DirectorAgentInputSchema,
+  recommender: RecommenderAgentInputSchema,
 } as const;
 
 export const agentOutputSchemas = {
@@ -207,4 +239,5 @@ export const agentOutputSchemas = {
   killer: KillerStrategySchema,
   narrator: NarrationPairSchema,
   director: DirectorOutputSchema,
+  recommender: RecommendedActionsSchema,
 } as const;

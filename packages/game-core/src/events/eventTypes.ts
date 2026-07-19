@@ -4,9 +4,11 @@ import type {
   KillerStrategy,
   Narration,
   NarrationContext,
+  RecommendedAction,
   TurnResolution,
 } from '@murder-loop-ai/shared';
 import type { KillerContext } from '../context/ContextBuilder';
+import type { RecommendationRequest } from '../recommendations/recommendationTypes';
 
 /**
  * 游戏中所有事件类型。
@@ -18,6 +20,7 @@ export type GameEventType =
   | 'RulesApplied'
   | 'KillerActed'
   | 'NarrationRequested'
+  | 'RecommendationsRequested'
   | 'NarrationCritiqueRequested'
   | 'TurnCompleted'
   | 'GamePhaseChanged'
@@ -39,6 +42,7 @@ export interface GameEventPayloads {
   NarrationRequested: {
     narrationContext: NarrationContext;
   };
+  RecommendationsRequested: RecommendationRequest;
   NarrationCritiqueRequested: {
     directorContext: unknown;
     narrationContext: NarrationContext;
@@ -59,6 +63,7 @@ export interface GameCommandResults {
     actionNarration: Narration;
     ambientNarration: Narration;
   };
+  RecommendationsRequested: RecommendedAction[];
   TurnCompleted: unknown;
 }
 

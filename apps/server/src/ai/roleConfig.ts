@@ -3,7 +3,7 @@ import { env } from '../env';
 export const providers = ['openai', 'deepseek', 'deepseek_killer', 'deepseek_narrator', 'deepseek_npc', 'deepseek_recap', 'duckingmind'] as const;
 export type AiProvider = (typeof providers)[number];
 
-export type AiRole = 'parse' | 'killer' | 'narrator' | 'director' | 'npc' | 'recap' | 'npc_intent' | 'npc_task';
+export type AiRole = 'parse' | 'killer' | 'narrator' | 'director' | 'recommendation' | 'npc' | 'recap' | 'npc_intent' | 'npc_task';
 
 export interface RoleConfig {
   role: AiRole;
@@ -33,6 +33,11 @@ const roleConfigs: Record<AiRole, RoleConfig> = {
   },
   director: {
     role: 'director',
+    provider: toProvider(env.aiDirectorProvider, 'deepseek_recap'),
+    modelOverride: env.aiDirectorModel || undefined,
+  },
+  recommendation: {
+    role: 'recommendation',
     provider: toProvider(env.aiDirectorProvider, 'deepseek_recap'),
     modelOverride: env.aiDirectorModel || undefined,
   },

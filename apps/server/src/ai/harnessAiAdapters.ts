@@ -1,4 +1,11 @@
-import { ActionPlanSchema, KillerStrategySchema, NarrationSchema, NpcReplySchema } from '@murder-loop-ai/ai-contracts';
+import {
+  ActionPlanSchema,
+  ActionIntentValues,
+  KillerStrategySchema,
+  NarrationSchema,
+  NpcReplySchema,
+  RecommendedActionsEnvelopeSchema,
+} from '@murder-loop-ai/ai-contracts';
 import {
   buildNpcVisibleContext,
   buildParserContext,
@@ -6,6 +13,7 @@ import {
   type DirectorContext,
   type KillerContext,
   type HarnessOptions,
+  type RecommendationContext,
 } from '@murder-loop-ai/game-core';
 import {
   minuteLabel,
@@ -15,6 +23,7 @@ import {
   type Narration,
   type NarrationContext,
   type NpcReply,
+  type RecommendedAction,
 } from '@murder-loop-ai/shared';
 import { buildKillerPromptPayload } from './killerPrompt';
 import { completeRoleJson } from './openaiClient';
@@ -268,6 +277,30 @@ export async function generateNpcReplyAi(speaker: NpcReply['speaker'], input: st
   return parsed.data;
 }
 
+export async function recommendActionsAi(context: RecommendationContext): Promise<RecommendedAction[]> {
+  const ai = await completeRoleJson(
+    'recommendation',
+    [
+      '你是《23:47》的下一步行动推荐 Agent。根据玩家此刻已经看见、听见和确认的事实，给出 0-3 个可以立刻执行的行动。',
+      '只使用 recommendationContext。confirmedFacts、confirmedWorldEvents、actionNarration、ambientNarration 是事实边界。',
+      'npcReply 中的 riskWarning 和 suggestedExternalAction 只是 NPC 建议，必须与可见事实核对，不能当作新事实。',
+      '每条行动都必须针对本回合具体语境，不套固定剧情模板，也不要重复玩家已经完成的动作。',
+      '身份核验必须匹配对方实际声明：只有对方明确自称警察或民警时，才可以要求警号、单位或接警编号；普通试门者不要问警号，应按实际情况询问身份与来意、记录证据或报警。',
+      '不得把普通可拾取物自动当作武器；只有可见事实明确表明玩家发现或持有武器时，才能推荐使用武器。',
+      '不得透露陈怀民、假警察、凶手意图等玩家尚未确认的幕后身份。不得编造物品、人物、短信、原话或地点。',
+      'label 写玩家可直接执行的具体动作，rationale 只解释已知依据。id 使用简短稳定的英文 snake_case。',
+      `intent 可选值：${ActionIntentValues.join('|')}。不确定时可以省略 intent 或 target。`,
+      '若当前已经结局或没有可靠建议，返回空数组。',
+      '只输出 JSON：{"actions":[{"id":"...","label":"...","rationale":"...","intent":"communicate","target":"front_door"}]}',
+    ].join('\n'),
+    { recommendationContext: context },
+    { temperature: 0.35 },
+  );
+  const parsed = RecommendedActionsEnvelopeSchema.safeParse(ai);
+  if (!parsed.success) throw new Error(`recommendations schema: ${parsed.error.message}`);
+  return parsed.data.actions;
+}
+
 export function createAiHarness(options: HarnessOptions = {}) {
   return createHarness({
     parseAction: (input, state) => parseActionAi(input, state),
@@ -276,6 +309,7 @@ export function createAiHarness(options: HarnessOptions = {}) {
     narrateAmbient: (ctx) => narrateAmbientAi(ctx),
     reviewNarration: reviewNarrationAi,
     npcReply: generateNpcReplyAi,
+    recommendActions: recommendActionsAi,
     npcAdapter: createNpcAdapter(),
   }, options);
 }

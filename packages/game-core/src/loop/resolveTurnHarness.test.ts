@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { DEADLINE_MINUTE, type ActionPlan } from '@murder-loop-ai/shared';
+import { DEADLINE_MINUTE, type ActionPlan, type RecommendedAction } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
 import { createHarness, resolveTurnHarness } from './resolveTurn';
 import { createInitialWorldState } from '../world/worldSimulator';
@@ -820,6 +820,82 @@ async function testFakePoliceClaimCreatesCredentialCheck() {
   assert.match(labels, /警号|接警编号/);
 }
 
+async function testRecommendationAgentOutputTakesPriorityOverFallback() {
+  const state = createInitialGameState();
+  state.policePhase = 'dispatch_pending';
+  state.room.front_door.state.locked = true;
+  state.room.front_door.state.chainLocked = true;
+  state.room.front_door.state.barricaded = false;
+  const agentActions: RecommendedAction[] = [{
+    id: 'agent-ask-door-intent',
+    label: '隔着门问清对方是谁、为何拿钥匙开门，并保持门锁关闭。',
+    rationale: '门外的人只表现出试门行为，没有声称警察身份。',
+    intent: 'communicate',
+    target: 'front_door',
+  }];
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-listen',
+      raw: '悄悄把门锁上并听门外动静',
+      summary: '锁门后倾听门外动静',
+      actions: [{
+        id: 'action-listen',
+        raw: '悄悄把门锁上并听门外动静',
+        intent: 'wait',
+        target: 'self',
+        method: '保持安静并倾听',
+        confidence: 0.98,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.98,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-spare-key',
+      type: 'spare_key_entry',
+      title: '钥匙试门',
+      rationale: '门外的人尝试用钥匙开门。',
+      responseHint: '门外传来钥匙试探锁孔的声音。',
+      visibleToPlayer: true,
+      risk: 'medium',
+    }),
+    narrateAction: async () => ({ title: '门已锁好', text: '你锁好门，退到门侧。' }),
+    narrateAmbient: async () => ({ title: '门外动静', text: '门外有人试了试钥匙，随后低声讨论锁芯。' }),
+    recommendActions: async (context) => {
+      assert.equal(context.planSummary, '锁门后倾听门外动静');
+      assert.match(context.ambientNarration.text, /钥匙|锁芯/);
+      assert.equal('killerStrategy' in context, false);
+      assert.equal('killerPhase' in context.visibleState, false);
+      return agentActions;
+    },
+  });
+
+  const resolution = await resolveTurnHarness(state, '悄悄把门锁上并听门外动静', harness);
+
+  assert.deepEqual(resolution.recommendedActions, agentActions);
+  assert.doesNotMatch(resolution.recommendedActions?.map((action) => action.label).join('\n') ?? '', /警号|接警编号/);
+  assert.equal(
+    harness.dispatcher.getTrace().find((entry) => entry.agentId === 'recommender')?.source,
+    'ai',
+  );
+}
+
+async function testInvalidRecommendationAgentOutputFallsBack() {
+  const state = createInitialGameState();
+  const harness = createHarness({
+    recommendActions: async () => ([{ id: 'invalid-agent-action' }] as unknown as RecommendedAction[]),
+  });
+
+  const resolution = await resolveTurnHarness(state, '等待一分钟', harness);
+  const recommendationTrace = harness.dispatcher.getTrace().find((entry) => entry.agentId === 'recommender');
+
+  assert.equal(recommendationTrace?.source, 'fallback');
+  assert.ok((recommendationTrace?.warnings.length ?? 0) > 0);
+  assert.equal(resolution.recommendedActions?.some((action) => action.id === 'invalid-agent-action'), false);
+}
+
 async function testMessageReplyAmbientNarrationIncludesConcreteMessageText() {
   const state = createInitialGameState();
   const responseHint = '陌生号码回：“哪个包裹？你先别动，我上来确认一下。”';
@@ -1163,6 +1239,8 @@ await testLinYueVisibleContextKeepsPhotoSeparateFromDoorAndPoliceKnowledge();
 await testLinYuePhotoOnlyRecommendationsDoNotMentionDoorQuoteOrPolice();
 await testDoorCoordinationCreatesPlayableNextSteps();
 await testFakePoliceClaimCreatesCredentialCheck();
+await testRecommendationAgentOutputTakesPriorityOverFallback();
+await testInvalidRecommendationAgentOutputFallsBack();
 await testMessageReplyAmbientNarrationIncludesConcreteMessageText();
 await testNpcAgentReplyTakesPriorityOverPackageHandoffFallback();
 await testVagueActionNarrationIncludesConcretePhoneProbeText();

@@ -30,6 +30,7 @@ import { KillerAgent } from '../agents/KillerAgent';
 import { NarratorAgent } from '../agents/NarratorAgent';
 import { DirectorAgent } from '../agents/DirectorAgent';
 import { NpcAgent } from '../agents/NpcAgent';
+import { RecommenderAgent } from '../agents/RecommenderAgent';
 import { UIAdapterAgent } from '../agents/UIAdapterAgent';
 import { SidebarAgent } from '../agents/SidebarAgent';
 import { recordDeathMemory, recordTurnMemory } from '../memory/loopMemory';
@@ -43,9 +44,11 @@ import type { NpcAdapter } from '../world/npcTypes';
 import { calculateTurnTime } from '../rules/applyPlayerActions';
 import type { DomainEvent } from '../domain/domainEvents';
 import { commitWorldNarrationBatch, readWorldNarrationBatch } from '../world/narrationCursor';
+import type { RecommendationContext, RecommendationRequest } from '../recommendations/recommendationTypes';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
-export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
+export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, RecommenderAgent, UIAdapterAgent, SidebarAgent };
+export type { RecommendationContext, RecommendationRequest };
 
 // ============================================================================
 // 向后兼容：保留旧的 AiAdapters 接口和 resolveTurn 函数
@@ -57,6 +60,7 @@ export interface AiAdapters {
   narrate?: (context: NarrationContext) => Promise<Narration>;
   narrateAction?: (context: NarrationContext) => Promise<Narration>;
   narrateAmbient?: (context: NarrationContext) => Promise<Narration>;
+  recommendActions?: (context: RecommendationContext) => Promise<RecommendedAction[]>;
   reviewNarration?: (input: {
     directorContext: DirectorContext;
     narrationContext: NarrationContext;
@@ -352,6 +356,36 @@ function buildRecommendedActionsForTurn(
   return dedupeRecommendedActions(actions);
 }
 
+function buildRecommendationContext(input: {
+  playerInput: string;
+  plan: ActionPlan;
+  actionNarration: Narration;
+  ambientNarration: Narration;
+  npcReply: NpcReply | null;
+  narrationContext: NarrationContext;
+}): RecommendationContext {
+  return {
+    playerInput: input.playerInput,
+    planSummary: input.plan.summary,
+    actionNarration: input.actionNarration,
+    ambientNarration: input.ambientNarration,
+    npcReply: input.npcReply,
+    confirmedFacts: input.narrationContext.confirmedFacts,
+    confirmedWorldEvents: input.narrationContext.confirmedWorldEvents ?? [],
+    visibleState: {
+      run: input.narrationContext.run,
+      minute: input.narrationContext.minute,
+      injury: input.narrationContext.stateSnapshot.injury,
+      stress: input.narrationContext.stateSnapshot.stress,
+      ending: input.narrationContext.stateSnapshot.ending,
+      phoneBattery: input.narrationContext.stateSnapshot.phoneBattery,
+      phoneFunctional: input.narrationContext.stateSnapshot.phoneFunctional,
+      playerHolding: input.narrationContext.stateSnapshot.playerHolding,
+    },
+    knownClueTitles: input.narrationContext.knownClueTitles,
+  };
+}
+
 // ============================================================================
 // 新架构：Harness 工厂 + 事件驱动的回合解析
 // ============================================================================
@@ -387,6 +421,7 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
   registry.register(NarratorAgent);
   registry.register(DirectorAgent);
   registry.register(NpcAgent);
+  registry.register(RecommenderAgent);
   registry.register(UIAdapterAgent);
   registry.register(SidebarAgent);
 
@@ -467,6 +502,17 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
         const speaker = action.target as NpcReply['speaker'];
         const input = action.raw ?? action.method ?? plan?.raw ?? '';
         return aiFn(speaker, input, state);
+      };
+      agent.mode = 'ai';
+    }
+  }
+  if (aiAdapters?.recommendActions) {
+    const agent = registry.getAgent('recommender');
+    if (agent) {
+      const aiFn = aiAdapters.recommendActions;
+      agent.handler = async (payload: unknown) => {
+        const { recommendationContext } = payload as RecommendationRequest;
+        return aiFn(recommendationContext);
       };
       agent.mode = 'ai';
     }
@@ -552,6 +598,26 @@ async function resolveStoryNodeTurn(
     text: storyNode.text,
   });
   resolution.finalState.world = ensureWorldState(resolution.finalState);
+  const actionNarration = resolution.actionNarration ?? resolution.narration;
+  const ambientNarration = resolution.ambientNarration?.text
+    ? resolution.ambientNarration
+    : actionNarration;
+  const narrationContext = buildNarratorContext({
+    state: resolution.finalState,
+    playerResult: resolution.playerResult,
+    killerResult: resolution.killerResult,
+  });
+  resolution.recommendedActions = await harness.dispatcher.runCommand('RecommendationsRequested', {
+    recommendationContext: buildRecommendationContext({
+      playerInput: turn.input,
+      plan: turn.plan,
+      actionNarration,
+      ambientNarration,
+      npcReply: null,
+      narrationContext,
+    }),
+    fallbackActions: resolution.recommendedActions ?? [],
+  });
   await harness.dispatcher.runCommand('TurnCompleted', {
     finalState: resolution.finalState,
   });
@@ -720,6 +786,25 @@ async function finalizeHarnessTurn(
   }
   finalState.world = ensureWorldState(finalState);
 
+  const fallbackActions = buildRecommendedActionsForTurn(
+    finalState,
+    turn.plan,
+    turn.killerStrategy,
+    turn.playerResult,
+    turn.killerResult,
+  );
+  const recommendedActions = await harness.dispatcher.runCommand('RecommendationsRequested', {
+    recommendationContext: buildRecommendationContext({
+      playerInput: turn.input,
+      plan: turn.plan,
+      actionNarration: turn.actionNarration,
+      ambientNarration: turn.ambientNarration,
+      npcReply: turn.npcReply,
+      narrationContext: turn.narrationContext,
+    }),
+    fallbackActions,
+  });
+
   await harness.dispatcher.runCommand('TurnCompleted', { finalState });
 
   return {
@@ -731,13 +816,7 @@ async function finalizeHarnessTurn(
     actionNarration: turn.actionNarration,
     ambientNarration: turn.ambientNarration,
     npcReply: turn.npcReply,
-    recommendedActions: buildRecommendedActionsForTurn(
-      finalState,
-      turn.plan,
-      turn.killerStrategy,
-      turn.playerResult,
-      turn.killerResult,
-    ),
+    recommendedActions,
     worldTickTrace: turn.worldTickTrace,
     finalState,
   };
