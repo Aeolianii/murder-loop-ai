@@ -797,6 +797,8 @@ Death / Ending、关键线索、永久 Knowledge、Killer 强入、NPC 永久状
 
 ### 阶段 4：接管 Knowledge 与 Clue
 
+> 实施状态（2026-07-20）：基于 Confirmed Event 的 Knowledge、Observation → Clue 投影、Narrator 线索断权、Atomic Commit 接入与独立功能开关已完成；默认由 `AI_KNOWLEDGE_CLUE_TAKEOVER_ENABLED=false` 关闭。真实 API 金标放量门禁仍待验证，详见 `docs/ai-first-phase-4-implementation.md`。
+
 - 所有 Knowledge 更新必须来自 Confirmed Event；
 - 所有 Clue 必须引用 Observation；
 - 禁止 Narrator 正文反向生成动态线索。

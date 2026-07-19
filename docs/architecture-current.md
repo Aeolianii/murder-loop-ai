@@ -95,6 +95,21 @@ POST /api/harness/turn
 
 不满足接管门禁时，路由仍完整执行旧 `resolveTurnHarness()`。阶段三不写 Knowledge、Clue、NPC 永久状态、Death 或 Ending；临近这些高风险边界的回合直接回退旧链。实现、开关和回滚说明见 `docs/ai-first-phase-3-implementation.md`。
 
+阶段四在同一原子提交边界内接管 Knowledge 与 Clue，默认仍关闭：
+
+```txt
+AI_KNOWLEDGE_CLUE_TAKEOVER_ENABLED=true
+  → 自动启用阶段二/三所需的 Shadow + 低风险接管链
+  → Knowledge 必须引用本批事件及其已确认 fact
+  → Observation 必须引用玩家可见事件及其可见 fact
+  → Clue claims 必须是 Observation 内容的子集
+  → 清除本回合旧链无来源 Knowledge / Clue 增量
+  → 与 State、事件批一起 Atomic Turn Commit
+  → Narrator.clue 无正式写权限
+```
+
+阶段四当前只覆盖阶段三低风险回合；高风险 Knowledge、Killer/NPC 永久状态、Death、Ending 与证据销毁仍留待阶段五。实现和回滚说明见 `docs/ai-first-phase-4-implementation.md`。
+
 ## 3. Monorepo 模块职责
 
 ### apps/web
