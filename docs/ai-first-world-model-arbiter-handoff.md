@@ -29,12 +29,14 @@
 
 采用 **B+C 自适应架构**：
 
-- **World Model / Turn Agent** 负责 AI-first 的语义理解和整回合提案；
+- **Fast Semantic Compiler** 先把玩家自然语言编译成轻量、稳定的共享 `TurnBrief`；
+- **World Model / Turn Agent** 根据 `TurnBrief` 负责完整的首选整回合提案；
+- **Player / Killer / NPC / Environment / Clue / Recommendation Specialist** 每回合全部并行运行，提供权限隔离的领域候选和原子显示片段；
 - **State Arbiter** 负责通用权限、可见性、能力、因果和一致性裁决；
 - **Reducer** 只根据 Confirmed Events 生成新 State；
-- 普通回合只进行一次阻塞式 AI 调用；
-- 高风险回合才升级为独立 Specialist Agent 并行复核；
-- Arbiter 默认部分接受和局部裁剪，不因小错误重做整回合；
+- 玩家可见关键路径由“短 Semantic Compiler 等待 + 主 World Model 与全部 Specialist 的一次并行等待”组成；
+- Arbiter 按“接受主提案 → 局部裁剪 → Specialist 替代 → 本地 fallback”的四层顺序处理，不因小错误重做整回合；
+- 主 World Model 是创造性首选，Specialist 是领域热备；本地规则决定物理事实，不在合法候选之间投票；
 - Director / Critic 异步运行，不阻塞玩家。
 
 这里的“以 AI API 返回为准”是指：
@@ -60,9 +62,9 @@ Canonical Truth 定义这个故事中不能被 AI 改写的内容，例如：
 
 AI 可以决定这些真相通过什么现象、在什么节奏下逐步暴露，但不能改写真相。
 
-### 3.2 AI Turn Proposal：本回合智能提案
+### 3.2 AI Turn Proposal：本回合智能候选
 
-World Model 根据玩家输入、Canonical Truth 摘要、当前 State 和权限事实集合，提出：
+Semantic Compiler 先根据玩家原文和 `PlayerContext` 生成共享 `TurnBrief`。主 World Model 再根据 `TurnBrief`、Canonical Truth 摘要、当前 State 和权限事实集合提出完整首选回合；各 Specialist 根据最小权限投影并行提出领域候选：
 
 - 玩家动作及动作范围；
 - 明确的否定条件和动作顺序；
@@ -73,7 +75,7 @@ World Model 根据玩家输入、Canonical Truth 摘要、当前 State 和权限
 - 推荐行动；
 - 与候选事件绑定的显示文本。
 
-Turn Proposal 不是正式事实。
+主 Turn Proposal 和 Specialist Candidate 都不是正式事实。
 
 ### 3.3 Confirmed State：正式游戏事实
 
@@ -85,28 +87,37 @@ Narrator、Clue、Recommender、Sidebar 和下一回合 Context 都只能把 Con
 
 ```mermaid
 flowchart LR
-    Input["玩家输入"] --> Context["Context Builder<br/>State → 权限事实集合"]
+    Input["玩家输入"]
+    Context["Context Builder<br/>State → 权限事实集合"]
     Canon["Canonical Truth"] --> Context
     State["当前 State"] --> Context
 
-    Context --> Turn["World Model / Turn Agent<br/>一次主要 AI 调用"]
-    Turn --> Proposal["Turn Proposal<br/>动作、角色、环境、线索、文案"]
+    Input --> Semantic["Fast Semantic Compiler<br/>短结构化调用"]
+    Context -->|PlayerContext| Semantic
+    Semantic --> Brief["共享 TurnBrief<br/>动作、顺序、否定、范围、Action IDs"]
+    Brief --> Projector["Intent Projector<br/>本地最小权限投影"]
+    Context --> Projector
 
-    Proposal --> Arbiter["State Arbiter<br/>本地部分裁决"]
+    Projector --> Turn["Main World Model<br/>完整首选 Turn Proposal"]
+    Projector --> Specialists["全部 Specialist 每回合并行<br/>Player / Killer / NPC / Environment / Clue / Recommendation"]
+    Turn --> Proposal["Primary Proposal"]
+    Specialists --> Candidates["领域候选池<br/>ranked candidates + display fragments"]
+
+    Proposal --> Arbiter["State Arbiter<br/>四层本地裁决"]
+    Candidates --> Arbiter
     Arbiter --> Confirmed["Confirmed Events"]
     Confirmed --> UI["立即展示已确认文本"]
     Confirmed --> Reducer["Reducer"]
     Reducer --> NextState["新 State + 新 stateVersion"]
 
-    Proposal -.高风险冲突.-> Specialists["Killer / NPC / Repair Specialist<br/>最多一次并行复核"]
-    Specialists --> Arbiter
-
     Confirmed -.异步.-> Critic["Director / Critic<br/>只审查，不阻塞"]
 ```
 
-普通回合的唯一主要等待是 World Model API。Context Builder、Arbiter 和 Reducer 都是本地过程。
+普通回合存在两个 AI 波次：先等待极短的 Semantic Compiler，再等待主 World Model 与全部 Specialist 的并行结果。Context Builder、Intent Projector、Arbiter 和 Reducer 都是本地过程。第二波耗时取决于最慢的必要返回，而不是所有 Agent 延迟之和。
 
-## 5. Context Builder 的职责
+## 5. Context Builder、Semantic Compiler 与共享 Turn Brief
+
+### 5.1 Context Builder 的职责
 
 Context Builder **不是 Agent，也不解析玩家自然语言**。
 
@@ -153,7 +164,7 @@ fact.killer.knows_photo_shared
 - `NpcContext`：每个 NPC 实际收到的内容和自身知识；
 - `WorldModelContext`：完整世界结构及带 `knownBy` / `visibleTo` 标签的事实。
 
-玩家长句由 World Model / Parser 逻辑解析。Context Builder 不读取“先”“不要”“只”“然后”等中文关键词。
+玩家长句由 Semantic Compiler 解析。Context Builder 不读取“先”“不要”“只”“然后”等中文关键词。
 
 Context 选择优先依据当前状态，而非玩家文字匹配：
 
@@ -166,18 +177,82 @@ Context 选择优先依据当前状态，而非玩家文字匹配：
 - 当前剧情阶段摘要；
 - 远端实体的轻量索引。
 
+### 5.2 Semantic Compiler 的职责
+
+Semantic Compiler 和本地投影相邻，但职责不同：
+
+- Context Builder 回答“这个角色现在有权知道什么”；
+- Semantic Compiler 回答“玩家这句话究竟想做什么”；
+- Intent Projector 回答“每个并行 Agent 可以收到 `TurnBrief` 的哪一部分”；
+- Arbiter 回答“候选行动在当前世界中实际产生什么结果”。
+
+Semantic Compiler 只读取玩家原文和紧凑 `PlayerContext`，负责：
+
+- 拆分原子动作；
+- 保留动作顺序和依赖；
+- 提取否定条件、限定范围和明确禁止的动作；
+- 解析指代、通信对象、候选附件和玩家希望的可见范围；
+- 为动作和候选产物分配稳定 ID；
+- 在影响状态的歧义无法安全缩小时请求玩家澄清。
+
+它不负责 Killer / NPC 决策、动作成功与否、精确时间和电量、Observation、Clue、Recommendation、叙事、State Patch、Death 或 Ending。
+
+### 5.3 共享 Turn Brief 契约
+
+`TurnBrief` 是所有第二波 Agent 的共享语义锚点，但不等于正式事实：
+
+```text
+TurnBrief:
+  turnId
+  inputStateVersion
+  compilerVersion
+  utteranceMode
+  resolvedReferences
+  orderedActions
+  globalConstraints
+  scopedConstraints
+  communications
+  candidateHandles
+  ambiguities
+```
+
+每个 `orderedAction` 至少包含稳定 `actionId`、`actorId`、`operation`、`targetIds`、`scope`、`method`、`dependsOnActionIds`、候选输入输出句柄和对应的玩家原文范围。
+
+候选句柄只描述依赖关系。例如 `candidate.photo.action_1` 只有在拍照事件被确认后才能成为正式实体。`stealthIntent`、`intendedAudience` 和 `desiredOutcome` 也只表达玩家意图，不能直接成为实际可见性或世界结果。
+
+### 5.4 本地 Intent Projection
+
+Semantic Compiler 返回后，本地 Intent Projector 根据 Context 和权限规则生成不同输入：
+
+- 主 World Model：完整 `TurnBrief`、带权限标签的世界 Facts 和必要 Canonical Constraints；
+- Player Specialist：完整玩家意图、PlayerContext、当前可访问实体和能力；
+- Killer Specialist：只接收 KillerContext 与带前置条件的可观察信号候选，不接收玩家原文、完整 `TurnBrief` 或 PlayerContext；
+- NPC Specialist：只接收自己的 NpcContext，以及以 `message_delivered` 为前置条件、明确发给自己的候选通信；
+- Environment Specialist：只接收公共状态、环境能力和允许响应的事件锚点；
+- Clue / Recommendation Specialist：只接收带 Observation / visible event 前置条件的候选锚点。
+
+并行 Agent 可以对尚未确认的事件生成条件候选，但不能把条件候选当作已知事实。条件不成立时，对应候选、Knowledge、Clue、Recommendation 和显示文本一起失效。
+
+### 5.5 Semantic Compiler 轻量化与失败策略
+
+Semantic Compiler 位于所有第二波 API 的前置关键路径，必须作为延迟敏感型组件设计：
+
+- 使用短 Prompt、严格 Schema、非思考模式和受控输出长度；
+- 只发送玩家原文、紧凑 PlayerContext、当前实体别名索引和最近指代候选；
+- 不注入 Canonical Truth、Killer / NPC Knowledge、完整剧情历史或长篇 World Info；
+- 在上一回合 Reducer 提交后预热下一回合 PlayerContext 和实体索引；
+- 静态系统 Prompt、操作枚举和 Schema 尽量使用缓存；
+- 关键路径不自动串行重试。Compiler 失败时，主 World Model 直接接收原文降级处理，Specialist 只使用回合开始时已有的权限事实和保守条件候选。
+
+建议以真实 API 回归确定模型，并把 Compiler 的 P95 延迟控制在主 World Model P95 的 10%～20% 内；若主模型通常需要数秒，Compiler 的工程目标应尽量接近或低于 1 秒。速度不能以丢失“只”“不要”“如果”“先……再……”为代价。
+
 ## 6. World Model / Turn Agent
 
-World Model 是普通回合唯一阻塞式 AI 调用。逻辑上的 Parser、Killer、NPC、Environment、Clue、Narrator 和 Recommender 可以作为它的 Prompt 模块和结构化输出区段，而不必每个都进行一次串行 API 调用。
+主 World Model 接收共享 `TurnBrief` 和完整但带权限标签的 WorldModelContext，生成整回合的完整首选 Proposal。它仍然负责整体连贯性、跨领域因果图和首选显示内容，但不再独自承担玩家语义解析，也不是唯一的候选来源。
 
 它需要正确处理：
 
-- 长句和复合动作；
-- 动作先后顺序；
-- 否定条件；
-- 观察范围；
-- 指代对象；
-- 玩家明确禁止的动作；
+- 忠实消费 `TurnBrief` 中已经确定的动作、顺序、否定、范围和指代；
 - 各 Actor 的知识边界；
 - 候选状态变化和因果依赖。
 
@@ -185,7 +260,7 @@ World Model 是普通回合唯一阻塞式 AI 调用。逻辑上的 Parser、Kil
 
 > 我先不开门，只拍包裹外面的收件标记，把照片发给林越并提醒他不要上楼，然后反锁、扣门链，再打开手机录音。
 
-提案需要保留：
+Semantic Compiler 需要先在 `TurnBrief` 中保留：
 
 ```text
 orderedActions:
@@ -201,6 +276,23 @@ globalConstraints:
 
 World Model 不直接返回任意 State Patch，只能提出结构化事件和效果。
 
+### 6.1 每回合全面并行的 Specialist
+
+共享 `TurnBrief` 通过本地权限投影后，所有已配置 Specialist 每回合与主 World Model 同时运行：
+
+- Player Specialist：玩家动作、候选效果和 Observation；
+- Killer Specialist：只基于 KillerContext 的 2～3 个排序策略候选；
+- NPC Specialist：只基于各自 NpcContext 的回复和行动候选；
+- Environment Specialist：独立环境推进候选；
+- Clue Specialist：只依赖候选 Observation IDs 的线索；
+- Recommendation Specialist：只依赖候选玩家可见事件的建议。
+
+每个 Specialist 都应为自己的候选携带原子 `displayFragments`，从而在主提案的对应领域失效时仍能优先使用 Agent 文本，而不是立即降级为生硬的本地文案。
+
+并行 Specialist 看不到尚未返回的主 Proposal，因此它们不是当前回合的 Reviewer。它们的职责是提供权限隔离、窄契约的领域热备候选。真正检查完整主输出的 Director / Critic 必须在结果返回后异步运行，不能伪装成同一波的并行审查。
+
+合法的主 World Model 候选始终优先于 Specialist。Arbiter 不在多个合法创意之间投票；只有主提案的对应根行为非法、缺失或因裁剪而无法继续时，才按排名尝试相同领域的 Specialist 候选。
+
 ## 7. Turn Proposal 核心契约
 
 每个提案至少需要携带：
@@ -208,6 +300,11 @@ World Model 不直接返回任意 State Patch，只能提出结构化事件和�
 ```text
 Proposal:
   id
+  sourceAgent
+  domain
+  candidateRank
+  turnBriefActionIds
+  replacementFor
   actorId
   operation
   targetIds
@@ -227,6 +324,8 @@ Proposal:
 关键要求：
 
 - Agent 之间不能通过自由叙事正文建立事实；
+- 主 Proposal 和 Specialist Candidate 必须使用同一个 `turnId`、`inputStateVersion`、`compilerVersion` 和 Schema 版本；
+- Specialist 只能在自己声明的 `domain` 中提出候选，不能顺带修改其他 Actor 或世界领域；
 - Actor 的行动必须引用其有权读取的 `basedOnFactIds`；
 - 结果必须能回溯到前置事件；
 - 候选线索必须引用 Observation Event；
@@ -332,7 +431,36 @@ actor_entered 只有在所有有效入口障碍被解除后才能确认。
 2. 不依赖某个具体剧情角色；
 3. 至少适用于一类世界实体、能力或状态关系。
 
-### 8.4 部分提交，不循环重生成
+### 8.4 Agent-first 四层裁决，不循环重生成
+
+Arbiter 同时维护两套不同优先级：
+
+```text
+创造性来源优先级：Main World Model → 对应 Specialist → 本地 fallback
+物理事实优先级：Canonical Truth / Capability / Knowledge / Causality → Confirmed Events
+```
+
+主模型和 Specialist 决定“谁想做什么、说什么、如何推进剧情”；本地规则决定“这个行动在当前世界中实际产生什么效果”。确定性规则结果不是本地剧情 fallback。
+
+#### 第一层：接受主模型合法部分
+
+逐个验证主 Proposal 的根行为、效果和依赖。合法的主候选直接成为 accepted event。即使 Specialist 提出了另一个同样合法的创意，Arbiter 也不覆盖主模型，不在短信、敲门或强入等合法选择之间投票。
+
+#### 第二层：局部裁剪主模型非法部分
+
+保留合法根行为和上游事件，只删除非法效果及其下游依赖；能够由通用组件规则唯一推出的失败或受阻结果写入 corrected event。
+
+例如 Killer 合法尝试使用备用钥匙时，`lock` 可以被绕过，但仍有效的 `chain` 会确定性地产生 `entry_blocked_by_chain`。这不是生硬的本地剧情替代，而是世界能力组合的正式结果。对应显示优先使用主 Proposal 已提供的失败片段。
+
+#### 第三层：对应 Specialist 替代
+
+只有当主提案的某个领域根行为非法、缺失或裁剪后无法形成有效领域事件时，才读取该领域已经并行返回的 Specialist 候选。候选按 `candidateRank` 逐个通过相同 Arbiter 规则，第一个合法候选接管该领域；其他领域仍保留主 Proposal。
+
+Specialist 候选必须自带因果引用、Clue / Recommendation 附件和原子显示片段。替代发生后只使用新候选引用的附件，不能保留被拒绝主事件的正文或线索。
+
+#### 第四层：本地 fallback
+
+只有主候选与相同领域的全部 Specialist 候选都不可用时，才进入最低可玩 fallback。Fallback 只保证回合可收束，例如 Killer 等待或撤退、NPC 暂未回复、环境保持已有状态、Clue 为空，并从 Confirmed Events 生成极短事实文案；它不承担复杂剧情创作。
 
 Arbiter 输出：
 
@@ -342,6 +470,9 @@ StateTransitionResult:
   correctedEvents
   rejectedEffects
   violations
+  selectedSourceByDomain
+  specialistCandidatesTried
+  fallbackDomains
   requiresRepair
   requiresPlayerClarification
   outputStateVersion
@@ -361,9 +492,11 @@ Arbiter 应：
 - 拒绝无 Observation 来源的数字纸条；
 - 将成功进入裁决为进入尝试失败；
 - 因因果链断裂而拒绝死亡；
+- 如果主 Killer 根行为完全非法，则尝试已并行返回的 Killer Specialist 排序候选；
+- 只有主候选和全部对应 Specialist 都失效时才使用本地 fallback；
 - 不重新生成整个回合。
 
-只有关键结果无法局部修复时，才进行最多一次 Specialist Repair。再次失败后保留合法事件，不形成重试循环。
+普通回合不自动重新生成。所有 Specialist 已在第二波并行运行，Arbiter 应先消耗现成候选池。对于无法合法确认的不可逆结果，默认拒绝或延后，而不是为了强行产生 Death / Ending 再跑完整回合。`requiresRepair` 只保留给“主响应整体不可解析、候选池全部失效且最低 fallback 仍无法安全收束”的极端情况；即使启用也只能局部修复一次，不重新解析玩家动作。
 
 ## 9. Reducer 与异步提交
 
@@ -395,7 +528,7 @@ outputStateVersion
 
 原始 AI 流式文本不能在 Arbiter 裁决前直接展示。可以流式接收，但必须先在服务端缓冲。
 
-World Model 返回原子化文本：
+主 World Model 和各 Specialist 都返回与自己候选事件绑定的原子化文本：
 
 ```text
 displayFragments:
@@ -440,28 +573,35 @@ Recommendation 必须引用最终玩家可见的 Confirmed Events，并满足：
 
 逻辑 Agent 不等于独立串行 API 调用。
 
-### 普通回合
+### 玩家可见关键路径
 
 ```text
-Context Builder（本地）
-→ World Model / Turn Agent（一次阻塞式 AI）
-→ State Arbiter（本地）
+上一回合阅读期间：预热 PlayerContext / Entity Alias Index（本地）
+→ Fast Semantic Compiler（第一波，短结构化调用）
+→ TurnBrief Validator + Intent Projector（本地）
+→ Main World Model + 全部 Specialist（第二波，全面并行）
+→ 四层 State Arbiter（本地）
 → 立即展示已确认文本
 → Reducer / Context / Persist / Critic（阅读期间并行）
 ```
 
-### 高风险回合
+总等待近似为：
 
-只有这些情况允许增加一次 Specialist 并行复核：
+```text
+T_turn ≈ T_semantic_compiler
+       + max(T_main_world_model, T_player, T_killer, T_npc, T_environment, T_clue, T_recommendation)
+       + T_local_arbiter
+```
 
-- Death / Ending；
-- 关键线索；
-- NPC 身份或重要 Knowledge 变化；
-- Killer 强入；
-- 多 Actor 提案严重冲突；
-- Arbiter 裁剪后没有任何有效事件。
+因此 Semantic Compiler 必须显著快于主模型；第二波 Agent 必须真正并发启动，不能按角色串行等待。预算允许所有 Specialist 每回合运行，但某个热备 Specialist 超时不能成为新的单点阻塞：统一截止时间到达后，已完成候选进入候选池，未完成领域视为缺少 Specialist 热备，再按四层策略处理。
 
-Repair 只修复被拒绝部分，不重新解析玩家动作，不重做完整回合，最多一次。
+主 World Model 返回完整首选 Proposal；Specialist 返回窄领域排序候选而不是对主结果的同步审查。全量并行的目标是用职责隔离降低知识串线，并提前准备 Agent fallback，避免 Arbiter 拒绝后再发起串行重生成。
+
+### 高风险结果
+
+Death / Ending、关键线索、永久 Knowledge、Killer 强入、NPC 永久状态和证据销毁仍执行更严格的来源和因果验证，但不再临时启动额外 Specialist，因为所有 Specialist 已经每回合并行运行。
+
+主高风险候选被拒绝后，依次局部裁剪、尝试对应 Specialist、最后使用保守本地 fallback。默认不为强行产生不可逆结果增加第三波 AI 调用。
 
 ### 异步任务
 
@@ -481,17 +621,21 @@ Repair 只修复被拒绝部分，不重新解析玩家动作，不重做完整�
 
 ### 阶段 1：契约与事实层
 
-- 定义 `Fact`、`Proposal`、`ConfirmedEvent`、`StateTransitionResult`；
+- 定义 `Fact`、`TurnBrief`、`Proposal`、`SpecialistCandidate`、`ConfirmedEvent`、`StateTransitionResult`；
 - 建立 Fact Ledger；
 - 建立 Player / Killer / NPC Knowledge Projection；
+- 定义 Semantic Compiler、TurnBrief Validator 和 Intent Projector 的边界；
+- 为 Proposal 增加 `sourceAgent`、`domain`、`candidateRank`、`replacementFor` 和版本字段；
 - 保持现有流程不变。
 
-### 阶段 2：只读 Shadow Arbiter
+### 阶段 2：Semantic Compiler 与并行候选 Shadow Run
 
-- Arbiter 读取现有回合结果；
+- Semantic Compiler 生成 `TurnBrief`，与现有 Parser 结果对照但暂不接管；
+- 主 World Model 和全部 Specialist 根据相同 `TurnBrief` 的权限投影并行生成候选；
+- Shadow Arbiter 读取现有回合结果、主 Proposal 和 Specialist 候选；
 - 输出“如果由 Arbiter 裁决会接受/拒绝什么”；
 - 暂不影响正式 State；
-- 收集误判、漏判和 Prompt 越界数据。
+- 收集语义误判、权限泄露、候选替代率、fallback 率和延迟数据。
 
 ### 阶段 3：接管低风险状态
 
@@ -530,6 +674,13 @@ Repair 只修复被拒绝部分，不重新解析玩家动作，不重做完整�
 
 测试重点不是穷举中文句子，而是验证结构化世界性质：
 
+- Semantic Compiler 必须保留动作顺序、“只”“不要”“如果”等范围和否定条件；
+- 相同 `TurnBrief` 的改写输入应生成等价的动作图和约束；
+- Killer Specialist 永远不能收到玩家原文、完整 `TurnBrief` 或 PlayerContext；
+- NPC Specialist 只能把满足 `message_delivered` 前置条件的候选消息当作可用输入；
+- 合法主候选必须优先于同样合法的 Specialist 候选；
+- 主领域失效时只允许相同领域 Specialist 接管；
+- 本地 fallback 只能在主候选和全部对应 Specialist 均失效后触发；
 - 任意 Actor 在门链未解除时都不能确认进入；
 - 任意外包装 Observation 都不能获得内部字段；
 - 私密 Fact 永远不能成为 Killer 的合法行动依据；
@@ -543,6 +694,10 @@ Repair 只修复被拒绝部分，不重新解析玩家动作，不重做完整�
 
 应增加：
 
+- Semantic Compiler Schema / 指代 / 复合动作回归；
+- Intent Projection 权限快照测试；
+- 主模型与所有 Specialist 真并发的延迟测试；
+- 四层 Arbiter 来源优先级和替代测试；
 - 属性测试；
 - 状态组合生成测试；
 - 越权 Proposal 对抗测试；
@@ -555,24 +710,29 @@ Repair 只修复被拒绝部分，不重新解析玩家动作，不重做完整�
 
 每回合记录：
 
+- 原始输入对应的 `TurnBrief`、Compiler 版本和歧义；
+- Main / Specialist 使用的权限投影摘要；
 - Agent Proposal；
 - Proposal 使用的 Fact IDs；
 - Arbiter accepted / corrected / rejected 结果；
+- 每个领域最终选择的 `sourceAgent`、尝试过的 Specialist 候选和 fallback 原因；
 - 拒绝原因和因果链；
-- Specialist Repair 是否触发；
 - Prompt 版本；
 - State 输入输出版本；
-- AI 延迟、Arbiter 延迟、Reducer 延迟；
+- Semantic Compiler、各并行 Agent、Arbiter 和 Reducer 的独立延迟；
 - 虚构实体、知识越界、观察越界、线索无来源等分类指标。
 
 重点监控：
 
 - Agent Proposal 拒绝率；
-- 高风险 Repair 触发率；
+- Semantic Compiler P50 / P95、Schema 失败率和降级率；
+- 主 Proposal 各领域直接接受率；
+- Specialist 接管率和本地 fallback 率；
+- 最慢并行 Agent 及其尾延迟；
 - 无有效事件回合率；
 - Clue 拒绝率；
 - Knowledge 越界率；
-- 普通回合 AI 调用次数；
+- 普通回合 AI 调用次数与并行完成率；
 - 玩家可见首个确认结果时间。
 
 ## 16. 非目标
@@ -582,6 +742,9 @@ Repair 只修复被拒绝部分，不重新解析玩家动作，不重做完整�
 - 用 Arbiter 编写完整剧情；
 - 用更多硬编码让 fallback 理解所有自然语言；
 - 让每个逻辑 Agent 都进行一次独立串行 API 调用；
+- 把并行 Specialist 伪装成能够看到主 Proposal 的同步 Reviewer；
+- 让 Arbiter 在多个合法创意之间投票或决定哪种剧情更精彩；
+- 让 Killer / NPC Specialist 通过完整玩家原文或完整 State 获得未授权信息；
 - 让 Critic 反复修改已确认 State；
 - 用 Narrator 文本替代事件和状态；
 - 一次性删除全部现有实现并重写。
@@ -592,11 +755,11 @@ Repair 只修复被拒绝部分，不重新解析玩家动作，不重做完整�
 
 1. 先阅读本文件和 `docs/architecture-current.md`；
 2. 对照当前 `resolveTurnHarness()`、DomainEvent、ContextBuilder、KillerKnowledge 和动态线索路径；
-3. 先写契约和失败测试计划，不直接大改实现；
-4. 采用 Shadow Arbiter，避免一次性替换正式状态管线；
+3. 先写 `TurnBrief`、Semantic Compiler、Intent Projection、主 Proposal 和 Specialist Candidate 契约及失败测试计划，不直接大改实现；
+4. 采用 Semantic Compiler / 全量并行候选 / Shadow Arbiter 影子运行，避免一次性替换正式状态管线；
 5. 每完成一个迁移阶段都运行完整测试、类型检查和真实剧情回归；
 6. 只有验证稳定后才删除旧路径。
 
 建议新对话的首个任务：
 
-> 基于 `docs/ai-first-world-model-arbiter-handoff.md` 和 `docs/architecture-current.md`，审计现有类型、DomainEvent、ContextBuilder 与 resolveTurnHarness 主链路，输出阶段 1 的详细实施计划：需要新增或修改的文件、契约字段、失败测试、兼容策略和验证命令。先不要写实现代码。
+> 基于 `docs/ai-first-world-model-arbiter-handoff.md` 和 `docs/architecture-current.md`，审计现有类型、DomainEvent、ContextBuilder 与 resolveTurnHarness 主链路，输出阶段 1 的详细实施计划：重点覆盖轻量 Semantic Compiler、共享 TurnBrief、本地 Intent Projection、主 World Model 与全量 Specialist 并行候选、四层 Arbiter，以及需要新增或修改的文件、失败测试、兼容策略和验证命令。先不要写实现代码。
