@@ -119,6 +119,22 @@ function testDoorReportToLinYueUsesTheMessageReducer() {
 }
 
 function testChenContactClueMatchesTheActualChannel() {
+  const agentDirectedState = createInitialGameState();
+  const agentDirectedAction = {
+    ...action('agent-directed-channel', 'communicate', 'chen_huaimin', '回复陌生号码：包裹在我这里'),
+    contactChannel: 'doorstep' as const,
+  };
+  const agentDirectedCommands = buildPlayerCommandsFromActionPlan(
+    plan([agentDirectedAction]),
+    { run: agentDirectedState.run, minute: agentDirectedState.minute },
+  );
+  const agentDirectedEvents = evaluatePlayerCommandDomainEvents(agentDirectedState, agentDirectedCommands);
+
+  assert.equal(agentDirectedEvents[0]?.payload?.contactChannel, 'doorstep');
+  applyPlayerDomainEventsToState(agentDirectedState, agentDirectedEvents);
+  assert.equal(agentDirectedState.clues.some((clue) => clue.id === 'doorstep_package_claim'), true);
+  assert.equal(agentDirectedState.clues.some((clue) => clue.id === 'unknown_number_probe'), false);
+
   const doorstepState = createInitialGameState();
   const doorstepCommands = buildPlayerCommandsFromActionPlan(
     plan([action('handoff-package', 'communicate', 'chen_huaimin', '开门把包裹交给房东')]),
@@ -192,21 +208,41 @@ function testAllStatefulPlayerCommandsReduceThroughDomainEvents() {
   assert.equal(state.clues.some((clue) => clue.id === 'weapon_found'), false);
 }
 
-function testPickingUpACombatCapableItemAddsTheWeaponClue() {
-  const state = createInitialGameState();
-  const weaponPickup = {
-    ...action('pick-knife', 'pick_up', 'kitchen_knife', '拿起厨房刀防身'),
-    itemId: 'kitchen_knife',
+function testAgentItemClassificationControlsWeaponClue() {
+  const improvisedWeaponState = createInitialGameState();
+  const improvisedWeaponPickup = {
+    ...action('pick-mug', 'pick_up', 'ceramic_mug', '拿起陶瓷杯防身'),
+    itemId: 'ceramic_mug',
+    itemKind: 'weapon' as const,
   };
-  const commands = buildPlayerCommandsFromActionPlan(
-    plan([weaponPickup]),
-    { run: state.run, minute: state.minute },
+  const improvisedWeaponCommands = buildPlayerCommandsFromActionPlan(
+    plan([improvisedWeaponPickup]),
+    { run: improvisedWeaponState.run, minute: improvisedWeaponState.minute },
   );
 
-  applyPlayerDomainEventsToState(state, evaluatePlayerCommandDomainEvents(state, commands));
+  applyPlayerDomainEventsToState(
+    improvisedWeaponState,
+    evaluatePlayerCommandDomainEvents(improvisedWeaponState, improvisedWeaponCommands),
+  );
 
-  assert.equal(state.playerHolding, 'kitchen_knife');
-  assert.equal(state.clues.some((clue) => clue.id === 'weapon_found'), true);
+  assert.equal(improvisedWeaponState.playerHolding, 'ceramic_mug');
+  assert.equal(improvisedWeaponState.clues.some((clue) => clue.id === 'weapon_found'), true);
+
+  const utilityState = createInitialGameState();
+  const utilityPickup = {
+    ...action('pick-knife-as-tool', 'pick_up', 'kitchen_knife', '拿起厨房刀切胶带'),
+    itemId: 'kitchen_knife',
+    itemKind: 'utility' as const,
+  };
+  const utilityCommands = buildPlayerCommandsFromActionPlan(
+    plan([utilityPickup]),
+    { run: utilityState.run, minute: utilityState.minute },
+  );
+
+  applyPlayerDomainEventsToState(utilityState, evaluatePlayerCommandDomainEvents(utilityState, utilityCommands));
+
+  assert.equal(utilityState.playerHolding, 'kitchen_knife');
+  assert.equal(utilityState.clues.some((clue) => clue.id === 'weapon_found'), false);
 }
 
 function testCombatReducerRejectsUnavailableWeaponWithoutMutatingPlan() {
@@ -233,5 +269,5 @@ testDomainReducerDoesNotLeakPhotoShareToKillerKnowledge();
 testDoorReportToLinYueUsesTheMessageReducer();
 testChenContactClueMatchesTheActualChannel();
 testAllStatefulPlayerCommandsReduceThroughDomainEvents();
-testPickingUpACombatCapableItemAddsTheWeaponClue();
+testAgentItemClassificationControlsWeaponClue();
 testCombatReducerRejectsUnavailableWeaponWithoutMutatingPlan();

@@ -112,6 +112,10 @@ export interface ParsedAction {
   timeCost: number;
   noise: number;
   risk: 'low' | 'medium' | 'high';
+  /** Parser Agent 对与陈怀民沟通渠道的判断；规则层只在缺失时兜底推断。 */
+  contactChannel?: 'phone' | 'doorstep' | 'unspecified';
+  /** Parser Agent 对拾取物用途的判断；决定是否产生武器线索。 */
+  itemKind?: 'weapon' | 'utility' | 'evidence' | 'unknown';
 }
 
 export interface ActionPlan {

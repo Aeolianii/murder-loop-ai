@@ -43,7 +43,6 @@ import type { NpcAdapter } from '../world/npcTypes';
 import { calculateTurnTime } from '../rules/applyPlayerActions';
 import type { DomainEvent } from '../domain/domainEvents';
 import { commitWorldNarrationBatch, readWorldNarrationBatch } from '../world/narrationCursor';
-import { resolveNpcInteractionPolicyReply } from '../npc/interactionPolicy';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
 export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
@@ -460,7 +459,7 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
         if (!action?.target) return null;
         const speaker = action.target as NpcReply['speaker'];
         const input = action.raw ?? action.method ?? plan?.raw ?? '';
-        return resolveNpcInteractionPolicyReply(speaker, input) ?? aiFn(speaker, input, state);
+        return aiFn(speaker, input, state);
       };
       agent.mode = 'ai';
     }

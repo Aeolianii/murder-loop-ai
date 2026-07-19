@@ -816,7 +816,7 @@ async function testMessageReplyAmbientNarrationIncludesConcreteMessageText() {
   assert.match(resolution.ambientNarration?.text ?? '', /你先别动/);
 }
 
-async function testPackageHandoffToChenCannotBeReversedByNpcAi() {
+async function testNpcAgentReplyTakesPriorityOverPackageHandoffFallback() {
   const state = createInitialGameState();
   const harness = createHarness({
     parseAction: async () => ({
@@ -852,10 +852,10 @@ async function testPackageHandoffToChenCannotBeReversedByNpcAi() {
     }),
     npcReply: async () => ({
       speaker: 'chen_huaimin',
-      text: '这个包裹不能交给任何人。',
-      intent: '错误地拒绝玩家交出的包裹',
-      riskWarning: '方向被反向理解。',
-      suggestedExternalAction: '不要这样回复。',
+      text: '“行，放在门口。我自己拿。”',
+      intent: 'accept_package_on_agent_terms',
+      riskWarning: '这是 NPC Agent 根据当前上下文生成的回复。',
+      suggestedExternalAction: '与门口保持距离。',
     }),
     chooseKillerStrategy: async () => ({
       id: 'killer-retreat-after-handoff',
@@ -870,9 +870,9 @@ async function testPackageHandoffToChenCannotBeReversedByNpcAi() {
   const resolution = await resolveTurnHarness(state, '开门把包裹给房东', harness);
 
   assert.equal(resolution.npcReply?.speaker, 'chen_huaimin');
-  assert.match(resolution.npcReply?.text ?? '', /给我|接过|拿来/);
-  assert.doesNotMatch(resolution.npcReply?.text ?? '', /不能给|不能交/);
-  assert.match(resolution.actionNarration?.text ?? '', /给我|接过|拿来/);
+  assert.equal(resolution.npcReply?.text, '“行，放在门口。我自己拿。”');
+  assert.equal(resolution.npcReply?.intent, 'accept_package_on_agent_terms');
+  assert.match(resolution.actionNarration?.text ?? '', /放在门口/);
 }
 
 async function testVagueActionNarrationIncludesConcretePhoneProbeText() {
@@ -1112,7 +1112,7 @@ await testLinYueVisibleContextKeepsPhotoSeparateFromDoorAndPoliceKnowledge();
 await testLinYuePhotoOnlyRecommendationsDoNotMentionDoorQuoteOrPolice();
 await testDoorCoordinationCreatesPlayableNextSteps();
 await testMessageReplyAmbientNarrationIncludesConcreteMessageText();
-await testPackageHandoffToChenCannotBeReversedByNpcAi();
+await testNpcAgentReplyTakesPriorityOverPackageHandoffFallback();
 await testVagueActionNarrationIncludesConcretePhoneProbeText();
 await testResolveTurnHarnessAdvancesWorldTickByDefault();
 await testResolveTurnHarnessCanDisableWorldTickForControlledRuns();

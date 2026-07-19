@@ -237,6 +237,9 @@ export function fallbackParseAction(input: string): ActionPlan {
     if (itemId) {
       const a = createAction(raw, 'pick_up', itemId, `拿起${itemId}`, 0.82, 1, 1, 'low');
       (a as any).itemId = itemId;
+      a.itemKind = ['kitchen_knife', 'scissors', 'desk_lamp', 'umbrella'].includes(itemId)
+        ? 'weapon'
+        : 'utility';
       actions.push(a);
     }
   }

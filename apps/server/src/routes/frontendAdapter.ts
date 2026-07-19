@@ -11,6 +11,7 @@ import { buildKillerPromptPayload } from '../ai/killerPrompt';
 import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObject';
 import { formatWorldInfoPromptBlock } from '../ai/worldInfoPrompt';
 import { formatConfirmedWorldEventsPromptBlock } from '../ai/worldEventPrompt';
+import { generateNpcReplyAi } from '../ai/harnessAiAdapters';
 
 interface FrontendAdapterRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -305,6 +306,7 @@ export function createFrontendHarnessAdapters(input: string, state: GameState) {
     narrateAction: (context) => narrateActionForFrontend(context, blackboard),
     narrateAmbient: (context) => narrateAmbientForFrontend(context, blackboard),
     reviewNarration: critiqueNarrationForFrontend,
+    npcReply: generateNpcReplyAi,
   };
 
   return {

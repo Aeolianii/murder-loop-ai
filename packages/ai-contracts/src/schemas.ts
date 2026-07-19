@@ -73,6 +73,8 @@ export const ParsedActionSchema = z.object({
   timeCost: z.number().min(1).max(5),
   noise: z.number().min(0).max(10),
   risk: z.enum(ActionRiskValues),
+  contactChannel: z.enum(['phone', 'doorstep', 'unspecified']).optional(),
+  itemKind: z.enum(['weapon', 'utility', 'evidence', 'unknown']).optional(),
 }).passthrough();
 
 export const ActionPlanSchema = z.object({

@@ -242,7 +242,7 @@ async function reviewNarrationAi(input: {
   };
 }
 
-async function npcReplyAi(speaker: NpcReply['speaker'], input: string, state: GameState): Promise<NpcReply> {
+export async function generateNpcReplyAi(speaker: NpcReply['speaker'], input: string, state: GameState): Promise<NpcReply> {
   const visibleContext = buildNpcVisibleContext(state, speaker, input);
   const ai = await completeRoleJson(
     'npc',
@@ -257,6 +257,7 @@ async function npcReplyAi(speaker: NpcReply['speaker'], input: string, state: Ga
       '林越收到包裹照片时，可以说“先别拆包裹/保存照片/看寄件信息”，但不能说“别开门/别靠门缝/门外有人/警察真假”，除非 visibleContext.canReference.doorActivity 或 visibleContext.canReference.policeReport 支持。',
       'speaker=police_dispatch 时，只写接线员基于报警通话可知道的安全指令。',
       'speaker=chen_huaimin 时，只写陈怀民能观察、收到、监听、内线告知或推测到的信息，不得知道林越和警方内部动作。',
+      '动作方向必须以玩家 input 为准：“把包裹给/交给/还给房东”表示玩家正在把包裹交给陈怀民，不是向陈怀民索要包裹。陈怀民的目标是回收包裹，应基于现场语境直接回应，不能把施受关系写反。',
       '只输出一个 JSON 对象：{"speaker":"linyue|police_dispatch|chen_huaimin","text":"...","intent":"...","riskWarning":"...","suggestedExternalAction":"..."}',
     ].join('\n'),
     { speaker, input, visibleContext },
@@ -274,7 +275,7 @@ export function createAiHarness(options: HarnessOptions = {}) {
     narrateAction: (ctx) => narrateActionAi(ctx),
     narrateAmbient: (ctx) => narrateAmbientAi(ctx),
     reviewNarration: reviewNarrationAi,
-    npcReply: npcReplyAi,
+    npcReply: generateNpcReplyAi,
     npcAdapter: createNpcAdapter(),
   }, options);
 }

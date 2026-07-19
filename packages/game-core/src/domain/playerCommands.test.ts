@@ -63,7 +63,13 @@ function testBuildsOneCommandPerParsedActionInOrder() {
 function testCommandCarriesPlanCausationAndActionMetadata() {
   const commands = buildPlayerCommandsFromActionPlan(
     plan([
-      action('action-pick-knife', 'pick_up', 'kitchen_knife', '拿起厨刀', { itemId: 'kitchen_knife' }),
+      action('action-pick-knife', 'pick_up', 'kitchen_knife', '拿起厨刀', {
+        itemId: 'kitchen_knife',
+        itemKind: 'weapon',
+      }),
+      action('action-answer-door', 'communicate', 'chen_huaimin', '隔门回应陈怀民', {
+        contactChannel: 'doorstep',
+      }),
       action('action-attack', 'attack', 'chen_huaimin', '用厨刀攻击陈怀民', {
         weaponId: 'kitchen_knife',
         confidence: 0.7,
@@ -80,10 +86,12 @@ function testCommandCarriesPlanCausationAndActionMetadata() {
   assert.equal(commands[0].correlationId, 'plan-photo-linyue-lock-door');
   assert.equal(commands[0].actionId, 'action-pick-knife');
   assert.equal(commands[0].payload?.itemId, 'kitchen_knife');
-  assert.equal(commands[1].payload?.weaponId, 'kitchen_knife');
-  assert.equal(commands[1].risk, 'high');
-  assert.equal(commands[1].timeCost, 2);
-  assert.equal(commands[1].noise, 5);
+  assert.equal(commands[0].payload?.itemKind, 'weapon');
+  assert.equal(commands[1].payload?.contactChannel, 'doorstep');
+  assert.equal(commands[2].payload?.weaponId, 'kitchen_knife');
+  assert.equal(commands[2].risk, 'high');
+  assert.equal(commands[2].timeCost, 2);
+  assert.equal(commands[2].noise, 5);
 }
 
 function testOpenIntentNamesRemainValidCommands() {

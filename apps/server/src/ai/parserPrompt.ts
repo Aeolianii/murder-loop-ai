@@ -39,7 +39,8 @@ export function buildParseSystemPrompt(extras?: { combatWeapons?: boolean }): st
     '',
     '【输出格式】',
     'target 和 method 必须是字符串，无目标时空字符串，不填 null。',
-    'attack 有武器时加 "weaponId"，pick_up/use_item 加 "itemId"。',
+    'communicate/deceive 的 target=chen_huaimin 时，加 "contactChannel":"phone|doorstep|unspecified"，按玩家实际沟通渠道判断。',
+    'attack 有武器时加 "weaponId"；pick_up/use_item 加 "itemId" 和 "itemKind":"weapon|utility|evidence|unknown"，由当前用途与上下文判断，不按固定物品名单套用。',
     'intent 枚举：inspect secure_entry record communicate call_police verify_identity deceive hide_evidence preserve_evidence open_door self_care wait escape attack pick_up use_item unknown',
     '完整 JSON：{"id":"plan-xxx","raw":"原文","summary":"一句话","actions":[...],"confidence":0.9,"warnings":[]}',
   ];
@@ -47,8 +48,8 @@ export function buildParseSystemPrompt(extras?: { combatWeapons?: boolean }): st
   if (extras?.combatWeapons) {
     base.push(
       '',
-      '【道具合理性】出租屋里没有枪/炸弹/闪光弹。厨房刀/剪刀/台灯/雨伞是合理武器。',
-      '玩家声称用枪/炸弹 → confidence<0.3，warnings 注明"不合理道具"。',
+      '【道具合理性】根据玩家用途和 parserContext/state 中实际存在、可接触的物品判断 itemKind，不套固定武器清单。',
+      '玩家声称使用当前场景不存在或不可接触的物品 → confidence<0.3，并在 warnings 说明事实冲突。',
     );
   }
 

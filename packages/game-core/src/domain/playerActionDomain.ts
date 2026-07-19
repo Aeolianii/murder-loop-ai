@@ -114,17 +114,29 @@ const usableItemIds = new Set([
   'flashlight',
 ]);
 
-const combatCapableItemIds = new Set([
-  'kitchen_knife',
-  'scissors',
-  'desk_lamp',
-  'umbrella',
-]);
+type ContactChannel = 'phone' | 'doorstep' | 'unspecified';
+type ItemKind = 'weapon' | 'utility' | 'evidence' | 'unknown';
 
-function classifyChenContactChannel(text: string) {
+function inferChenContactChannel(text: string): ContactChannel {
   if (includesAny(text, ['陌生号码', '短信', '消息', '手机', '来电', '打电话', '通话'])) return 'phone';
   if (includesAny(text, ['门外', '门口', '开门', '隔门', '当面', '门后'])) return 'doorstep';
   return 'unspecified';
+}
+
+function resolveCommandContactChannel(command: PlayerCommand, text: string): ContactChannel {
+  const agentChannel = command.payload?.contactChannel;
+  if (agentChannel === 'phone' || agentChannel === 'doorstep' || agentChannel === 'unspecified') {
+    return agentChannel;
+  }
+  return inferChenContactChannel(text);
+}
+
+function resolveCommandItemKind(command: PlayerCommand): ItemKind {
+  const agentItemKind = command.payload?.itemKind;
+  if (agentItemKind === 'weapon' || agentItemKind === 'utility' || agentItemKind === 'evidence' || agentItemKind === 'unknown') {
+    return agentItemKind;
+  }
+  return 'unknown';
 }
 
 function resolveCommandItemId(command: PlayerCommand) {
@@ -201,7 +213,7 @@ export function evaluatePlayerCommandDomainEvents(
 
     if (command.commandType === 'deceive' && command.target === 'chen_huaimin') {
       const factId = mentionsCloset(text) ? 'package_in_closet' : 'player_false_statement';
-      const contactChannel = classifyChenContactChannel(text);
+      const contactChannel = resolveCommandContactChannel(command, text);
       events.push(createDomainEvent(command, 'player_lied_to_chen', 'chen_huaimin', 'Player supplied Chen Huaimin with an unverified claim.', [
         'player_lied_to_chen',
       ], { factId, confidence: 0.65, contactChannel }));
@@ -209,7 +221,7 @@ export function evaluatePlayerCommandDomainEvents(
     }
 
     if (command.commandType === 'communicate' && command.target === 'chen_huaimin') {
-      const contactChannel = classifyChenContactChannel(text);
+      const contactChannel = resolveCommandContactChannel(command, text);
       events.push(createDomainEvent(command, 'player_messaged_chen', 'chen_huaimin', 'Player sent a message to Chen Huaimin.', [
         'player_messaged_chen',
       ], { contactChannel }));
@@ -309,9 +321,10 @@ export function evaluatePlayerCommandDomainEvents(
 
     if (command.commandType === 'pick_up') {
       const itemId = resolveCommandItemId(command);
+      const itemKind = resolveCommandItemKind(command);
       events.push(createDomainEvent(command, 'item_picked_up', itemId ?? 'unknown', 'Player attempted to pick up an item.', [
         ...(itemId ? [`item_picked_up:${itemId}`] : ['item_pickup_failed']),
-      ], { itemId }));
+      ], { itemId, itemKind }));
       continue;
     }
 
@@ -495,7 +508,7 @@ export function applyPlayerDomainEventsToState(
         const itemId = domainEvent.payload?.itemId;
         if (typeof itemId === 'string' && itemId) {
           state.playerHolding = itemId;
-          if (combatCapableItemIds.has(itemId)) {
+          if (domainEvent.payload?.itemKind === 'weapon') {
             addClueFromDomainEvent(state, options.addedClues, 'weapon_found');
           }
         }
