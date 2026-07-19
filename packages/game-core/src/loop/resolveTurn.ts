@@ -627,11 +627,20 @@ async function resolveStoryNodeTurn(
 async function resolveRuleStages(
   turn: ParsedHarnessTurn,
   harness: HarnessRuntime,
+  preparedPlayerResult?: TurnResolution['playerResult'] & { domainEvents?: DomainEvent[] },
 ): Promise<ResolvedHarnessTurn> {
-  const playerResult = await harness.dispatcher.runCommand('ActionParsed', {
+  const playerResult = preparedPlayerResult ?? await harness.dispatcher.runCommand('ActionParsed', {
     plan: turn.plan,
     state: turn.state,
   });
+  if (
+    preparedPlayerResult?.domainEvents?.some((event) => event.eventType === 'message_delivered')
+  ) {
+    await harness.dispatcher.runObservers('ActionParsed', {
+      plan: turn.plan,
+      state: playerResult.state,
+    });
+  }
   const confirmedEvents = (
     playerResult as TurnResolution['playerResult'] & { domainEvents?: DomainEvent[] }
   ).domainEvents ?? [];
@@ -836,6 +845,31 @@ export async function resolveTurnHarness(
   if (storyNodeResolution) return storyNodeResolution;
 
   const resolvedTurn = await resolveRuleStages(parsedTurn, harness);
+  const narratedTurn = await renderHarnessTurn(resolvedTurn, harness);
+  dispatchNarrationCritic(narratedTurn, harness);
+  return finalizeHarnessTurn(narratedTurn, harness);
+}
+
+export interface PreparedPlayerTurnInput {
+  state: GameState;
+  input: string;
+  plan: ActionPlan;
+  playerResult: TurnResolution['playerResult'] & { domainEvents?: DomainEvent[] };
+}
+
+export async function resolveTurnHarnessFromPreparedPlayerTurn(
+  input: PreparedPlayerTurnInput,
+  harness: HarnessRuntime,
+): Promise<TurnResolution> {
+  const parsedTurn: ParsedHarnessTurn = {
+    input: input.input,
+    state: structuredClone(input.state) as GameState,
+    plan: structuredClone(input.plan) as ActionPlan,
+    worldTickTrace: [],
+    startedWithReviveProtection: hasReviveProtection(input.state),
+  };
+  const preparedPlayerResult = structuredClone(input.playerResult) as PreparedPlayerTurnInput['playerResult'];
+  const resolvedTurn = await resolveRuleStages(parsedTurn, harness, preparedPlayerResult);
   const narratedTurn = await renderHarnessTurn(resolvedTurn, harness);
   dispatchNarrationCritic(narratedTurn, harness);
   return finalizeHarnessTurn(narratedTurn, harness);

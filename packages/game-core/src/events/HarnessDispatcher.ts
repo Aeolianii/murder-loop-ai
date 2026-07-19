@@ -67,6 +67,34 @@ export class HarnessDispatcher {
     return primaryResult as GameCommandResults[T];
   }
 
+  async runObservers<T extends GameEventType>(
+    type: T,
+    payload: GameEvent<T>['payload'],
+    parentId?: string,
+  ): Promise<unknown[]> {
+    const event = this.bus.createEvent(type, payload, parentId);
+    const startedAt = performance.now();
+    const subscribers = this.registry
+      .getAgentsForEvent(type)
+      .filter((subscriber) => subscriber.role !== 'primary');
+    const results: unknown[] = [];
+
+    for (const subscriber of subscribers) {
+      if (subscriber.defer) {
+        void this.runWithFallback(type, subscriber.agent, payload, event).catch(() => null);
+        continue;
+      }
+      try {
+        results.push(await this.runWithFallback(type, subscriber.agent, payload, event));
+      } catch (error) {
+        results.push({ __error: error });
+      }
+    }
+
+    this.bus.recordEvent(event, results, performance.now() - startedAt);
+    return results;
+  }
+
   async emitNotification<T extends GameEventType>(
     type: T,
     payload: GameEvent<T>['payload'],

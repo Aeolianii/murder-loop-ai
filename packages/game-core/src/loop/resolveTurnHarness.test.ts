@@ -1,10 +1,120 @@
 import assert from 'node:assert/strict';
+import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
 import { DEADLINE_MINUTE, type ActionPlan, type RecommendedAction } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
-import { createHarness, resolveTurnHarness } from './resolveTurn';
+import { createHarness, resolveTurnHarness, resolveTurnHarnessFromPreparedPlayerTurn } from './resolveTurn';
 import { createInitialWorldState } from '../world/worldSimulator';
 import { buildKillerContext, buildNpcVisibleContext } from '../context/ContextBuilder';
 import type { NpcAdapter } from '../world/npcTypes';
+import { prepareLowRiskTurn } from '../takeover/lowRiskTakeover';
+
+function lowRiskBrief(
+  operation: string,
+  targetIds: string[],
+  options: { scope?: string } = {},
+): TurnBrief {
+  return {
+    loopId: 'legacy-run-1',
+    turnId: `prepared-${operation}`,
+    inputStateVersion: 1,
+    deadlineAt: new Date(Date.now() + 10_000).toISOString(),
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    utteranceMode: 'command',
+    resolvedReferences: [],
+    orderedActions: [{
+      actionId: `action-${operation}`,
+      actorId: 'player',
+      operation,
+      targetIds,
+      scope: options.scope,
+      dependsOnActionIds: [],
+      inputHandleIds: [],
+      outputHandleIds: [],
+      originalSpan: { start: 0, end: operation.length, text: `${operation} ${targetIds.join(' ')}` },
+    }],
+    globalConstraints: [],
+    scopedConstraints: [],
+    communications: [],
+    candidateHandles: [],
+    ambiguities: [],
+  };
+}
+
+async function testPreparedLowRiskPlayerStateContinuesIntoKillerStages() {
+  const state = createInitialGameState();
+  const prepared = prepareLowRiskTurn({
+    state,
+    brief: lowRiskBrief('secure_entry', ['front_door', 'chair']),
+    sourceProposalId: 'proposal.player.secure-door',
+  });
+  assert.equal(prepared.status, 'prepared');
+  if (prepared.status !== 'prepared') throw new Error('expected prepared turn');
+  const harness = createHarness({
+    chooseKillerStrategy: async () => ({
+      id: 'killer-spare-key-after-takeover',
+      type: 'spare_key_entry',
+      title: 'Spare key attempt',
+      rationale: 'Exercise the physical door state produced by phase 3.',
+      visibleToPlayer: true,
+      risk: 'high',
+    }),
+  }, { worldTick: 'disabled' });
+
+  const resolution = await resolveTurnHarnessFromPreparedPlayerTurn({
+    state,
+    input: 'lock, chain, and barricade the front door',
+    plan: prepared.plan,
+    playerResult: prepared.playerResult,
+  }, harness);
+
+  assert.equal(resolution.finalState.room.front_door.state.locked, true);
+  assert.equal(resolution.finalState.room.front_door.state.chainLocked, true);
+  assert.equal(resolution.finalState.room.front_door.state.barricaded, true);
+  assert.equal(resolution.finalState.ending, null, 'Killer must act against the prepared physical state');
+  assert.equal(harness.dispatcher.getTrace().some(
+    (entry) => entry.agentId === 'rule' && entry.eventType === 'ActionParsed',
+  ), false);
+  assert.equal(harness.dispatcher.getTrace().some((entry) => entry.agentId === 'killer'), true);
+}
+
+async function testFailedPreparedCommunicationDoesNotTriggerNpcObserver() {
+  const state = createInitialGameState();
+  state.phoneBattery = 0;
+  state.phoneFunctional = false;
+  state.room.phone.state.battery = 0;
+  const prepared = prepareLowRiskTurn({
+    state,
+    brief: lowRiskBrief('communicate', ['lin_yue']),
+    sourceProposalId: 'proposal.player.failed-message',
+  });
+  assert.equal(prepared.status, 'prepared');
+  if (prepared.status !== 'prepared') throw new Error('expected prepared turn');
+  let npcCalls = 0;
+  const harness = createHarness({
+    npcReply: async () => {
+      npcCalls += 1;
+      return {
+        speaker: 'linyue',
+        text: 'This must not be returned for an undelivered message.',
+        intent: 'invalid_reply',
+        riskWarning: '',
+        suggestedExternalAction: '',
+      };
+    },
+  }, { worldTick: 'disabled' });
+
+  const resolution = await resolveTurnHarnessFromPreparedPlayerTurn({
+    state,
+    input: 'message Lin Yue',
+    plan: prepared.plan,
+    playerResult: prepared.playerResult,
+  }, harness);
+
+  assert.equal(npcCalls, 0);
+  assert.equal(resolution.npcReply, null);
+  assert.equal(harness.dispatcher.getTrace().some((entry) => entry.agentId === 'npc'), false);
+}
 
 async function testResolveTurnHarnessReturnsTraceAndFinalState() {
   const state = createInitialGameState();
@@ -1223,6 +1333,8 @@ async function testDirectorRunsAsDeferredCriticOutsideTurnPath() {
 }
 
 await testResolveTurnHarnessReturnsTraceAndFinalState();
+await testPreparedLowRiskPlayerStateContinuesIntoKillerStages();
+await testFailedPreparedCommunicationDoesNotTriggerNpcObserver();
 await testMalformedParserAiOutputFallsBackToValidPlan();
 await testSelfCareDoesNotTriggerHardcodedDeath();
 await testReviveProtectionBlocksImmediateForcedEntryDeath();

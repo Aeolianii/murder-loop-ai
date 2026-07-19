@@ -217,6 +217,33 @@ async function testCommandRunsObserverArtifacts() {
   assert.deepEqual(dispatcher.getLatestArtifact('sidebar', 'PlayerActionSubmitted'), { value: 'observer' });
 }
 
+async function testObserversCanRunWithoutPrimaryCommand() {
+  const bus = new GameEventBus();
+  const registry = new AgentRegistry(bus);
+  let primaryCalls = 0;
+  registry.register(createAgent({
+    handler: async () => {
+      primaryCalls += 1;
+      return { value: 'primary' };
+    },
+  }));
+  registry.register(createAgent({
+    id: 'sidebar',
+    subscriptions: [{ event: 'PlayerActionSubmitted', priority: 20, role: 'observer' }],
+    handler: async () => ({ value: 'observer-only' }),
+  }));
+  const dispatcher = new HarnessDispatcher(bus, registry);
+
+  const results = await dispatcher.runObservers('PlayerActionSubmitted', {
+    input: 'prepared elsewhere',
+    state: {} as never,
+  });
+
+  assert.equal(primaryCalls, 0);
+  assert.deepEqual(results, [{ value: 'observer-only' }]);
+  assert.deepEqual(dispatcher.getLatestArtifact('sidebar', 'PlayerActionSubmitted'), { value: 'observer-only' });
+}
+
 async function testDeferredCriticDoesNotBlockAndRecordsDiagnosticArtifact() {
   const bus = new GameEventBus();
   const registry = new AgentRegistry(bus);
@@ -257,4 +284,5 @@ await testFallbackModeFailureTraceUsesFallbackSource();
 await testCommandRejectsInvalidFallbackOutput();
 await testRuleAgentRejectsMalformedDeterministicOutput();
 await testCommandRunsObserverArtifacts();
+await testObserversCanRunWithoutPrimaryCommand();
 await testDeferredCriticDoesNotBlockAndRecordsDiagnosticArtifact();
