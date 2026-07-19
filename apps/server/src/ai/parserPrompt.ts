@@ -20,6 +20,7 @@ export function buildParseSystemPrompt(extras?: { combatWeapons?: boolean }): st
     '报警/110 → call_police | 核实警号/回拨 → verify_identity',
     '藏/隐藏包裹 → hide_evidence | 锁门/把门锁上/锁好门/堵门/加固 → secure_entry',
     '回复陌生号码/对话回复 → communicate (target=chen_huaimin)',
+    '把包裹交给/递给/还给房东 → open_door (target=front_door) 后接 communicate (target=chen_huaimin)，保留“玩家把包裹给房东”的动作方向',
     '假装/套话/骗 → deceive | 追/冲/跑 → escape',
     '砍/刺/捅/打/攻击 → attack | 拿起/捡起 → pick_up | 使用XX → use_item',
     '等/听/观察/不动 → wait | 不确定 → inspect（绝不因不确定而选 wait）',

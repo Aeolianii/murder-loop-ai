@@ -1,7 +1,11 @@
 import type { GameState, NpcReply } from '@murder-loop-ai/shared';
 import { buildNpcVisibleContext } from '../context/ContextBuilder';
+import { resolveNpcInteractionPolicyReply } from './interactionPolicy';
 
 export function fallbackNpcReply(speaker: NpcReply['speaker'], input: string, state: GameState): NpcReply {
+  const policyReply = resolveNpcInteractionPolicyReply(speaker, input);
+  if (policyReply) return policyReply;
+
   const visibleContext = buildNpcVisibleContext(state, speaker, input);
 
   if (speaker === 'police_dispatch') {

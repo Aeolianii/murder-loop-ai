@@ -1,4 +1,5 @@
 import type { ActionIntent, ActionPlan, ActionTarget, ParsedAction } from '@murder-loop-ai/shared';
+import { isPackageHandoffToChen } from '../npc/interactionPolicy';
 
 const includesAny = (text: string, words: string[]) => words.some((word) => text.includes(word));
 const firstIndexOfAny = (text: string, words: string[]) => {
@@ -57,6 +58,9 @@ function createAction(raw: string, intent: ActionIntent, target: ActionTarget, m
 }
 
 function actionOrderIndex(action: ParsedAction, text: string) {
+  if (action.intent === 'open_door' && action.target === 'front_door') {
+    return firstIndexOfAny(text, ['开门', '打开门', '让他进来']);
+  }
   if (action.intent === 'secure_entry' && action.target === 'front_door') {
     return firstIndexOfAny(text, ['锁门', '锁上门', '把门锁上', '门锁上', '锁好门', '扣上门锁', '反锁', '门链', '堵门', '抵住门', '顶住门', '椅子', '行李箱']);
   }
@@ -82,12 +86,13 @@ export function fallbackParseAction(input: string): ActionPlan {
   const text = normalize(raw);
   const actions: ParsedAction[] = [];
   const warnings: string[] = [];
+  const packageHandoffToChen = isPackageHandoffToChen(raw);
 
   if (!raw) {
     actions.push(createAction('沉默等待', 'wait', 'self', '保持安静并倾听门外变化', 0.8, 1, 0, 'medium'));
   }
 
-  if (includesAny(text, ['包裹', '纸箱', '快递', '旧书', '药盒'])) {
+  if (!packageHandoffToChen && includesAny(text, ['包裹', '纸箱', '快递', '旧书', '药盒'])) {
     const intent: ActionIntent = includesAny(text, ['藏', '水箱', '卫生间', '放到'])
       ? 'hide_evidence'
       : includesAny(text, ['拍照', '拍下来', '照片', '发给', '备份'])
@@ -155,7 +160,16 @@ export function fallbackParseAction(input: string): ActionPlan {
   }
 
   if (includesAny(text, ['房东', '陈怀民', '套话', '假装不知道', '问他'])) {
-    actions.push(createAction(raw, includesAny(text, ['假装', '套话', '骗']) ? 'deceive' : 'communicate', 'chen_huaimin', '与房东通话并控制信息暴露', 0.87, 2, 0, 'high'));
+    actions.push(createAction(
+      raw,
+      includesAny(text, ['假装', '套话', '骗']) ? 'deceive' : 'communicate',
+      'chen_huaimin',
+      packageHandoffToChen ? '把包裹交给门外自称房东的人' : '与房东沟通并控制信息暴露',
+      0.87,
+      2,
+      0,
+      'high',
+    ));
   }
 
   if (includesAny(text, ['睡着', '装睡', '假装睡', '没拆', '不知道包裹'])) {

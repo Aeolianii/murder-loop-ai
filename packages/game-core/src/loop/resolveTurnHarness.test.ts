@@ -816,6 +816,65 @@ async function testMessageReplyAmbientNarrationIncludesConcreteMessageText() {
   assert.match(resolution.ambientNarration?.text ?? '', /你先别动/);
 }
 
+async function testPackageHandoffToChenCannotBeReversedByNpcAi() {
+  const state = createInitialGameState();
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-handoff-package',
+      raw: '开门把包裹给房东',
+      summary: '开门，把包裹交给门外自称房东的人',
+      actions: [
+        {
+          id: 'action-open-door',
+          raw: '开门',
+          intent: 'open_door',
+          target: 'front_door',
+          method: '打开房门',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 1,
+          risk: 'high',
+        },
+        {
+          id: 'action-handoff-package',
+          raw: '把包裹给房东',
+          intent: 'communicate',
+          target: 'chen_huaimin',
+          method: '把包裹交给门外自称房东的人',
+          confidence: 0.96,
+          timeCost: 1,
+          noise: 1,
+          risk: 'high',
+        },
+      ],
+      confidence: 0.96,
+      warnings: [],
+    }),
+    npcReply: async () => ({
+      speaker: 'chen_huaimin',
+      text: '这个包裹不能交给任何人。',
+      intent: '错误地拒绝玩家交出的包裹',
+      riskWarning: '方向被反向理解。',
+      suggestedExternalAction: '不要这样回复。',
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-retreat-after-handoff',
+      type: 'retreat',
+      title: '拿到包裹',
+      rationale: '陈怀民的首要目标是收回包裹。',
+      visibleToPlayer: true,
+      risk: 'low',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, '开门把包裹给房东', harness);
+
+  assert.equal(resolution.npcReply?.speaker, 'chen_huaimin');
+  assert.match(resolution.npcReply?.text ?? '', /给我|接过|拿来/);
+  assert.doesNotMatch(resolution.npcReply?.text ?? '', /不能给|不能交/);
+  assert.match(resolution.actionNarration?.text ?? '', /给我|接过|拿来/);
+}
+
 async function testVagueActionNarrationIncludesConcretePhoneProbeText() {
   const state = createInitialGameState();
   const harness = createHarness({
@@ -1053,6 +1112,7 @@ await testLinYueVisibleContextKeepsPhotoSeparateFromDoorAndPoliceKnowledge();
 await testLinYuePhotoOnlyRecommendationsDoNotMentionDoorQuoteOrPolice();
 await testDoorCoordinationCreatesPlayableNextSteps();
 await testMessageReplyAmbientNarrationIncludesConcreteMessageText();
+await testPackageHandoffToChenCannotBeReversedByNpcAi();
 await testVagueActionNarrationIncludesConcretePhoneProbeText();
 await testResolveTurnHarnessAdvancesWorldTickByDefault();
 await testResolveTurnHarnessCanDisableWorldTickForControlledRuns();

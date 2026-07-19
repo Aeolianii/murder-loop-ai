@@ -78,4 +78,15 @@ describe('fallbackParseAction - 复合动作分解', () => {
     // 发到平台不是发给联系人，不应有 communicate
     expect(result.actions.some(a => a.intent === 'communicate')).toBe(false);
   });
+
+  test('开门把包裹给房东 → open_door + communicate/chen_huaimin, not inspect/package', () => {
+    const result = fallbackParseAction('开门把包裹给房东');
+
+    expect(result.actions.map(a => [a.intent, a.target])).toEqual([
+      ['open_door', 'front_door'],
+      ['communicate', 'chen_huaimin'],
+    ]);
+    expect(result.actions.some(a => a.intent === 'inspect' && a.target === 'package')).toBe(false);
+    expect(result.actions[1]?.method).toContain('把包裹交给');
+  });
 });

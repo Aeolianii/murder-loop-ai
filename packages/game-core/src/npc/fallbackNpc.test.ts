@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createInitialGameState } from '../state/createInitialState';
 import { ensureWorldState } from '../world/syncGameWorld';
 import { fallbackNpcReply } from './fallbackNpc';
+import { isPackageHandoffToChen } from './interactionPolicy';
 
 function testLinYuePhotoOnlyFallbackDoesNotUseDoorOrPoliceKnowledge() {
   const state = createInitialGameState();
@@ -34,7 +35,22 @@ function testLinYueFallbackCanUseDoorKnowledgeAfterPlayerReportsIt() {
   assert.match(reply.text, /门|door|警|police|outside|进不去|unable to get in/i);
 }
 
+function testPackageHandoffDirectionIgnoresUnknownPackageAdjective() {
+  assert.equal(isPackageHandoffToChen('开门把这个不认识的包裹给房东'), true);
+  assert.equal(isPackageHandoffToChen('不要把包裹给房东'), false);
+
+  const reply = fallbackNpcReply(
+    'chen_huaimin',
+    '开门把这个不认识的包裹给房东',
+    createInitialGameState(),
+  );
+
+  assert.match(reply.text, /给我|接过|拿来/);
+  assert.doesNotMatch(reply.text, /不能给|不能交/);
+}
+
 testLinYuePhotoOnlyFallbackDoesNotUseDoorOrPoliceKnowledge();
 testLinYueFallbackCanUseDoorKnowledgeAfterPlayerReportsIt();
+testPackageHandoffDirectionIgnoresUnknownPackageAdjective();
 
 console.log('fallbackNpc.test.ts passed');
