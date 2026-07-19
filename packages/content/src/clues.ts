@@ -61,6 +61,14 @@ export const clueBook: Record<string, Omit<ClueRecord, 'discoveredAt'>> = {
     weight: 14,
     isPersistent: true,
   },
+  doorstep_package_claim: {
+    id: 'doorstep_package_claim',
+    title: '门外的人认领包裹',
+    detail: '门外的人自称房东，并明确表示门口的包裹是他的。这个现场说法需要进一步核实。',
+    source: 'player_discovered',
+    weight: 10,
+    isPersistent: true,
+  },
   // ---- 新增：战斗/杀手相关线索 ----
   chen_body: {
     id: 'chen_body',

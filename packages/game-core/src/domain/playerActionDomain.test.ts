@@ -118,6 +118,32 @@ function testDoorReportToLinYueUsesTheMessageReducer() {
   assert.equal(state.clues.some((clue) => clue.id === 'linyue_has_photo'), false);
 }
 
+function testChenContactClueMatchesTheActualChannel() {
+  const doorstepState = createInitialGameState();
+  const doorstepCommands = buildPlayerCommandsFromActionPlan(
+    plan([action('handoff-package', 'communicate', 'chen_huaimin', '开门把包裹交给房东')]),
+    { run: doorstepState.run, minute: doorstepState.minute },
+  );
+  const doorstepEvents = evaluatePlayerCommandDomainEvents(doorstepState, doorstepCommands);
+
+  assert.equal(doorstepEvents[0]?.payload?.contactChannel, 'doorstep');
+  applyPlayerDomainEventsToState(doorstepState, doorstepEvents);
+  assert.equal(doorstepState.clues.some((clue) => clue.id === 'doorstep_package_claim'), true);
+  assert.equal(doorstepState.clues.some((clue) => clue.id === 'unknown_number_probe'), false);
+
+  const phoneState = createInitialGameState();
+  const phoneCommands = buildPlayerCommandsFromActionPlan(
+    plan([action('reply-to-number', 'communicate', 'chen_huaimin', '回复陌生号码：包裹在我这里')]),
+    { run: phoneState.run, minute: phoneState.minute },
+  );
+  const phoneEvents = evaluatePlayerCommandDomainEvents(phoneState, phoneCommands);
+
+  assert.equal(phoneEvents[0]?.payload?.contactChannel, 'phone');
+  applyPlayerDomainEventsToState(phoneState, phoneEvents);
+  assert.equal(phoneState.clues.some((clue) => clue.id === 'unknown_number_probe'), true);
+  assert.equal(phoneState.clues.some((clue) => clue.id === 'doorstep_package_claim'), false);
+}
+
 function testAllStatefulPlayerCommandsReduceThroughDomainEvents() {
   const state = createInitialGameState();
   state.player.stress = 30;
@@ -163,7 +189,24 @@ function testAllStatefulPlayerCommandsReduceThroughDomainEvents() {
   assert.equal(state.player.injury, 'minor');
   assert.ok(state.clues.some((clue) => clue.id === 'wrong_package'));
   assert.ok(state.clues.some((clue) => clue.id === 'recording_pressure'));
-  assert.ok(state.clues.some((clue) => clue.id === 'weapon_found'));
+  assert.equal(state.clues.some((clue) => clue.id === 'weapon_found'), false);
+}
+
+function testPickingUpACombatCapableItemAddsTheWeaponClue() {
+  const state = createInitialGameState();
+  const weaponPickup = {
+    ...action('pick-knife', 'pick_up', 'kitchen_knife', '拿起厨房刀防身'),
+    itemId: 'kitchen_knife',
+  };
+  const commands = buildPlayerCommandsFromActionPlan(
+    plan([weaponPickup]),
+    { run: state.run, minute: state.minute },
+  );
+
+  applyPlayerDomainEventsToState(state, evaluatePlayerCommandDomainEvents(state, commands));
+
+  assert.equal(state.playerHolding, 'kitchen_knife');
+  assert.equal(state.clues.some((clue) => clue.id === 'weapon_found'), true);
 }
 
 function testCombatReducerRejectsUnavailableWeaponWithoutMutatingPlan() {
@@ -188,5 +231,7 @@ testEvaluatesCommandsIntoAuthoritativeDomainEvents();
 testAppliesCoreDomainEventsToGameState();
 testDomainReducerDoesNotLeakPhotoShareToKillerKnowledge();
 testDoorReportToLinYueUsesTheMessageReducer();
+testChenContactClueMatchesTheActualChannel();
 testAllStatefulPlayerCommandsReduceThroughDomainEvents();
+testPickingUpACombatCapableItemAddsTheWeaponClue();
 testCombatReducerRejectsUnavailableWeaponWithoutMutatingPlan();

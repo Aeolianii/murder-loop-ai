@@ -114,6 +114,19 @@ const usableItemIds = new Set([
   'flashlight',
 ]);
 
+const combatCapableItemIds = new Set([
+  'kitchen_knife',
+  'scissors',
+  'desk_lamp',
+  'umbrella',
+]);
+
+function classifyChenContactChannel(text: string) {
+  if (includesAny(text, ['陌生号码', '短信', '消息', '手机', '来电', '打电话', '通话'])) return 'phone';
+  if (includesAny(text, ['门外', '门口', '开门', '隔门', '当面', '门后'])) return 'doorstep';
+  return 'unspecified';
+}
+
 function resolveCommandItemId(command: PlayerCommand) {
   const payloadItemId = command.payload?.itemId;
   if (typeof payloadItemId === 'string' && payloadItemId) return payloadItemId;
@@ -188,16 +201,18 @@ export function evaluatePlayerCommandDomainEvents(
 
     if (command.commandType === 'deceive' && command.target === 'chen_huaimin') {
       const factId = mentionsCloset(text) ? 'package_in_closet' : 'player_false_statement';
+      const contactChannel = classifyChenContactChannel(text);
       events.push(createDomainEvent(command, 'player_lied_to_chen', 'chen_huaimin', 'Player supplied Chen Huaimin with an unverified claim.', [
         'player_lied_to_chen',
-      ], { factId, confidence: 0.65 }));
+      ], { factId, confidence: 0.65, contactChannel }));
       continue;
     }
 
     if (command.commandType === 'communicate' && command.target === 'chen_huaimin') {
+      const contactChannel = classifyChenContactChannel(text);
       events.push(createDomainEvent(command, 'player_messaged_chen', 'chen_huaimin', 'Player sent a message to Chen Huaimin.', [
         'player_messaged_chen',
-      ]));
+      ], { contactChannel }));
       continue;
     }
 
@@ -394,12 +409,20 @@ export function applyPlayerDomainEventsToState(
       case 'player_messaged_chen':
         state.suspicion = Math.max(0, Math.min(100, state.suspicion + 10));
         state.killerKnowledge.suspectsPlayerIsAlert = true;
-        addClueFromDomainEvent(state, options.addedClues, 'unknown_number_probe');
+        if (domainEvent.payload?.contactChannel === 'phone') {
+          addClueFromDomainEvent(state, options.addedClues, 'unknown_number_probe');
+        } else if (domainEvent.payload?.contactChannel === 'doorstep') {
+          addClueFromDomainEvent(state, options.addedClues, 'doorstep_package_claim');
+        }
         break;
       case 'player_lied_to_chen':
         state.suspicion = Math.max(0, Math.min(100, state.suspicion + 6));
         state.killerKnowledge.suspectsPlayerIsAlert = true;
-        addClueFromDomainEvent(state, options.addedClues, 'unknown_number_probe');
+        if (domainEvent.payload?.contactChannel === 'phone') {
+          addClueFromDomainEvent(state, options.addedClues, 'unknown_number_probe');
+        } else if (domainEvent.payload?.contactChannel === 'doorstep') {
+          addClueFromDomainEvent(state, options.addedClues, 'doorstep_package_claim');
+        }
         break;
       case 'recording_started':
         state.room.phone.state.recording = true;
@@ -472,7 +495,9 @@ export function applyPlayerDomainEventsToState(
         const itemId = domainEvent.payload?.itemId;
         if (typeof itemId === 'string' && itemId) {
           state.playerHolding = itemId;
-          addClueFromDomainEvent(state, options.addedClues, 'weapon_found');
+          if (combatCapableItemIds.has(itemId)) {
+            addClueFromDomainEvent(state, options.addedClues, 'weapon_found');
+          }
         }
         break;
       }
