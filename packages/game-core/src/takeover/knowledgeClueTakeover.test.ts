@@ -64,6 +64,7 @@ const deliveredCandidates: KnowledgeClueProjectionCandidates = {
     confidence: 1,
     source: 'message',
     sourceEventId: deliveredMessage.id,
+    basedOnFactIds: ['message_delivered:linyue'],
   }],
   clues: [],
 };
@@ -103,13 +104,10 @@ const legalClueCandidates: KnowledgeClueProjectionCandidates = {
     confidence: 1,
     source: 'seen',
     sourceEventId: inspection.id,
+    basedOnFactIds: ['fact.package.exterior.label_ambiguous'],
   }],
   clues: [{
     id: 'wrong_package',
-    title: '标记模糊的包裹',
-    detail: '包裹外部标签上的 5-03 / 503 标记很模糊。',
-    weight: 12,
-    isPersistent: true,
     claims: ['fact.package.exterior.label_ambiguous'],
     basedOnObservationIds: ['observation.package.exterior'],
   }],
@@ -142,6 +140,8 @@ assert.equal(legalProjection.state.clues.some((clue) => clue.id === 'narrator_in
 assert.equal(legalProjection.state.world?.knowledge.lin_yue.facts.unsourced_leak, undefined);
 assert.deepEqual(legalProjection.state.clues[0].basedOnObservationIds, ['observation.package.exterior']);
 assert.deepEqual(legalProjection.state.clues[0].sourceEventIds, [inspection.id]);
+assert.equal(legalProjection.state.clues[0].title, '标记模糊的包裹');
+assert.doesNotMatch(legalProjection.state.clues[0].detail, /内部纸条/);
 assert.equal(legalProjection.state.observations[0].sourceEventIds[0], inspection.id);
 
 const sourcelessClue = projectConfirmedKnowledgeAndClues({

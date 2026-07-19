@@ -30,6 +30,7 @@ export interface ShadowArbiterInput {
   sourcePolicies: Record<string, ShadowSourcePolicy>;
   availableEvidenceRefs: string[];
   availableObservationIds: string[];
+  availableObservationClaims?: Record<string, string[]>;
   visibleConfirmedEventIds: string[];
 }
 
@@ -444,6 +445,20 @@ function validateProposal(
     clue.basedOnObservationIds.some((id) => !observationIds.has(id))
   ))) {
     reasons.add('observation_source_missing');
+  }
+  const observationClaims = new Map<string, Set<string>>(
+    Object.entries(input.availableObservationClaims ?? {}).map(([id, claims]) => [id, new Set(claims)]),
+  );
+  for (const observation of proposal.observations) {
+    observationClaims.set(observation.id, new Set([observation.predicate]));
+  }
+  if (proposal.clueCandidates.some((clue) => {
+    const observedClaims = new Set(clue.basedOnObservationIds.flatMap((id) => (
+      [...(observationClaims.get(id) ?? [])]
+    )));
+    return clue.claims.some((claim) => !observedClaims.has(claim));
+  })) {
+    reasons.add('clue_claim_not_observed');
   }
 
   const proposedEventIds = new Set(proposal.proposedEvents.map((event) => event.id));

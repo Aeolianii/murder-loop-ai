@@ -45,6 +45,9 @@ current.clues.push(
     weight: 5,
     discoveredAt: { run: 1, minute: current.minute },
     isPersistent: true,
+    claims: ['fact.package.exterior.label_ambiguous'],
+    basedOnObservationIds: ['observation.persistent-label'],
+    sourceEventIds: ['event.inspect.package'],
   },
   {
     id: 'temporary-clue',
@@ -54,6 +57,28 @@ current.clues.push(
     weight: 2,
     discoveredAt: { run: 1, minute: current.minute },
     isPersistent: false,
+  },
+);
+current.observations.push(
+  {
+    id: 'observation.persistent-label',
+    subject: 'package',
+    predicate: 'exterior_label',
+    value: 'ambiguous',
+    scope: 'exterior.label',
+    visibleFactIds: ['fact.package.exterior.label_ambiguous'],
+    sourceEventIds: ['event.inspect.package'],
+    observedAt: { run: 1, minute: current.minute },
+  },
+  {
+    id: 'observation.temporary-trace',
+    subject: 'front_door',
+    predicate: 'sound',
+    value: 'footsteps',
+    scope: 'auditory',
+    visibleFactIds: ['fact.front_door.footsteps'],
+    sourceEventIds: ['event.listen.front-door'],
+    observedAt: { run: 1, minute: current.minute },
   },
 );
 
@@ -72,6 +97,7 @@ assert.deepEqual(reset.state.memory.crossRun, current.memory.crossRun);
 assert.deepEqual(reset.state.memory.characters.player, current.memory.characters.player);
 assert.deepEqual(reset.state.memory.characters.killer, checkpoint.memory.characters.killer);
 assert.deepEqual(reset.state.clues.map((clue) => clue.id), ['persistent-clue']);
+assert.deepEqual(reset.state.observations.map((observation) => observation.id), ['observation.persistent-label']);
 assert.deepEqual(reset.rebuildProjections, ['facts', 'player', 'killer', 'npc', 'clue', 'recommendation']);
 
 const store = new InMemoryAtomicTurnStore({ loopId: 'loop-1', stateVersion: 6, state: current });

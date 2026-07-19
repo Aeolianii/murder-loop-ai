@@ -312,13 +312,16 @@ function attachRecommendedActions(
 // ============================================================================
 
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
+  const anyStateTakeoverEnabled = env.aiLowRiskTakeoverEnabled || env.aiKnowledgeClueTakeoverEnabled;
   const lowRiskTakeoverService = options.lowRiskTakeoverService === undefined
-    ? env.aiLowRiskTakeoverEnabled
-      ? createLowRiskTakeoverService()
+    ? anyStateTakeoverEnabled
+      ? createLowRiskTakeoverService({
+          knowledgeClueTakeoverEnabled: env.aiKnowledgeClueTakeoverEnabled,
+        })
       : null
     : options.lowRiskTakeoverService;
   const shadowCoordinator = options.shadowCoordinator === undefined
-    ? env.aiShadowRunEnabled || env.aiLowRiskTakeoverEnabled
+    ? env.aiShadowRunEnabled || anyStateTakeoverEnabled
       ? createShadowRunCoordinator({
           deadlineMs: env.aiShadowDeadlineMs,
           compilerTimeoutMs: env.aiShadowCompilerTimeoutMs,
@@ -380,6 +383,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const lowRiskTakeoverStartedAt = performance.now();
     const lowRiskTakeoverDuration = () => Math.round(performance.now() - lowRiskTakeoverStartedAt);
     let lowRiskTakeoverCoordination: Record<string, unknown> | undefined;
+    let knowledgeClueTakeoverCoordination: Record<string, unknown> | undefined;
     let resolution: TurnResolution | undefined;
     if (lowRiskTakeoverService && shadowSession) {
       try {
@@ -443,6 +447,15 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
             confirmedEventCount: committed.outcome.confirmedEvents.length,
             durationMs: lowRiskTakeoverDuration(),
           };
+          if (committed.knowledgeClueProjection) {
+            knowledgeClueTakeoverCoordination = {
+              status: 'committed',
+              observationCount: committed.knowledgeClueProjection.addedObservationIds.length,
+              knowledgeUpdateCount: committed.knowledgeClueProjection.addedKnowledgeFactIds.length,
+              clueCount: committed.knowledgeClueProjection.addedClueIds.length,
+              narratorClueAuthority: 'disabled',
+            };
+          }
         } else {
           lowRiskTakeoverCoordination = {
             status: 'bypassed',
@@ -543,6 +556,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' as const },
         } : {}),
         ...(lowRiskTakeoverCoordination ? { lowRiskTakeover: lowRiskTakeoverCoordination } : {}),
+        ...(knowledgeClueTakeoverCoordination ? {
+          knowledgeClueTakeover: knowledgeClueTakeoverCoordination,
+        } : {}),
       },
       sidebar,
     };

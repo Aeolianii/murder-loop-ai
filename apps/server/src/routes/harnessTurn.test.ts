@@ -296,7 +296,10 @@ function takeoverBrief(): TurnBrief {
   };
 }
 
-function takeoverFixture(commitStatus: 'committed' | 'conflict' | 'failed' = 'committed') {
+function takeoverFixture(
+  commitStatus: 'committed' | 'conflict' | 'failed' = 'committed',
+  withKnowledgeClueProjection = false,
+) {
   const prepared = prepareLowRiskTurn({
     state: baseState,
     brief: takeoverBrief(),
@@ -335,6 +338,13 @@ function takeoverFixture(commitStatus: 'committed' | 'conflict' | 'failed' = 'co
               : {}),
         },
         state: commitStatus === 'committed' ? candidateState : undefined,
+        ...(commitStatus === 'committed' && withKnowledgeClueProjection ? {
+          knowledgeClueProjection: {
+            addedObservationIds: ['observation.route.package'],
+            addedKnowledgeFactIds: ['player:package_exterior_label_ambiguous'],
+            addedClueIds: ['wrong_package'],
+          },
+        } : {}),
       };
     },
     discard: () => undefined,
@@ -437,6 +447,42 @@ async function testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory() {
   assert.equal('coreState' in body, false);
   assert.equal('storyLog' in body, false);
   assert.equal(body.coordination.lowRiskTakeover.status, 'failed');
+  await app.close();
+}
+
+async function testKnowledgeClueTakeoverDisablesNarratorClueAuthority() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', true);
+  fixture.aiAdapters.narrateAction = async () => ({
+    title: 'Invented clue',
+    text: 'The narration explicitly mentions a secret note.',
+    clue: {
+      id: 'narrator_secret_note',
+      title: 'Secret note',
+      detail: 'The narration explicitly mentions a secret note.',
+      weight: 99,
+    },
+  });
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.coreState.clues.some((clue: { id: string }) => clue.id === 'narrator_secret_note'), false);
+  assert.equal(body.coordination.knowledgeClueTakeover.status, 'committed');
+  assert.equal(body.coordination.knowledgeClueTakeover.observationCount, 1);
+  assert.equal(body.coordination.knowledgeClueTakeover.knowledgeUpdateCount, 1);
+  assert.equal(body.coordination.knowledgeClueTakeover.clueCount, 1);
+  assert.equal(body.coordination.knowledgeClueTakeover.narratorClueAuthority, 'disabled');
   await app.close();
 }
 
@@ -1215,6 +1261,7 @@ await testHarnessTurnDoesNotWaitForShadowCompletion();
 await testLowRiskTakeoverCommitsBeforePublishingResponse();
 await testLowRiskTakeoverConflictPublishesNoStateOrStory();
 await testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory();
+await testKnowledgeClueTakeoverDisablesNarratorClueAuthority();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
 await testWorldTickRunsAsProductCapabilityForRoute();

@@ -302,6 +302,7 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
   });
   const rejection = unsafeReport.rejectedProposals.find((item) => item.proposalId === unsafeClue.id);
   assert(rejection?.reasonCodes.includes('observation_effect_reference_invalid'));
+  assert(rejection?.reasonCodes.includes('clue_claim_not_observed'));
   assert(rejection?.reasonCodes.includes('clue_visible_fact_unauthorized'));
   assert(rejection?.reasonCodes.includes('recommendation_source_missing'));
   assert(rejection?.reasonCodes.includes('display_claim_reference_invalid'));

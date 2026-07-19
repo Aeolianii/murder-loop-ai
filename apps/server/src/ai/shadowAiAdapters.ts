@@ -120,7 +120,7 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     'The output is a proposal only. It has zero authority and must never claim that state was committed.',
     'Use only projection.facts, projection.conditionalSignals, conditional communications, and the TurnBrief fields present in this projection.',
     'Actor actions must cite basedOnFactIds that the actor is authorized to know. Candidate communications and handles remain conditional until their prerequisite events are confirmed.',
-    'Never use narration as evidence. Clue candidates must cite observation IDs. Recommendations must cite visible event IDs. Display fragments must cite their atomic eventRefs and claimRefs.',
+    'Never use narration as evidence. Clue candidates must cite observation IDs, and every clue claim must exactly match a cited observation predicate. Recommendations must cite visible event IDs. Display fragments must cite their atomic eventRefs and claimRefs.',
     'Echo the envelope and contract versions exactly. riskClass is reversible, high_impact, or irreversible. High-risk events must include deterministic evidenceRefs and causalParentIds.',
     sourceAgent === 'main-world-model'
       ? 'If projection.fallbackMode="raw_input", interpret projection.rawInput conservatively because the Semantic Compiler failed; do not infer hidden facts. Return JSON {"proposals":[...]} with one or more strict Proposal objects. sourceAgent must be "main-world-model".'

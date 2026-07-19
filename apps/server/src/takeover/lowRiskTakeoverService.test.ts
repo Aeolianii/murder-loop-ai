@@ -224,3 +224,24 @@ assert.deepEqual(
   offlineState.world.knowledge,
   'undelivered messages must not update official Knowledge',
 );
+
+const phaseFourConflictService = createLowRiskTakeoverService({
+  knowledgeClueTakeoverEnabled: true,
+  createStore: (initial) => new InMemoryAtomicTurnStore<GameState>({
+    ...initial,
+    stateVersion: initial.stateVersion + 1,
+  }),
+});
+const phaseFourConflictPrepared = await phaseFourConflictService.prepare(
+  session(wave(inspectBrief)),
+  state,
+);
+assert.equal(phaseFourConflictPrepared.status, 'prepared');
+if (phaseFourConflictPrepared.status !== 'prepared') throw new Error('expected phase-four conflict preparation');
+const phaseFourConflict = await phaseFourConflictService.commit(
+  envelope.turnId,
+  phaseFourConflictPrepared.prepared.playerResult.state,
+);
+assert.equal(phaseFourConflict.outcome.result.commitStatus, 'conflict');
+assert.equal(phaseFourConflict.state, undefined);
+assert.equal(phaseFourConflict.knowledgeClueProjection, undefined);

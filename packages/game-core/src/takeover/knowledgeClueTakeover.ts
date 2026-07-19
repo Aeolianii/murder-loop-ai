@@ -15,14 +15,11 @@ export interface KnowledgeUpdateCandidate {
   confidence: number;
   source: KnowledgeSource;
   sourceEventId: string;
+  basedOnFactIds: string[];
 }
 
 export interface ClueProjectionCandidate {
   id: string;
-  title: string;
-  detail: string;
-  weight: number;
-  isPersistent: boolean;
   claims: string[];
   basedOnObservationIds: string[];
 }
@@ -53,6 +50,7 @@ export function buildLowRiskKnowledgeClueCandidates(
           confidence: 1,
           source: 'message',
           sourceEventId: event.id,
+          basedOnFactIds: [`message_delivered:${event.subject}`],
         });
       }
       continue;
@@ -80,13 +78,10 @@ export function buildLowRiskKnowledgeClueCandidates(
           confidence: 1,
           source: 'seen',
           sourceEventId: event.id,
+          basedOnFactIds: [packageLabelFact],
         });
         candidates.clues.push({
           id: 'wrong_package',
-          title: '标记模糊的包裹',
-          detail: '包裹外部标签上的 5-03 / 503 标记很模糊，收件信息需要进一步核实。',
-          weight: 12,
-          isPersistent: true,
           claims: [packageLabelFact],
           basedOnObservationIds: [observationId],
         });
@@ -114,15 +109,12 @@ export function buildLowRiskKnowledgeClueCandidates(
         confidence: 1,
         source: 'seen',
         sourceEventId: event.id,
+        basedOnFactIds: [`fact.${event.subject}.exterior.photo_captured`],
       });
       if (event.subject === 'package') {
         const photoFact = 'fact.package.exterior.photo_captured';
         candidates.clues.push({
           id: 'package_photo',
-          title: '包裹外包装照片',
-          detail: '照片只记录了包裹尚未开启时的外包装、标签和可见表面，没有包含内部物品。',
-          weight: 16,
-          isPersistent: true,
           claims: [photoFact],
           basedOnObservationIds: [observationId],
         });
@@ -138,8 +130,33 @@ export type KnowledgeClueProjectionRejectReason =
   | 'observation_fact_not_confirmed'
   | 'knowledge_source_missing'
   | 'knowledge_event_not_confirmed'
+  | 'knowledge_fact_not_confirmed'
   | 'clue_source_missing'
-  | 'clue_claim_not_observed';
+  | 'clue_claim_not_observed'
+  | 'clue_definition_unsupported';
+
+const PHASE_FOUR_CLUE_DEFINITIONS: Record<string, {
+  title: string;
+  detail: string;
+  weight: number;
+  isPersistent: boolean;
+  allowedClaims: string[];
+}> = {
+  wrong_package: {
+    title: '标记模糊的包裹',
+    detail: '包裹外部标签上的 5-03 / 503 标记很模糊，收件信息需要进一步核实。',
+    weight: 12,
+    isPersistent: true,
+    allowedClaims: ['fact.package.exterior.label_ambiguous'],
+  },
+  package_photo: {
+    title: '包裹外包装照片',
+    detail: '照片只记录了包裹尚未开启时的外包装、标签和可见表面，没有包含内部物品。',
+    weight: 16,
+    isPersistent: true,
+    allowedClaims: ['fact.package.exterior.photo_captured'],
+  },
+};
 
 export type KnowledgeClueProjection = {
   status: 'projected';
@@ -179,11 +196,13 @@ export function projectConfirmedKnowledgeAndClues(input: {
     ?? createInitialWorldState().knowledge;
   if (state.world) state.world.knowledge = structuredClone(baselineKnowledge);
 
+  const addedObservationIds = new Set<string>();
   for (const observation of input.candidates.observations) {
     const index = state.observations.findIndex((existing) => existing.id === observation.id);
     const record = structuredClone(observation);
     if (index >= 0) state.observations[index] = record;
     else state.observations.push(record);
+    addedObservationIds.add(observation.id);
   }
 
   if (input.candidates.knowledgeUpdates.length > 0 && !state.world) {
@@ -191,6 +210,7 @@ export function projectConfirmedKnowledgeAndClues(input: {
     state.world.run = state.run;
     state.world.minute = state.minute;
   }
+  const addedKnowledgeFactIds = new Set<string>();
   for (const update of input.candidates.knowledgeUpdates) {
     state.world!.knowledge[update.characterId].facts[update.factId] = {
       confidence: update.confidence,
@@ -198,36 +218,38 @@ export function projectConfirmedKnowledgeAndClues(input: {
       minuteLearned: state.minute,
       sourceEventId: update.sourceEventId,
     };
+    addedKnowledgeFactIds.add(`${update.characterId}:${update.factId}`);
   }
 
+  const addedClueIds = new Set<string>();
   for (const candidate of input.candidates.clues) {
     if (state.clues.some((clue) => clue.id === candidate.id)) continue;
+    const definition = PHASE_FOUR_CLUE_DEFINITIONS[candidate.id]!;
     const sourceEventIds = [...new Set(candidate.basedOnObservationIds.flatMap((id) => (
       observations.get(id)?.sourceEventIds ?? []
     )))];
     const clue: ClueRecord = {
       id: candidate.id,
-      title: candidate.title,
-      detail: candidate.detail,
+      title: definition.title,
+      detail: definition.detail,
       source: 'player_discovered',
-      weight: candidate.weight,
+      weight: definition.weight,
       discoveredAt: { run: state.run, minute: state.minute },
-      isPersistent: candidate.isPersistent,
+      isPersistent: definition.isPersistent,
       claims: [...candidate.claims],
       basedOnObservationIds: [...candidate.basedOnObservationIds],
       sourceEventIds,
     };
     state.clues.push(clue);
+    addedClueIds.add(candidate.id);
   }
 
   return {
     status: 'projected',
     state,
-    addedObservationIds: input.candidates.observations.map((item) => item.id),
-    addedKnowledgeFactIds: input.candidates.knowledgeUpdates.map((item) => (
-      `${item.characterId}:${item.factId}`
-    )),
-    addedClueIds: input.candidates.clues.map((item) => item.id),
+    addedObservationIds: [...addedObservationIds],
+    addedKnowledgeFactIds: [...addedKnowledgeFactIds],
+    addedClueIds: [...addedClueIds],
   };
 }
 
@@ -258,10 +280,14 @@ function validateKnowledgeUpdates(
       if (event.eventType !== 'message_delivered' || canonicalCharacterId(event.subject) !== update.characterId) {
         return 'knowledge_event_not_confirmed';
       }
-      continue;
-    }
-    if (update.characterId !== 'player' || !isPlayerVisible(event)) {
+    } else if (update.characterId !== 'player' || !isPlayerVisible(event)) {
       return 'knowledge_event_not_confirmed';
+    }
+    if (
+      update.basedOnFactIds.length === 0
+      || update.basedOnFactIds.some((factId) => !event.facts.includes(factId))
+    ) {
+      return 'knowledge_fact_not_confirmed';
     }
   }
   return undefined;
@@ -272,12 +298,17 @@ function validateClues(
   observations: Map<string, ObservationRecord>,
 ): KnowledgeClueProjectionRejectReason | undefined {
   for (const clue of clues) {
+    const definition = PHASE_FOUR_CLUE_DEFINITIONS[clue.id];
+    if (!definition) return 'clue_definition_unsupported';
     if (clue.basedOnObservationIds.length === 0) return 'clue_source_missing';
     const sources = clue.basedOnObservationIds.map((id) => observations.get(id));
     if (sources.some((source) => !source)) return 'clue_source_missing';
     const visibleFacts = new Set(sources.flatMap((source) => source?.visibleFactIds ?? []));
     if (clue.claims.length === 0 || clue.claims.some((claim) => !visibleFacts.has(claim))) {
       return 'clue_claim_not_observed';
+    }
+    if (clue.claims.some((claim) => !definition.allowedClaims.includes(claim))) {
+      return 'clue_definition_unsupported';
     }
   }
   return undefined;

@@ -47,6 +47,7 @@ export const env = {
   aiRecapModel: process.env.AI_RECAP_MODEL || '',
   aiShadowRunEnabled: process.env.AI_SHADOW_RUN_ENABLED === 'true',
   aiLowRiskTakeoverEnabled: process.env.AI_LOW_RISK_TAKEOVER_ENABLED === 'true',
+  aiKnowledgeClueTakeoverEnabled: process.env.AI_KNOWLEDGE_CLUE_TAKEOVER_ENABLED === 'true',
   aiShadowDeadlineMs: positiveInteger(process.env.AI_SHADOW_DEADLINE_MS, 6_000),
   aiShadowCompilerTimeoutMs: positiveInteger(process.env.AI_SHADOW_COMPILER_TIMEOUT_MS, 1_000),
 };
