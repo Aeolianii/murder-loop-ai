@@ -3,6 +3,7 @@
 > - 状态：目标架构，尚未完整实现
 > - 用途：交给新对话继续设计、拆分计划并实施重构
 > - 当前实现入口：参见 `docs/architecture-current.md`
+> - Hackathon 当前实施范围：参见 `docs/architecture-mvp.md`；未达到其中的复杂度升级门槛前，不实施本文档的生产级扩展
 
 ## 1. 背景与问题定义
 
