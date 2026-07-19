@@ -1,17 +1,16 @@
-import { clueBook, createClueFromTemplate } from '@murder-loop-ai/content';
+import { clueBook } from '@murder-loop-ai/content';
 import { DEADLINE_MINUTE, type ActionPlan, type ClueRecord, type GameState, type RuleResult, type StoryLogEntry } from '@murder-loop-ai/shared';
 import { cloneGameState } from '../state/createInitialState';
 import { event } from '../narration/buildNarrationContext';
 import { ensurePoliceArrivalCountdown, isPoliceArrivalDue, resolvePoliceArrival } from './policeArrival';
 import { absorbReviveProtection, hasReviveProtection } from '../loop/reviveProtection';
 import { hasConvictingEvidence, markEnding } from './endingRules';
+import { buildPlayerCommandsFromActionPlan } from '../domain/playerCommands';
+import { applyPlayerDomainEventsToState, buildPlayerOutcomeDomainEvents, evaluatePlayerCommandDomainEvents } from '../domain/playerActionDomain';
+import type { DomainEvent } from '../domain/domainEvents';
 
-function addClue(state: GameState, added: ClueRecord[], clueId: string) {
-  if (state.clues.some(c => c.id === clueId)) return;
-  const clue = createClueFromTemplate(clueId, state.run, state.minute);
-  if (!clue) return;  // clueId not in clueBook — skip (AI-generated clues are added directly)
-  state.clues.push(clue);
-  added.push(clue);
+export interface PlayerRuleResult extends RuleResult {
+  domainEvents: DomainEvent[];
 }
 
 /** 直接添加一条 ClueRecord（用于 AI 动态生成的线索） */
@@ -78,14 +77,6 @@ function isAskingAboutLinYueRetraction(text: string) {
   return includesAny(text, ['撤回', '为什么', '包裹你别', '哪里不对', '怎么了', '说清楚']);
 }
 
-function isWarningLinYueNotToCome(text: string) {
-  return includesAny(text, ['别上楼', '不要上楼', '别过来', '不要过来', '别来', '别靠近', '留在楼下', '安全位置']);
-}
-
-function isAskingLinYueToAssistPolice(text: string) {
-  return includesAny(text, ['报警', '打110', '叫警察', '等警察', '备份', '留证', '录下来', '记录']);
-}
-
 function isPhysicalDoorBlock(text: string) {
   const lower = text.toLowerCase();
   return includesAny(lower, [
@@ -135,7 +126,21 @@ function advanceLinYueRiskIfIgnored(state: GameState, plan: ActionPlan, texts: s
   }
 }
 
-export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleResult {
+export function applyPlayerActions(current: GameState, plan: ActionPlan): PlayerRuleResult {
+  const commands = buildPlayerCommandsFromActionPlan(plan, { run: current.run, minute: current.minute });
+  const confirmedEvents = current.ending ? [] : evaluatePlayerCommandDomainEvents(current, commands);
+  const result = applyPlayerActionsInternal(current, plan, confirmedEvents);
+  return {
+    ...result,
+    domainEvents: buildPlayerOutcomeDomainEvents(confirmedEvents, current, result.state),
+  };
+}
+
+function applyPlayerActionsInternal(
+  current: GameState,
+  plan: ActionPlan,
+  domainEvents: DomainEvent[],
+): RuleResult {
   const state = cloneGameState(current);
   const addedClues: ClueRecord[] = [];
   let complexityCost = 0;
@@ -149,75 +154,41 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
     return { title: '循环已经结束', text: '这一轮已经抵达结局。', tone: 'system', addedClues, timePassed: 0, threatDelta, events: [event('ending', 'loop', '这一轮已经抵达结局。')], state };
   }
 
+  applyPlayerDomainEventsToState(state, domainEvents, { addedClues });
+  phoneChargedThisTurn = domainEvents.some(
+    (domainEvent) => domainEvent.eventType === 'item_used' && domainEvent.payload?.itemId === 'phone_charger',
+  );
+
   for (const action of plan.actions) {
     complexityCost += action.timeCost;
     threatDelta += Math.max(0, action.noise - 1);
-    state.player.stress = clamp(state.player.stress + (action.risk === 'high' ? 8 : action.risk === 'medium' ? 3 : 1));
 
     switch (action.intent) {
       case 'inspect':
         if (action.target === 'package') {
-          state.room.package.inspected = true;
-          state.room.package.state.opened = true;
-          state.evidencePhase = 'package_opened';
-          state.killerKnowledge.knowsPlayerOpenedPackage = 'uncertain';
-          addClue(state, addedClues, 'wrong_package');
           title = '包裹不是我的';
           tone = 'clue';
           texts.push(`检查包裹：纸箱已被拖到台灯下；旧书、药板和数字纸条暴露；新增线索：${clueBook.wrong_package.title}。`);
         } else if (action.target === 'front_door') {
-          state.room.front_door.inspected = true;
-          state.room.front_door.state.scratched = true;
-          addClue(state, addedClues, 'door_scratch');
           title = '锁芯有划痕';
           tone = 'clue';
           texts.push('检查门锁：锁芯旁有新划痕，边缘发亮，像刚被工具碰过。');
         } else if (action.target === 'window') {
-          state.room.window.inspected = true;
-          state.room.window.state.checked = true;
           title = '窗外是雨棚';
           tone = 'clue';
           texts.push('检查窗户：窗外有雨棚，位置接近窗沿；窗锁需要确认。');
         } else if (action.target === 'room') {
-          state.room.closet.state.checked = true;
-          state.room.bed.state.checkedUnder = true;
           title = '房间被重新看见';
           texts.push('检查房间：床底、衣柜和卫生间门缝被确认；暂未发现屋内藏人。');
         }
         break;
       case 'preserve_evidence':
-        state.room.package.state.photographed = true;
-        state.room.package.state.backedUp = action.raw.includes('备份') || action.raw.includes('云盘') || action.raw.includes('上传') || action.raw.includes('定时')
-          || ['小红书', '社交平台', '发帖', '发布', '发到', '公开'].some((word) => action.raw.includes(word));
-        state.evidencePhase = state.linYuePhase === 'received_photo' ? 'evidence_shared' : state.room.package.state.backedUp ? 'evidence_backed_up' : 'package_photographed';
-        addClue(state, addedClues, 'package_photo');
         title = '照片留下来了';
         tone = 'clue';
         texts.push('保存证据：快递面单、旧书、药板和数字纸条被拍照；快门声已尽量压低。');
         break;
       case 'communicate':
         if (action.target === 'linyue') {
-          const messageText = `${action.raw} ${action.method ?? ''}`;
-          const hasPhotoForLinYue = state.evidencePhase === 'package_photographed'
-            || state.evidencePhase === 'evidence_backed_up'
-            || Boolean(state.room.package.state.photographed)
-            || messageText.includes('照片')
-            || messageText.includes('拍');
-          const warnedNotToCome = isWarningLinYueNotToCome(messageText);
-          const askedToAssistPolice = isAskingLinYueToAssistPolice(messageText);
-          const askedAboutRetraction = isAskingAboutLinYueRetraction(messageText);
-
-          if (warnedNotToCome && askedToAssistPolice) {
-            state.linYuePhase = 'calling_police';
-          } else if (askedAboutRetraction && state.linYuePhase === 'worried') {
-            state.linYuePhase = 'calling_player';
-          } else if (messageText.includes('上来') || messageText.includes('来看看') || messageText.includes('你过来')) {
-            state.linYuePhase = 'coming_to_apartment';
-          } else {
-            state.linYuePhase = hasPhotoForLinYue ? 'received_photo' : 'worried';
-          }
-          state.killerKnowledge.knowsPlayerContactedLinYue = action.noise > 0 && state.killerKnowledge.suspectsPlayerIsAlert;
-          if (hasPhotoForLinYue || state.linYuePhase === 'calling_police') addClue(state, addedClues, 'linyue_has_photo');
           if (state.linYuePhase === 'calling_police') {
             title = '林越被劝住';
             tone = 'clue';
@@ -235,9 +206,6 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
             texts.push('联系林越：照片/信息已发送；林越回复会在楼下报警，不上楼。');
           }
         } else if (action.target === 'chen_huaimin') {
-          state.suspicion = clamp(state.suspicion + 10);
-          state.killerKnowledge.suspectsPlayerIsAlert = true;
-          addClue(state, addedClues, 'unknown_number_probe');
           title = '房东在试探';
           tone = 'threat';
           const replyText = extractReplyText(action.raw);
@@ -245,16 +213,11 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
         }
         break;
       case 'deceive':
-        state.suspicion = clamp(state.suspicion + 6);
-        state.killerKnowledge.suspectsPlayerIsAlert = true;
-        addClue(state, addedClues, 'unknown_number_probe');
         title = '假装不知道';
         tone = 'threat';
         texts.push('伪装无知：对外表现为刚醒、没处理包裹；陈怀民暂停追问，但疑心上升。');
         break;
       case 'record':
-        state.room.phone.state.recording = true;
-        addClue(state, addedClues, 'recording_pressure');
         title = '录音红点亮起';
         tone = 'clue';
         texts.push('录音开启：手机开始保存室内和门外声音，麦克风位置已避开遮挡。');
@@ -263,44 +226,27 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
         if (action.target === 'front_door') {
           const actionText = `${action.raw} ${action.method ?? ''}`;
           const physicallyBlocked = isPhysicalDoorBlock(actionText);
-          state.room.front_door.state.locked = true;
-          state.room.front_door.state.chainLocked = true;
-          state.room.front_door.state.barricaded = physicallyBlocked;
-          state.room.chair.state.movedToDoor = physicallyBlocked;
-          state.killerKnowledge.suspectsPlayerIsAlert = action.noise >= 2 || state.killerKnowledge.suspectsPlayerIsAlert;
-          state.killerKnowledge.knowsDoorBarricaded = physicallyBlocked && action.noise >= 2;
           title = '门被临时加固';
           texts.push(physicallyBlocked
             ? '加固门：门锁和门链扣上，椅子或行李箱被移到门后形成临时阻挡；拖动家具产生轻微噪音。'
             : '反锁门：门锁和门链从屋内扣上；没有搬动家具，也没有制造新的物理堵门。');
         } else if (action.target === 'window') {
-          state.room.window.state.locked = true;
-          state.room.window.state.curtainClosed = true;
           title = '窗帘合上';
           texts.push('处理窗户：窗锁扣紧，窗帘拉严；雨棚路线暂时被挡住视线。');
         } else if (action.target === 'phone') {
-          state.room.phone.state.muted = true;
-          state.room.phone.state.dimmed = action.raw.includes('暗') || action.raw.includes('亮度');
-          state.room.phone.state.lightsOff = action.raw.includes('关灯') || action.raw.includes('灯关');
           texts.push('处理手机：铃声和震动关闭，屏幕亮度压低，暴露风险下降。');
         }
         break;
       case 'hide_evidence':
-        state.room.package.state.hiddenAt = action.target === 'bathroom' ? 'bathroom' : 'inside_room';
-        state.evidencePhase = 'evidence_hidden';
         title = '证据被藏起';
         texts.push('隐藏证据：包裹位置改变；短期可拖延搜找，但现场痕迹增加。');
         break;
       case 'call_police':
-        state.policePhase = 'dispatch_pending';
-        state.killerKnowledge.knowsPoliceCalled = action.noise > 0 || state.killerKnowledge.suspectsPlayerIsAlert;
         title = '报警不是终点';
         tone = 'clue';
         texts.push('报警：110 已接通；地址、当前处境和门窗状态被告知接线员。');
         break;
       case 'verify_identity':
-        state.policePhase = state.policePhase === 'not_contacted' ? 'verifying_report' : 'real_police_en_route';
-        addClue(state, addedClues, 'police_verified');
         title = '先核实，再决定';
         tone = 'clue';
         texts.push('核实身份：要求对方报单位和警号，并等待官方回拨确认。');
@@ -308,28 +254,21 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
       case 'escape':
         // 窗户路线：检查窗户/找消防梯/逃生路线
         if (action.target === 'window') {
-          state.room.window.inspected = true;
-          state.room.window.state.checked = true;
           if (state.room.window.state.locked) {
             title = '窗户锁着';
             texts.push('窗户路线：窗锁扣紧，暂时打不开。窗外是雨棚，距离地面至少四层楼高。雨声很响，雨棚上的积水在滴。');
           } else {
-            state.room.window.state.opened = true;
             title = '窗户可以打开';
             texts.push('窗户路线：窗锁一拧就开，冷风和雨丝灌了进来。窗外是一个铁皮雨棚，踩上去会响——但它确实通向走廊尽头另一侧的窗户。');
           }
           break;
         }
         // 冲出门/逃跑
-        state.room.front_door.state.opened = true;
-        state.player.stress = clamp(state.player.stress + 15);
         threatDelta += 25;
         title = '门被撞开';
         texts.push('冲出门：门被猛地推开。' + (action.method || ''));
         break;
       case 'open_door':
-        state.room.front_door.state.opened = true;
-        state.room.front_door.state.chainLocked = false;
         threatDelta += 18;
         title = '门开了一条缝';
         texts.push('打开门：门锁和门链被取下，门开了一条缝。走廊里的空气涌进来，带着雨水和灰尘的味道。');
@@ -338,8 +277,6 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
       case 'self_care':
         title = '厨房灯没有打开';
         tone = 'neutral';
-        state.player.stress = clamp(state.player.stress - 5);
-        state.killerKnowledge.suspectsPlayerIsAlert = state.killerKnowledge.suspectsPlayerIsAlert || action.noise >= 2;
         texts.push('自我调整：短暂喝水/进食，动作压低；压力略微下降，但时间继续推进。');
         break;
       case 'wait':
@@ -349,18 +286,9 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
       case 'attack': {
         // 叙事驱动的战斗——规则引擎只验证前置条件，AI 判断结果
         const weaponId = (action as any).weaponId as string | undefined;
-        // 检查武器是否在房间中可及（通过 playerHolding 或房间物品描述）
-        const weaponAvailable = weaponId
-          ? (state.playerHolding === weaponId || state.room[weaponId])
-          : false;
-        if (!weaponAvailable && weaponId) {
-          // 玩家声称的武器不可及 → 叙事柔化，不阻止行动
+        if (!state.combatTriggered && weaponId) {
           texts.push(`攻击（武器不可及）：你声称使用${weaponId}，但手边没有。叙事 AI 将揭示这一事实。`);
-          (action as any).weaponNotFound = true;
         } else {
-          state.combatTriggered = true;
-          // 武器可及 → 规则引擎标记战斗，AI 决定结果
-          state.playerHolding = state.playerHolding || weaponId || 'fists';
           texts.push(`${action.method || '攻击'}：${action.raw}（战斗触发，AI 叙事判断结果）`);
         }
         title = '战斗爆发';
@@ -370,8 +298,6 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
       case 'pick_up': {
         const itemId = (action as any).itemId as string | undefined;
         if (itemId) {
-          state.playerHolding = itemId;
-          addClue(state, addedClues, 'weapon_found');
           texts.push(`拾取：${itemId}——现在在你手中。`);
           title = '手指握紧了';
         } else {
@@ -382,28 +308,12 @@ export function applyPlayerActions(current: GameState, plan: ActionPlan): RuleRe
       case 'use_item': {
         const itemId = resolveUsableItemId(action);
         if (itemId === 'tape' && state.playerHolding === 'tape') {
-          state.room.front_door.state.barricaded = true;
           texts.push('使用胶带：门缝被胶带封住，加固了临时防御。');
           title = '胶带嘶啦一声';
         } else if (itemId === 'first_aid_kit') {
-          state.player.stress = clamp(state.player.stress - 15);
-          if (state.player.injury !== 'none' && state.player.injury !== 'critical') {
-            const injuryOrder = ['none', 'minor', 'bleeding', 'leg_injured', 'critical'] as const;
-            const idx = injuryOrder.indexOf(state.player.injury as any);
-            if (idx > 0) state.player.injury = injuryOrder[idx - 1];
-          }
           texts.push('使用急救包：伤口被简单处理，疼痛减轻了一些。');
           title = '绷带的触感';
         } else if (itemId === 'phone_charger') {
-          state.phoneBattery = Math.min(61, state.phoneBattery + 30);
-          state.phoneFunctional = true;
-          phoneChargedThisTurn = true;
-          if (state.room.phone_charger?.state) {
-            state.room.phone_charger.state.pluggedIn = true;
-          }
-          if (state.room.phone?.state) {
-            (state.room.phone.state as any).battery = state.phoneBattery;
-          }
           texts.push('充电器插上——屏幕亮起，电量图标从红色跳回绿色。');
           title = '电量回升';
         } else {

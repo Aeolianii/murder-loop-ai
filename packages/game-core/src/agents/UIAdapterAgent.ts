@@ -20,9 +20,8 @@ export const UIAdapterAgent: AgentRegistration = {
     return UIAdapterAgent.fallback(input);
   },
   fallback: async (input: unknown) => {
-    const { finalState, moodSignal } = input as {
+    const { finalState } = input as {
       finalState: GameState;
-      moodSignal?: string;
     };
 
     // 将 game-core 的 log 条目转为前端 storyLog 格式
@@ -45,11 +44,9 @@ export const UIAdapterAgent: AgentRegistration = {
       coreState: finalState,
       ending: finalState.ending ?? null,
       storyLog,
-      moodSignal,
       // 协调信息（供诊断面板）
       coordination: {
         warnings: [],
-        directorScores: [],
         agentDecisions: [],
       },
     };

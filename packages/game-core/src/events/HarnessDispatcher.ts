@@ -75,6 +75,27 @@ export class HarnessDispatcher {
     return this.bus.emit(type, payload, parentId);
   }
 
+  dispatchDeferred<T extends GameEventType>(
+    type: T,
+    payload: GameEvent<T>['payload'],
+    parentId?: string,
+  ): void {
+    const snapshot = deepFreeze(structuredClone(payload));
+    const event = this.bus.createEvent(type, snapshot, parentId);
+    const startedAt = performance.now();
+    const subscribers = this.registry.getAgentsForEvent(type).filter((subscriber) => subscriber.defer);
+
+    void Promise.all(subscribers.map(async ({ agent }) => {
+      try {
+        return await this.runWithFallback(type, agent, snapshot, event);
+      } catch (error) {
+        return { __error: error };
+      }
+    })).then((results) => {
+      this.bus.recordEvent(event, results, performance.now() - startedAt);
+    });
+  }
+
   getTrace(): ReadonlyArray<HarnessTraceEntry> {
     return this.trace;
   }
@@ -184,6 +205,14 @@ export class HarnessDispatcher {
       timestamp: new Date().toISOString(),
     });
   }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(nested);
+  }
+  return Object.freeze(value);
 }
 
 function formatError(error: unknown): string {

@@ -58,7 +58,6 @@ function testVerifiedPoliceStartsHiddenArrivalCountdown() {
   assert.equal(result.state.phase, 'confrontation');
   assert.equal(result.state.ending, null);
   assert.equal(result.state.policeArrivalMinute, result.state.minute + POLICE_ARRIVAL_DELAY_MINUTES);
-  assert.match(result.state.plotGuidance ?? '', /不要向玩家显示剩余时间/);
 }
 
 function testVerifiedPoliceResolvesToArrestEndingInBackground() {

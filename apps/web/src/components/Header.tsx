@@ -1,4 +1,4 @@
-import { Activity, Clock, MapPin, RotateCcw } from 'lucide-react';
+import { Clock, MapPin, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import { VolumeControl } from './VolumeControl';
@@ -7,11 +7,9 @@ interface HeaderProps {
   time: string;
   location: string;
   onRestart?: () => void;
-  worldTickEnabled?: boolean;
-  onWorldTickToggle?: (enabled: boolean) => void;
 }
 
-export function Header({ time, location, onRestart, worldTickEnabled = false, onWorldTickToggle }: HeaderProps) {
+export function Header({ time, location, onRestart }: HeaderProps) {
   const [confirming, setConfirming] = useState(false);
 
   const handleRestartClick = () => {
@@ -44,22 +42,6 @@ export function Header({ time, location, onRestart, worldTickEnabled = false, on
       </div>
       <div className="flex shrink-0 items-center gap-2 md:gap-3">
         <VolumeControl />
-        {onWorldTickToggle && (
-          <button
-            type="button"
-            onClick={() => onWorldTickToggle(!worldTickEnabled)}
-            className={`flex h-9 w-9 items-center justify-center rounded border transition-colors ${
-              worldTickEnabled
-                ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
-                : 'border-transparent text-zinc-500 hover:border-white/10 hover:text-zinc-300'
-            }`}
-            title="World Tick"
-            aria-label="World Tick"
-            aria-pressed={worldTickEnabled}
-          >
-            <Activity className="h-3.5 w-3.5" />
-          </button>
-        )}
         {onRestart && (
           <button
             type="button"

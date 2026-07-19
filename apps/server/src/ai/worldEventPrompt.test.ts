@@ -11,7 +11,6 @@ import { formatConfirmedWorldEventsPromptBlock } from './worldEventPrompt';
       location: 'corridor_5f',
       facts: ['chen_intercepts_linyue', 'linyue_has_external_evidence'],
       visibility: 'player',
-      effects: [],
       narrationHint: 'Narrate only the confirmed corridor encounter.',
     },
   ]);

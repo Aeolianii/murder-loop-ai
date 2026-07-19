@@ -142,7 +142,6 @@ export const GameStateContractSchema = z.object({
   phoneFunctional: z.boolean(),
   reviveProtectionTurns: z.number().optional(),
   policeArrivalMinute: z.number().optional(),
-  plotGuidance: z.string().optional(),
 });
 
 export const RuleResultSchema = z.object({
@@ -174,18 +173,52 @@ export const RuleAgentInputSchema = z.union([
 ]);
 
 export const KillerAgentInputSchema = z.object({
-  playerResult: RuleResultSchema,
-  state: GameStateContractSchema,
-  plan: ActionPlanSchema.optional(),
-});
+  killerContext: z.object({
+    visibleState: z.object({
+      minute: z.number(),
+      phase: z.string(),
+      threat: z.number(),
+      killerPhase: z.string(),
+      killerStatus: z.string(),
+      ending: z.boolean(),
+      policeActive: z.boolean(),
+      policePhase: z.string(),
+      linYuePhase: z.string(),
+      knowledge: z.record(z.string(), z.unknown()),
+      observedFactIds: z.array(z.string()),
+      recentStrategyTypes: z.array(z.string()),
+      recentKillerActions: z.array(z.object({ title: z.string(), text: z.string() })),
+    }),
+    planSummary: z.string().optional(),
+    observableEvents: z.array(z.object({
+      subject: z.string(),
+      summary: z.string(),
+      confidence: z.enum(['low', 'medium', 'high']),
+      source: z.enum(['rule_event', 'state_projection', 'inference']),
+    })),
+    recentKillerMemory: z.array(z.string()),
+    worldInfo: z.array(z.unknown()),
+    uncertainty: z.array(z.string()),
+  }).strict(),
+}).strict();
 
 export const NarrationContextSchema = z.object({
   run: z.number(),
   minute: z.number(),
   turnIndex: z.number(),
   playerActionSummary: z.string(),
-  playerInput: z.string().optional(),
   events: z.array(RuleEventSchema),
+  confirmedFacts: z.array(z.object({
+    id: z.string(),
+    origin: z.enum(['player', 'killer', 'world', 'rule']),
+    type: z.string(),
+    subject: z.string(),
+    summary: z.string(),
+    facts: z.array(z.string()),
+    visibility: z.enum(['player', 'public']),
+    causationId: z.string().optional(),
+  }).strict()),
+  confirmedTitles: z.object({ action: z.string(), ambient: z.string() }).strict(),
   stateSnapshot: z.object({
     phase: z.string(),
     killerPhase: z.string(),
@@ -205,12 +238,6 @@ export const NarrationContextSchema = z.object({
     playerHolding: z.string().nullable().optional(),
     combatTriggered: z.boolean().optional(),
   }),
-  recentLog: z.array(z.object({
-    minute: z.number(),
-    title: z.string(),
-    text: z.string(),
-    channel: z.string().optional(),
-  })).optional(),
   knownClueTitles: z.array(z.string()).optional(),
   combatContext: z.object({
     playerWeapon: z.string().nullable(),
@@ -219,7 +246,6 @@ export const NarrationContextSchema = z.object({
   }).optional(),
   plotPhase: z.string().optional(),
   playerSituation: z.string().optional(),
-  memorySummary: z.array(z.string()).optional(),
   confirmedWorldEvents: z.array(z.object({
     id: z.string(),
     minute: z.number(),
@@ -227,28 +253,16 @@ export const NarrationContextSchema = z.object({
     actors: z.array(z.string()),
     location: z.string().optional(),
     facts: z.array(z.string()),
-    visibility: z.string(),
-    effects: z.array(z.unknown()).optional(),
+    visibility: z.enum(['player', 'public']),
     narrationHint: z.string().optional(),
-  }).passthrough()).optional(),
-  worldInfo: z.array(z.object({
-    id: z.string(),
-    title: z.string(),
-    content: z.string(),
-    tags: z.array(z.string()),
-    priority: z.number(),
-  }).passthrough()).optional(),
+  }).strict()).optional(),
   forbiddenFacts: z.array(z.string()),
   styleGuide: z.array(z.string()),
-});
+}).strict();
 
 export const NarratorAgentInputSchema = z.object({
-  plan: ActionPlanSchema,
-  playerResult: RuleResultSchema,
-  killerResult: RuleResultSchema,
-  state: GameStateContractSchema,
-  narrationContext: NarrationContextSchema.optional(),
-});
+  narrationContext: NarrationContextSchema,
+}).strict();
 
 export const NpcReplySchema = z.object({
   speaker: z.enum(['linyue', 'police_dispatch', 'chen_huaimin']),
@@ -278,15 +292,34 @@ export const NarrationPairSchema = z.object({
 });
 
 export const DirectorAgentInputSchema = z.object({
-  narration: NarrationSchema,
-  actionNarration: NarrationSchema,
-  ambientNarration: NarrationSchema,
-  state: GameStateContractSchema,
-  narrationContext: NarrationContextSchema.optional(),
-  playerResult: RuleResultSchema.optional(),
-  killerResult: RuleResultSchema.optional(),
-  directorContext: z.unknown().optional(),
-});
+  directorContext: z.object({
+    stateSummary: z.object({
+      run: z.number(),
+      minute: z.number(),
+      phase: z.string(),
+      ending: EndingIdSchema.nullable(),
+      endingReason: EndingReasonSchema.nullable().optional(),
+      threat: z.number(),
+      suspicion: z.number(),
+    }).strict(),
+    narration: NarrationSchema,
+    actionNarration: NarrationSchema,
+    ambientNarration: NarrationSchema,
+    playerEvents: z.array(RuleEventSchema),
+    killerEvents: z.array(RuleEventSchema),
+    traceSummary: z.array(z.object({
+      agent: z.string(),
+      eventType: z.string(),
+      mode: z.string(),
+      valid: z.boolean(),
+      errors: z.array(z.string()),
+      durationMs: z.number().optional(),
+    }).strict()),
+    worldInfo: z.array(z.unknown()),
+    consistencyChecklist: z.array(z.string()),
+  }).strict(),
+  narrationContext: NarrationContextSchema,
+}).strict();
 
 export const DirectorOutputSchema = z.object({
   score: z.object({
@@ -297,8 +330,7 @@ export const DirectorOutputSchema = z.object({
   }),
   passed: z.boolean(),
   violations: z.array(z.string()),
-  moodSignal: z.string().optional(),
-});
+}).strict();
 
 export const ScoreRecapSchema = z.object({
   total: z.number().min(0).max(100),

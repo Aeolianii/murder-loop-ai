@@ -10,16 +10,21 @@ export class NpcCoordinator {
 
   async runTick(state: WorldState): Promise<WorldState> {
     const npcIds = this.resolveNpcsToPlan(state);
-    if (npcIds.length === 0) return state;
-    if (!this.adapter) {
-      return fallbackReplanAll(state, state.affectedCharacters);
+    if (npcIds.length === 0) {
+      state.affectedCharacters = [];
+      return state;
     }
-    const objectiveState = buildObjectiveState(state);
+    if (!this.adapter) {
+      const result = fallbackReplanAll(state, npcIds);
+      result.affectedCharacters = [];
+      return result;
+    }
     const allPlans = buildAllLastPlans(state);
     const results = await Promise.all(
       npcIds.map(async (npcId) => {
         try {
           const subjectiveState = buildSubjectiveState(state, npcId);
+          const objectiveState = buildObjectiveState(state, npcId);
           const othersLastPlans = filterOthersLastPlans(allPlans, npcId);
           return await this.adapter!.processNpc({ npcId, objectiveState, subjectiveState, othersLastPlans });
         } catch (error) {
@@ -28,25 +33,63 @@ export class NpcCoordinator {
         }
       }),
     );
-    return applyPlansToState(state, results);
+    const result = applyPlansToState(state, results);
+    result.affectedCharacters = [];
+    return result;
   }
 
   private resolveNpcsToPlan(state: WorldState): CharacterId[] {
     if (this.options?.alwaysRunAll) {
       return (Object.keys(state.characters) as CharacterId[]).filter((id) => id !== 'player');
     }
-    return [...new Set(state.affectedCharacters)] as CharacterId[];
+    return ([...new Set(state.affectedCharacters)] as CharacterId[])
+      .filter((id) => id !== 'player' && Boolean(state.characters[id]));
   }
 }
 
-export function buildObjectiveState(state: WorldState): ObjectiveState {
+export function buildObjectiveState(state: WorldState, viewerId?: CharacterId): ObjectiveState {
   return {
     minute: state.minute, threat: state.threat,
     locations: Object.fromEntries(Object.entries(state.locations).map(([id, loc]) => [id, { id, name: loc.name, neighbors: [...loc.neighbors], risk: loc.risk }])),
-    objects: Object.fromEntries(Object.entries(state.objects).map(([id, obj]) => [id, { id, name: obj.name, location: String(obj.location), flags: { ...obj.flags } }])),
+    objects: Object.fromEntries(Object.entries(state.objects).map(([id, obj]) => [id, projectObjectForViewer(state, obj, viewerId)])),
     characters: Object.fromEntries(Object.entries(state.characters).map(([id, ch]) => [id, { id, name: ch.name, faction: ch.faction, location: ch.location, status: ch.status, visibility: ch.visibility }])),
-    recentPublicEvents: state.events.slice(-5).filter((e) => e.visibility === 'public' || e.visibility === 'player').map((e) => ({ type: e.type, actors: [...e.actors], location: e.location, facts: [...e.facts] })),
+    recentPublicEvents: state.events.slice(-5).filter((e) => e.visibility === 'public').map((e) => ({ type: e.type, actors: [...e.actors], location: e.location, facts: [...e.facts] })),
   };
+}
+
+function projectObjectForViewer(
+  state: WorldState,
+  obj: WorldState['objects'][keyof WorldState['objects']],
+  viewerId?: CharacterId,
+): { id: string; name: string; location: string; flags: Record<string, unknown> } {
+  if (!viewerId) return { id: obj.id, name: obj.name, location: 'unknown', flags: {} };
+
+  const viewer = state.characters[viewerId];
+  const facts = state.knowledge[viewerId]?.facts ?? {};
+  const directlyVisible = obj.location === viewerId || obj.location === viewer?.location;
+  if (directlyVisible) {
+    return { id: obj.id, name: obj.name, location: String(obj.location), flags: { ...obj.flags } };
+  }
+
+  if (obj.id === 'package_photo' && facts.package_photo) {
+    return {
+      id: obj.id,
+      name: obj.name,
+      location: 'message',
+      flags: { exists: true },
+    };
+  }
+
+  if (obj.id === 'package' && (facts.package_at_503 || facts.package_photo)) {
+    return {
+      id: obj.id,
+      name: obj.name,
+      location: String(obj.location),
+      flags: facts.package_opened_by_player ? { opened: true } : {},
+    };
+  }
+
+  return { id: obj.id, name: obj.name, location: 'unknown', flags: {} };
 }
 
 export function buildSubjectiveState(state: WorldState, npcId: CharacterId): SubjectiveState {

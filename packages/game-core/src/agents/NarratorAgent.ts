@@ -1,11 +1,11 @@
 import {
-  createFallbackActionNarration,
-  createFallbackAmbientNarration,
+  createFallbackActionNarrationFromConfirmedFacts,
+  createFallbackAmbientNarrationFromConfirmedFacts,
   sanitizeNarration,
 } from '../narration/fallbackNarration';
 import type { AgentRegistration } from '../events/AgentRegistry';
 import { narratorContract } from '../contracts/narrator.contract';
-import type { GameState, TurnResolution } from '@murder-loop-ai/shared';
+import type { NarrationContext } from '@murder-loop-ai/shared';
 
 /**
  * 叙事 Agent。
@@ -26,16 +26,9 @@ export const NarratorAgent: AgentRegistration = {
     throw new Error('AI handler not injected — use server adapter via createHarness()');
   },
   fallback: async (input: unknown) => {
-    const payload = input as {
-      playerResult: TurnResolution['playerResult'];
-      killerResult: TurnResolution['killerResult'];
-      state: GameState;
-    };
-    const rawAction = createFallbackActionNarration(payload.playerResult ?? payload.killerResult);
-    const rawAmbient = createFallbackAmbientNarration(
-      payload.playerResult ?? payload.killerResult,
-      payload.killerResult,
-    );
+    const { narrationContext } = input as { narrationContext: NarrationContext };
+    const rawAction = createFallbackActionNarrationFromConfirmedFacts(narrationContext);
+    const rawAmbient = createFallbackAmbientNarrationFromConfirmedFacts(narrationContext);
     return {
       actionNarration: sanitizeNarration(rawAction),
       ambientNarration: sanitizeNarration(rawAmbient),

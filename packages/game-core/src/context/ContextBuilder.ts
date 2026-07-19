@@ -3,14 +3,24 @@ import type {
   GameState,
   Narration,
   NarrationContext,
+  NpcReply,
   RuleEvent,
   RuleResult,
+  WorldEvent,
 } from '@murder-loop-ai/shared';
 import type { AgentTraceEntryContract } from '@murder-loop-ai/ai-contracts';
 import { selectWorldInfoCards, type WorldInfoCard } from '@murder-loop-ai/content';
-import { projectKillerVisibleState } from '../killer/knowledge';
+import {
+  projectKillerVisibleState,
+  type KillerDecisionContext,
+  type KillerObservableEvent,
+} from '../killer/knowledge';
 import { buildNarrationContext } from '../narration/buildNarrationContext';
 import { buildVisibleMemoryForAgent, normalizeLoopMemory } from '../memory/loopMemory';
+import { buildSubjectiveState } from '../world/npcCoordinator';
+import { ensureWorldState } from '../world/syncGameWorld';
+import { readWorldNarrationBatch } from '../world/narrationCursor';
+import type { CharacterId } from '../world/worldTypes';
 
 export interface ParserContext {
   input: string;
@@ -28,14 +38,7 @@ export interface ParserContext {
   worldInfo: WorldInfoCard[];
 }
 
-export interface KillerObservableEvent {
-  subject: string;
-  summary: string;
-  confidence: 'low' | 'medium' | 'high';
-  source: 'rule_event' | 'state_projection' | 'inference';
-}
-
-export interface KillerContext {
+export interface KillerContext extends KillerDecisionContext {
   visibleState: ReturnType<typeof projectKillerVisibleState>;
   planSummary?: string;
   observableEvents: KillerObservableEvent[];
@@ -71,6 +74,27 @@ export interface DirectorContext {
   traceSummary: DirectorTraceSummary[];
   worldInfo: WorldInfoCard[];
   consistencyChecklist: string[];
+}
+
+export interface NpcVisibleContext {
+  speaker: NpcReply['speaker'];
+  characterId: CharacterId;
+  input: string;
+  subjectiveState: ReturnType<typeof buildSubjectiveState>;
+  knownFactIds: string[];
+  receivedPlayerMessage: string;
+  recentPublicEvents: Array<{
+    type: string;
+    facts: string[];
+    minute: number;
+  }>;
+  canReference: {
+    packagePhoto: boolean;
+    doorActivity: boolean;
+    policeReport: boolean;
+    fakePoliceSuspicion: boolean;
+  };
+  forbiddenFacts: string[];
 }
 
 export function buildParserContext(input: string, state: GameState): ParserContext {
@@ -128,31 +152,44 @@ export function buildNarratorContext(input: {
   state: GameState;
   playerResult: RuleResult;
   killerResult: RuleResult;
-  playerActionSummary: string;
-  playerInput?: string;
+  worldEvents?: WorldEvent[];
 }): NarrationContext {
   const context = buildNarrationContext(
     input.playerResult,
     input.killerResult,
-    input.playerActionSummary,
-    input.playerInput,
   );
-  const confirmedWorldEvents = input.state.world?.pendingNarration.length
-    ? input.state.world.pendingNarration
-    : input.state.world?.events.slice(-8);
+  const cursorEvents = input.state.world
+    ? readWorldNarrationBatch(input.state.world).events
+    : [];
+  const confirmedWorldEvents = (input.worldEvents ?? cursorEvents).filter(
+    (event) => event.visibility === 'player' || event.visibility === 'public',
+  );
   return {
     ...context,
-    confirmedWorldEvents,
-    worldInfo: selectWorldInfoCards({
-      agent: 'narrator',
-      input: input.playerInput ?? input.playerActionSummary,
-      state: input.state,
-      events: context.events,
-      limit: 6,
-    }),
+    confirmedFacts: [
+      ...context.confirmedFacts,
+      ...confirmedWorldEvents.map((event) => ({
+        id: event.id,
+        origin: 'world' as const,
+        type: `world_event:${event.type}`,
+        subject: event.location ?? event.type,
+        summary: event.narrationHint ?? event.facts.join(', '),
+        facts: [...event.facts],
+        visibility: event.visibility as 'player' | 'public',
+      })),
+    ],
+    confirmedWorldEvents: confirmedWorldEvents.map((event) => ({
+      id: event.id,
+      minute: event.minute,
+      type: event.type,
+      actors: [...event.actors],
+      location: event.location,
+      facts: [...event.facts],
+      visibility: event.visibility as 'player' | 'public',
+      narrationHint: event.narrationHint,
+    })),
     forbiddenFacts: [
       ...context.forbiddenFacts,
-      'Narrator may use memorySummary for continuity but must not decide endings, deaths, arrests, or rule outcomes.',
       'Narrator may describe confirmedWorldEvents but must not add facts, move characters, resolve conflicts, or write world state.',
     ],
   };
@@ -215,6 +252,64 @@ export function buildDirectorContext(input: {
     }),
     consistencyChecklist,
   };
+}
+
+export function buildNpcVisibleContext(
+  state: GameState,
+  speaker: NpcReply['speaker'],
+  input: string,
+): NpcVisibleContext {
+  const world = ensureWorldState(state);
+  const characterId = npcSpeakerToCharacterId(speaker);
+  const subjectiveState = buildSubjectiveState(world, characterId);
+  const knownFactIds = Object.keys(subjectiveState.knowledge);
+  const hasFact = (id: string) => knownFactIds.includes(id);
+
+  return {
+    speaker,
+    characterId,
+    input,
+    subjectiveState,
+    knownFactIds,
+    receivedPlayerMessage: input,
+    recentPublicEvents: world.events
+      .slice(-5)
+      .filter((event) => event.visibility === 'public')
+      .map((event) => ({
+        type: event.type,
+        facts: [...event.facts],
+        minute: event.minute,
+      })),
+    canReference: {
+      packagePhoto: hasFact('package_photo'),
+      doorActivity: hasFact('player_reported_door_activity') || hasFact('door_coordination_quote'),
+      policeReport: hasFact('report_received'),
+      fakePoliceSuspicion: hasFact('reported_fake_police') || hasFact('fake_police_suspicion'),
+    },
+    forbiddenFacts: buildNpcForbiddenFacts(speaker, knownFactIds),
+  };
+}
+
+function npcSpeakerToCharacterId(speaker: NpcReply['speaker']): CharacterId {
+  if (speaker === 'linyue') return 'lin_yue';
+  if (speaker === 'police_dispatch') return 'real_police';
+  return 'chen_huaimin';
+}
+
+function buildNpcForbiddenFacts(speaker: NpcReply['speaker'], knownFactIds: string[]) {
+  const forbidden = [
+    'Do not use the full GameState. Only use subjectiveState, knownFactIds, public events, and the player message.',
+    'Do not mention door, hallway, police, danger, killer pressure, or package contents unless the relevant knownFactIds explicitly allow it.',
+  ];
+  if (speaker === 'linyue') {
+    if (!knownFactIds.includes('player_reported_door_activity') && !knownFactIds.includes('door_coordination_quote')) {
+      forbidden.push('Lin Yue has not been told about door or hallway activity.');
+    }
+    if (!knownFactIds.includes('report_received') && !knownFactIds.includes('reported_fake_police')) {
+      forbidden.push('Lin Yue has not been told that police are involved.');
+    }
+  }
+  return forbidden;
 }
 
 function toObservableEvent(event: RuleEvent): KillerObservableEvent {

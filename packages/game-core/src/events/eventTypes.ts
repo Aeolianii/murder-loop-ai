@@ -6,6 +6,7 @@ import type {
   NarrationContext,
   TurnResolution,
 } from '@murder-loop-ai/shared';
+import type { KillerContext } from '../context/ContextBuilder';
 
 /**
  * 游戏中所有事件类型。
@@ -17,9 +18,7 @@ export type GameEventType =
   | 'RulesApplied'
   | 'KillerActed'
   | 'NarrationRequested'
-  | 'NarrationDone'
-  | 'NarrationRewriteRequested'
-  | 'HighRiskScenarioDetected'
+  | 'NarrationCritiqueRequested'
   | 'TurnCompleted'
   | 'GamePhaseChanged'
   | 'DeathTriggered'
@@ -34,31 +33,17 @@ export interface GameEventPayloads {
   PlayerActionSubmitted: { input: string; state: GameState; traceContext?: { worldInfo?: unknown[] } };
   ActionParsed: { plan: ActionPlan; state: GameState };
   RulesApplied: {
-    playerResult: TurnResolution['playerResult'];
-    state: GameState;
-    plan?: ActionPlan;
-    traceContext?: { worldInfo?: unknown[] };
+    killerContext: KillerContext;
   };
   KillerActed: { killerStrategy: KillerStrategy; playerResult: TurnResolution['playerResult']; state: GameState };
   NarrationRequested: {
-    plan: ActionPlan;
-    playerResult: TurnResolution['playerResult'];
-    killerResult: TurnResolution['killerResult'];
-    state: GameState;
-    narrationContext?: NarrationContext;
+    narrationContext: NarrationContext;
   };
-  NarrationDone: {
-    narration: Narration;
-    actionNarration: Narration;
-    ambientNarration: Narration;
-    state: GameState;
-    narrationContext?: NarrationContext;
-    playerResult?: TurnResolution['playerResult'];
-    killerResult?: TurnResolution['killerResult'];
+  NarrationCritiqueRequested: {
+    directorContext: unknown;
+    narrationContext: NarrationContext;
   };
-  NarrationRewriteRequested: { reason: string; previousNarration: Narration; state: GameState };
-  HighRiskScenarioDetected: { scenario: string; state: GameState };
-  TurnCompleted: { finalState: GameState; moodSignal?: string };
+  TurnCompleted: { finalState: GameState };
   GamePhaseChanged: { from: string; to: string; state: GameState };
   DeathTriggered: { state: GameState; cause: string };
   SurvivalTriggered: { state: GameState; endingId: string };
@@ -73,12 +58,6 @@ export interface GameCommandResults {
   NarrationRequested: {
     actionNarration: Narration;
     ambientNarration: Narration;
-  };
-  NarrationDone: {
-    score: unknown;
-    passed: boolean;
-    violations: string[];
-    moodSignal?: string;
   };
   TurnCompleted: unknown;
 }

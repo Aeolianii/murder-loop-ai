@@ -65,7 +65,6 @@ async function testFrontendAdapterUsesHarnessResolver() {
         warnings: ['frontend adapter harness path'],
         judgements: {
           facts: { source: 'test' },
-          directorScores: [],
         },
       },
     }),

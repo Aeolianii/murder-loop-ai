@@ -35,7 +35,6 @@ const response: HarnessTurnResponse = {
     threat: { level: 22, trend: 'rising', label: '低压' },
     timeLabel: '23:06',
     phaseLabel: '调查',
-    moodSignal: '潮湿的纸箱味道变重了',
     npcStatus: [],
     roomStatus: [],
     newClues: [],

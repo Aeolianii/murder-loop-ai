@@ -1,8 +1,10 @@
 import { ActionPlanSchema, KillerStrategySchema, NarrationSchema, NpcReplySchema } from '@murder-loop-ai/ai-contracts';
 import {
-  buildKillerContext,
+  buildNpcVisibleContext,
   buildParserContext,
   createHarness,
+  type DirectorContext,
+  type KillerContext,
   type HarnessOptions,
 } from '@murder-loop-ai/game-core';
 import {
@@ -13,24 +15,22 @@ import {
   type Narration,
   type NarrationContext,
   type NpcReply,
-  type RuleResult,
 } from '@murder-loop-ai/shared';
 import { buildKillerPromptPayload } from './killerPrompt';
 import { completeRoleJson } from './openaiClient';
 import { normalizeActionPlanJson, unwrapJsonObject } from './unwrapJsonObject';
-import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from './turnCoordinator';
+import { createTurnBlackboard, verifyActionPlan } from './turnCoordinator';
 import { formatWorldInfoPromptBlock } from './worldInfoPrompt';
 import { formatConfirmedWorldEventsPromptBlock } from './worldEventPrompt';
 import { createNpcAdapter } from './npc/npcAdapters';
 
-function buildPlotContext(state: GameState, plan?: ActionPlan): string {
-  const recentTitles = state.log.slice(-4).map(l => l.title).join(' / ');
-  const minsToDeadline = 1427 - state.minute;
+function buildProjectedKillerPlotContext(context: KillerContext): string {
+  const visible = context.visibleState;
+  const recentTitles = visible.recentKillerActions.map((entry) => entry.title).join(' / ');
   return [
-    '时间' + minuteLabel(state.minute) + '，距23:47还有' + minsToDeadline + '分钟',
-    '最近回合: ' + (recentTitles || '游戏开始'),
-    '本回合玩家要做: ' + (plan?.summary || '未知'),
-    '避免重复最近出现过的施压方式。玩家在回复消息时优先message_reply。',
+    `Time: ${minuteLabel(visible.minute)}; minutes to 23:47: ${1427 - visible.minute}`,
+    `Recent killer actions: ${recentTitles || 'none'}`,
+    `Current observable signals: ${context.planSummary || 'none'}`,
   ].join('\n');
 }
 
@@ -49,16 +49,15 @@ async function parseActionAi(input: string, state: GameState): Promise<ActionPla
   return verifyActionPlan(input, parsed.data, blackboard);
 }
 
-async function killerStrategyAi(state: GameState, plan?: ActionPlan, playerResult?: RuleResult): Promise<KillerStrategy> {
-  const killerContext = buildKillerContext(state, { plan, playerResult });
-  const plotCtx = buildPlotContext(state, plan);
-  const killerStatusNote = state.killerStatus !== 'alive'
-    ? `【重要】陈怀民当前状态：${state.killerStatus}。${state.killerStatus === 'injured' ? '他已受伤，策略应更加绝望或选择撤退。' : state.killerStatus === 'dead' ? '他已死亡，无法采取任何行动。选择 retreat。' : ''}`
+async function killerStrategyAi(killerContext: KillerContext): Promise<KillerStrategy> {
+  const visibleState = killerContext.visibleState;
+  const plotCtx = buildProjectedKillerPlotContext(killerContext);
+  const killerStatusNote = visibleState.killerStatus !== 'alive'
+    ? `【重要】陈怀民当前状态：${visibleState.killerStatus}。`
     : '';
   const ai = await completeRoleJson('killer', [
     plotCtx,
     killerStatusNote,
-    state.plotGuidance ? `【导演指引】${state.plotGuidance}` : '',
     '',
     'You are the killer-side narrative analyst. First infer what the player just did, what the rule events confirmed, and what Chen Huaimin can reasonably know.',
     'Do not map a single clue to a canned strategy. Photo, upload, or social posting does not automatically mean framing_pressure; consider who saw it, whether it is public, and whether Chen knows.',
@@ -75,25 +74,22 @@ async function killerStrategyAi(state: GameState, plan?: ActionPlan, playerResul
     '【禁止使用 power_cut——电表箱已经用烂了。用更直接的方式施压。】',
     '节奏要求：2-3回合内必须把威胁升级一级。不要磨蹭。陈怀民的时间也在流逝，23:47前必须解决。',
     '玩家连续闲置→直接 spare_key_entry 或 window_route。玩家在回复消息→优先 message_reply。',
+    '短信策略硬规则：选择 phone_probe、message_reply、framing_pressure 时，responseHint 必填，且必须包含玩家能看到的具体短信原文（用中文引号）。不能只写“收到一条消息”。',
+    '避免复读：检查 killerContext.visibleState.recentKillerActions/observableEvents，上一条短信问过什么，这一条必须换问法或升级压力，不要重复“哪个包裹/拿进去了吗”。',
+    '施压触发不只来自未回复短信：玩家拒绝开门/反锁门、核实身份、录音拍照、外传证据、拖延交出包裹，都可以让陈怀民升级为 framing_pressure。',
+    'framing_pressure 话术边界：用“拿错别人东西/偷拿/房东登记/限时放回门口”施压；禁止主动说“毒品/违禁品/走私/贩毒”等定性词，除非剧情事件明确写入陈怀民可用这种话术。',
     '只输出一个裸 JSON 对象，不要包在 strategy/killerStrategy/result 字段里。',
-    '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"可选，若是短信/对话则写他发来的具体话","visibleToPlayer":true,"risk":"low|medium|high"}',
+    '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"短信/对话/威胁的具体可见原文；非短信策略可省略","visibleToPlayer":true,"risk":"low|medium|high"}',
   ].join('\n') + '\n' + formatWorldInfoPromptBlock(killerContext.worldInfo, 'killer'), buildKillerPromptPayload(killerContext), { temperature: 0.7 });
   if (!ai) throw new Error('killer AI returned null');
   const parsed = KillerStrategySchema.safeParse(unwrapJsonObject(ai));
   if (!parsed.success) throw new Error(`killer schema: ${parsed.error.message}`);
-  return verifyKillerStrategy(state, parsed.data, createTurnBlackboard('', state));
+  return parsed.data;
 }
 
-async function narrateActionAi(
-  context: NarrationContext, playerResult: RuleResult,
-  killerResult: RuleResult, state: GameState,
-): Promise<Narration> {
-  const { createFallbackActionNarration } = await import('@murder-loop-ai/game-core');
-  const fallback = createFallbackActionNarration(playerResult);
-  const allowedTimeLabels = Array.from(new Set([
-    minuteLabel(context.minute),
-    ...context.recentLog.map((entry) => minuteLabel(entry.minute)),
-  ]));
+async function narrateActionAi(context: NarrationContext): Promise<Narration> {
+  const state = context.stateSnapshot;
+  const allowedTimeLabels = [minuteLabel(context.minute)];
   // 构建剧情上下文供叙事 AI 使用
   const plotCtx = [
     `当前时间：${minuteLabel(context.minute)}`,
@@ -111,11 +107,11 @@ async function narrateActionAi(
     '你是行动叙事 AI。你的核心任务不是写优美的景物描写，而是推进剧情。',
     '',
     '【硬规则——违反即失败】',
-    '0. 动作核对：上下文中有 playerInput 字段，这是玩家本回合的原始输入。',
-    '   写完后自检——叙事中描述的每一个动作，必须能对应 playerInput 中的某个动词或动作短语。',
+    '0. 动作核对：只使用 narrationContext.confirmedFacts 中 origin=player 或 origin=rule 的已确认事实。',
+    '   写完后自检——叙事中的每一个动作和后果，都必须能对应一条已确认事实。',
     '   玩家输入是"我打开纸条，看看这是什么东西"→ 叙事主体必须是打开纸条、看纸条。',
-    '   绝不能写成冲出门、捡地上东西、翻包裹——那些动作在 playerInput 里完全不存在。',
-    '1. 如果 playerInput 和 plan.summary 描述的是两件事，以 playerInput 为准。',
+    '   绝不能补写 confirmedFacts 中不存在的冲出门、捡东西或翻包裹等动作。',
+    '1. playerActionSummary 仅用于概括，事实冲突时以 confirmedFacts 和 stateSnapshot 为准。',
     '2. 剧情推进：每段叙事必须让调查前进一步。线索→发现→推理→新问题。',
     '   【核心玩法】这是智斗悬疑游戏，不是格斗游戏。',
     '   玩家应该用智慧取胜：收集证据、设置陷阱、欺骗杀手、报警核实、巧妙逃脱。',
@@ -148,7 +144,6 @@ async function narrateActionAi(
     '   但不能写"这行字证明包裹里是毒品"。信息边界从开局一直维持到玩家获得确凿证据为止。',
     '4. 道具柔化：如果玩家声称使用不存在的武器（枪等），叙事自然揭示手边没有。',
     '   不硬拒绝，不假装有。用感官描写过渡：手指碰到空气/布料——什么都没有。',
-    `【导演指引——必须遵守】${state.plotGuidance ? `\n${state.plotGuidance}` : '\n故事处于开局阶段。通过包裹/门外的线索自然引导玩家理解处境。'}`,
     plotCtx,
     '5. 战斗叙事：如果发生了攻击，描写动作的真实后果——伤害、血迹、反击、恐惧。',
     '   不美化暴力。保持悬疑紧张感。受伤的人会痛、会怕、会失误。',
@@ -165,29 +160,18 @@ async function narrateActionAi(
     '9. 文风：第一人称限知视角，写可观察事实（声音/光线/距离/动作），不写"我害怕"。',
     '   220-520 中文字符。只输出 JSON：{"title":"...","text":"..."}；如果本段自然产生关键新信息，可以额外带 1 个 clue 字段：{"id":"dyn_xxx","title":"线索标题","detail":"具体情报","weight":6}。',
   ].join('\n')
-    + '\n' + formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents)
-    + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
+    + '\n' + formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents);
   const ai = await completeRoleJson('narrator', system,
-    { narrationContext: context, playerResult, state }, { temperature: 0.75 });
+    { narrationContext: context }, { temperature: 0.75 });
   if (!ai) throw new Error('action narration AI returned null');
   const parsed = NarrationSchema.safeParse(ai);
   if (!parsed.success) throw new Error(`action narration: ${parsed.error.message}`);
-  return verifyNarration(parsed.data, fallback, createTurnBlackboard('', state), 'actionNarration', {
-    currentMinute: context.minute,
-    allowedMinutes: [context.minute, ...context.recentLog.map((entry) => entry.minute)],
-  });
+  return parsed.data;
 }
 
-async function narrateAmbientAi(
-  context: NarrationContext, playerResult: RuleResult,
-  killerResult: RuleResult, state: GameState,
-): Promise<Narration> {
-  const { createFallbackAmbientNarration } = await import('@murder-loop-ai/game-core');
-  const fallback = createFallbackAmbientNarration(playerResult, killerResult);
-  const allowedTimeLabels = Array.from(new Set([
-    minuteLabel(context.minute),
-    ...context.recentLog.map((entry) => minuteLabel(entry.minute)),
-  ]));
+async function narrateAmbientAi(context: NarrationContext): Promise<Narration> {
+  const state = context.stateSnapshot;
+  const allowedTimeLabels = [minuteLabel(context.minute)];
   const ambientContext = [
     `当前时间：${minuteLabel(context.minute)}`,
     `杀手状态：${state.killerStatus}`,
@@ -202,7 +186,7 @@ async function narrateAmbientAi(
     '',
     '【硬规则】',
     '1. 每次必须推进一个明确的外部事件。禁止"一切安静"。禁止零信息描写。',
-    '2. 基于 killerResult.events 写环境推进。一个事件 + 一个具体后果 + 一个钩子。',
+    '2. 只基于 narrationContext.confirmedFacts 写环境推进。一个已确认事件 + 一个具体后果 + 一个钩子。',
     '2.1. 状态一致性：如果 state.doorState.barricaded 不为 true，绝对不要写椅子、行李箱、门被东西挡住、门和椅子摩擦、门缝被家具压住。反锁/门链只能阻止钥匙或开门，不能自动生成家具障碍。',
     '2.2. 如果门外出现压低声音协作、说“进不去/打不开/里面挡着”，要把它写成玩家可利用的破绽：可录音、套话、转告警方或林越；不要让玩家只剩等待。',
     '3. 杀手状态决定环境基调：',
@@ -223,34 +207,24 @@ async function narrateAmbientAi(
     '',
     ambientContext,
   ].join('\n')
-    + '\n' + formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents)
-    + '\n' + formatWorldInfoPromptBlock(context.worldInfo, 'narrator');
+    + '\n' + formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents);
   const ai = await completeRoleJson('narrator', system,
-    { narrationContext: context, killerResult, state }, { temperature: 0.85 });
+    { narrationContext: context }, { temperature: 0.85 });
   if (!ai) throw new Error('ambient narration AI returned null');
   const parsed = NarrationSchema.safeParse(ai);
   if (!parsed.success) throw new Error(`ambient narration: ${parsed.error.message}`);
-  return verifyNarration(parsed.data, fallback, createTurnBlackboard('', state), 'ambientNarration', {
-    currentMinute: context.minute,
-    allowedMinutes: [context.minute, ...context.recentLog.map((entry) => entry.minute)],
-  });
+  return parsed.data;
 }
 
 async function reviewNarrationAi(input: {
-  narration: Narration;
-  actionNarration: Narration;
-  ambientNarration: Narration;
-  state: GameState;
-  narrationContext?: NarrationContext;
-  playerResult?: RuleResult;
-  killerResult?: RuleResult;
+  directorContext: DirectorContext;
+  narrationContext: NarrationContext;
 }) {
   const system = [
-    '???23:47????/???? AI????????????????????????',
-    '??? narrationContext?playerResult?killerResult?state ???????????????????',
-    '??????????????????????/????/NPC ?????????????????????????????????',
-    '????????? violations ? moodSignal??????????',
-    '??? JSON?{"score":{"pacing":0-10,"infoLeak":0-10,"ruleConsistency":0-10,"prose":0-10},"passed":true/false,"violations":["..."],"moodSignal":"..."}',
+    'You are an asynchronous narration Critic for 23:47.',
+    'Review the completed narration against directorContext and narrationContext confirmed facts.',
+    'Your output is diagnostic only. Do not propose state changes, endings, rewrites, or player-facing mood text.',
+    'Return JSON: {"score":{"pacing":0-10,"infoLeak":0-10,"ruleConsistency":0-10,"prose":0-10},"passed":true/false,"violations":["..."]}',
   ].join('\n');
   const ai = await completeRoleJson('director', system, input, { temperature: 0.2 });
   if (!ai) throw new Error('director AI returned null');
@@ -265,26 +239,27 @@ async function reviewNarrationAi(input: {
     },
     passed: typeof raw.passed === 'boolean' ? raw.passed : !Array.isArray(raw.violations) || raw.violations.length === 0,
     violations: Array.isArray(raw.violations) ? raw.violations.map(String) : [],
-    moodSignal: typeof raw.moodSignal === 'string' ? raw.moodSignal : undefined,
   };
 }
 
 async function npcReplyAi(speaker: NpcReply['speaker'], input: string, state: GameState): Promise<NpcReply> {
+  const visibleContext = buildNpcVisibleContext(state, speaker, input);
   const ai = await completeRoleJson(
     'npc',
     [
+      'Use only visibleContext. The full GameState is intentionally not provided.',
+      'If visibleContext.canReference.doorActivity is false, do not mention doors, hallway activity, outside voices, door quotes, forced entry, or anyone being unable to get in.',
+      'If visibleContext.canReference.policeReport and visibleContext.canReference.fakePoliceSuspicion are false, do not mention police tactics, reporting, real police, fake police, or police arrival.',
+      'If speaker=linyue and only packagePhoto is known, reply only about the package photo/player message: preserve the photo, inspect delivery markings, verify source, and stay generally cautious. Do not say open-door safety advice.',
       '你是《23:47》的 NPC 回复 AI。只写当前 speaker 的即时回复，不写旁白，不推进环境，不改 GameState。',
-      '你必须基于 visibleState 和玩家 input 回复。不要把一个 NPC 的信息写成另一个 NPC 的口吻。',
-      'speaker=linyue 时，林越是楼下的外部协助者：他说话要直白、短句、可执行。',
-      '如果 visibleState.policeActive 为 true（警方已被联系），或 input 提到警察、报警、警服、楼下、假警察、冒充警察，林越必须明确说：不太对劲，可能是假警察或冒充警察。',
-      '除非 state.policePhase 是 arrived 或 real_police_en_route，否则林越不能声称真警察已经到门外或停车场；他只能说自己会在楼下安全位置等待、报警、转交证据。',
-      '林越应建议：玩家不要开门，不要贴门缝，保持门窗反锁；通过官方回拨/真警察核实身份；林越留在楼下，把照片、位置和异常情况交给真警察。',
-      '林越不得说自己上楼、不得让玩家开门确认、不得把回复写成陈怀民的威胁或楼道环境描写。',
-      'speaker=police_dispatch 时，只写接线员指令：保持通话、不开门、等待官方核实和出警。',
-      'speaker=chen_huaimin 时，只写陈怀民能观察/推测到的信息，不得知道林越和警方内部动作。',
+      '你必须基于 visibleContext 和玩家 input 回复。不要使用 visibleContext 之外的信息。',
+      'speaker=linyue 时，林越只能知道玩家主动发给他的内容、他自己的位置和他的既有身份经验。',
+      '林越收到包裹照片时，可以说“先别拆包裹/保存照片/看寄件信息”，但不能说“别开门/别靠门缝/门外有人/警察真假”，除非 visibleContext.canReference.doorActivity 或 visibleContext.canReference.policeReport 支持。',
+      'speaker=police_dispatch 时，只写接线员基于报警通话可知道的安全指令。',
+      'speaker=chen_huaimin 时，只写陈怀民能观察、收到、监听、内线告知或推测到的信息，不得知道林越和警方内部动作。',
       '只输出一个 JSON 对象：{"speaker":"linyue|police_dispatch|chen_huaimin","text":"...","intent":"...","riskWarning":"...","suggestedExternalAction":"..."}',
     ].join('\n'),
-    { speaker, input, visibleState: state },
+    { speaker, input, visibleContext },
     { temperature: 0.55 },
   );
   const parsed = NpcReplySchema.safeParse(ai);
@@ -295,9 +270,9 @@ async function npcReplyAi(speaker: NpcReply['speaker'], input: string, state: Ga
 export function createAiHarness(options: HarnessOptions = {}) {
   return createHarness({
     parseAction: (input, state) => parseActionAi(input, state),
-    chooseKillerStrategy: (state, plan, playerResult) => killerStrategyAi(state, plan, playerResult),
-    narrateAction: (ctx, pr, kr, st) => narrateActionAi(ctx, pr, kr, st),
-    narrateAmbient: (ctx, pr, kr, st) => narrateAmbientAi(ctx, pr, kr, st),
+    chooseKillerStrategy: (killerContext) => killerStrategyAi(killerContext),
+    narrateAction: (ctx) => narrateActionAi(ctx),
+    narrateAmbient: (ctx) => narrateAmbientAi(ctx),
     reviewNarration: reviewNarrationAi,
     npcReply: npcReplyAi,
     npcAdapter: createNpcAdapter(),

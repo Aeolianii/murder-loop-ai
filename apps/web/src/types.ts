@@ -57,23 +57,9 @@ export interface Clue {
   source?: string;  // 'ai_generated' | 'static_fallback' | 'player_discovered'
 }
 
-export interface DirectorScore {
-  slot: 'action' | 'ambient';
-  total: number;
-  pace: number;
-  infoSafety: number;
-  ruleConsistency: number;
-  prose: number;
-  verdict: 'pass' | 'rewrite';
-  issues: string[];
-  rewriteBrief: string;
-  source: 'heuristic' | 'ai' | 'ai_rewrite';
-}
-
 export interface CoordinationState {
   warnings: string[];
   facts?: unknown;
-  directorScores?: DirectorScore[];
   trace?: Array<{
     taskId: string;
     agentId?: string;
@@ -122,7 +108,6 @@ export interface GameState {
     threat: { level: number; trend: string; label: string };
     timeLabel: string;
     phaseLabel: string;
-    moodSignal: string;
     npcStatus: Array<{ name: string; status: string; risk: string }>;
     roomStatus: Array<{ item: string; state: string; icon: string }>;
     newClues: Array<{ id: string; name: string; detail: string }>;

@@ -1,36 +1,24 @@
-import { BookOpen, Brain, Gauge, Smartphone, X } from 'lucide-react';
+import { BookOpen, Brain, Smartphone, X } from 'lucide-react';
 import { useState } from 'react';
 import { getClueAsset } from '../clueAssets';
 import { type ClueReadMap, isClueUnread } from '../clueRevealState';
-import type { Clue, CoordinationState } from '../types';
+import type { Clue } from '../types';
 
 interface SidebarProps {
   clues: Clue[];
-  coordination?: CoordinationState;
   recap?: string;
   sidebar?: {
     phone: { battery: number; recording: boolean; muted: boolean; newMessages: string[] };
     threat: { level: number; trend: string; label: string };
     timeLabel: string;
     phaseLabel: string;
-    moodSignal: string;
     roomStatus: Array<{ item: string; state: string; icon: string }>;
   };
   readClues?: ClueReadMap;
   onClueSelect?: (clue: Clue) => void;
 }
 
-const STORY_BG = '你叫沈知夏，今天刚搬进青荷公寓 503。桌上有一个被拆开一半的纸箱，不是你买的。旧书、药板和写着 503 的数字纸条被塞在里面。你隐约觉得不对劲——楼里的维修工林越似乎认识上一个租客，也许他知道些什么。你在第一轮中于 23:47 死亡，又带着模糊记忆回到 23:00。';
-
-function slotLabel(slot: 'action' | 'ambient') {
-  return slot === 'action' ? '行动回应' : '环境播报';
-}
-
-function scoreColor(total: number) {
-  if (total < 78) return 'text-rose-300';
-  if (total < 88) return 'text-amber-300';
-  return 'text-emerald-300';
-}
+const STORY_BG = '你叫沈知夏，今天刚搬进青荷公寓 503。傍晚，房东陈怀民把钥匙交给你；维修工林越来检查过煤气管道。现在你在 23:00 醒来，后脑钝痛，桌上有一个被拆开一半的陌生纸箱。你只记得潮湿纸箱的霉味和一句压低的“东西呢？”。第一轮中，你在 23:47 死亡，又带着模糊记忆回到这里。';
 
 export function NewBadge() {
   return (
@@ -97,8 +85,7 @@ export function InventoryItem({ sidebar }: InventoryItemProps) {
   );
 }
 
-export function Sidebar({ clues, coordination, recap, sidebar, readClues = {}, onClueSelect }: SidebarProps) {
-  const directorScores = coordination?.directorScores ?? [];
+export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect }: SidebarProps) {
   const [showMemories, setShowMemories] = useState(false);
 
   return (
@@ -152,42 +139,8 @@ export function Sidebar({ clues, coordination, recap, sidebar, readClues = {}, o
                 <div className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
                 {sidebar?.phaseLabel ?? '循环开始'}
               </li>
-              {sidebar?.moodSignal && (
-                <li className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                  <span className="text-xs italic text-zinc-500">{sidebar.moodSignal}</span>
-                </li>
-              )}
             </ul>
           </div>
-
-          {directorScores.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 border-b border-white/5 pb-2">
-                <Gauge className="h-3.5 w-3.5 text-zinc-600" />
-                <h3 className="font-mono text-xs uppercase text-zinc-600">剧情导演</h3>
-              </div>
-              <div className="grid gap-3">
-                {directorScores.slice(-3).map((score, index) => (
-                  <div key={`${score.slot}-${score.source}-${index}`} className="rounded-lg border border-white/5 bg-zinc-900/40 p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="font-mono text-xs text-zinc-400">{slotLabel(score.slot)}</span>
-                      <span className={`font-mono text-sm ${scoreColor(score.total)}`}>{score.total}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px] text-zinc-500">
-                      <span>节奏 {score.pace}</span>
-                      <span>泄露 {score.infoSafety}</span>
-                      <span>规则 {score.ruleConsistency}</span>
-                      <span>文笔 {score.prose}</span>
-                    </div>
-                    {score.issues.length > 0 && (
-                      <p className="mt-2 text-xs leading-relaxed text-zinc-500">{score.issues[0]}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="space-y-3">
             <h3 className="border-b border-white/5 pb-2 font-mono text-xs uppercase text-zinc-600">线索 & 物品</h3>

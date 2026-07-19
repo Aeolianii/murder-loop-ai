@@ -1,5 +1,7 @@
 import type { GameState, WorldState } from '@murder-loop-ai/shared';
 import { createInitialWorldState } from './worldSimulator';
+import { chenKnowsPoliceCalled } from './knowledgeEvents';
+import { resolveWorldNarrationCursor } from './narrationCursor';
 
 function cloneWorld(world: WorldState): WorldState {
   return structuredClone(world) as WorldState;
@@ -106,5 +108,15 @@ export function syncGameStateToWorld(state: GameState, current: WorldState): Wor
 export function ensureWorldState(state: GameState): WorldState {
   const base = state.world ? cloneWorld(state.world) : createInitialWorldState();
   base.consumedNarrationEventIds ??= [];
-  return syncGameStateToWorld(state, base);
+  base.pendingNarration ??= [];
+  base.narrationCursor = resolveWorldNarrationCursor(base);
+  const world = syncGameStateToWorld(state, base);
+  syncLegacyKnowledgeFromWorld(state, world);
+  return world;
+}
+
+function syncLegacyKnowledgeFromWorld(state: GameState, world: WorldState) {
+  if (chenKnowsPoliceCalled(world)) {
+    state.killerKnowledge.knowsPoliceCalled = true;
+  }
 }

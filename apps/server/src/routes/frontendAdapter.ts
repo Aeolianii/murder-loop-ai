@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { ActionPlanSchema, KillerStrategySchema, NarrationSchema } from '@murder-loop-ai/ai-contracts';
 import { clueBook } from '@murder-loop-ai/content';
-import { buildKillerContext, buildParserContext, chooseFallbackKillerStrategy, createFallbackActionNarration, createFallbackAmbientNarration, createHarness, createInitialGameState, fallbackParseAction, resolveTurnHarness } from '@murder-loop-ai/game-core';
-import type { AiAdapters } from '@murder-loop-ai/game-core';
+import { buildParserContext, chooseFallbackKillerStrategy, createFallbackActionNarrationFromConfirmedFacts, createFallbackAmbientNarrationFromConfirmedFacts, createHarness, createInitialGameState, fallbackParseAction, resolveTurnHarness } from '@murder-loop-ai/game-core';
+import type { AiAdapters, DirectorContext, KillerContext } from '@murder-loop-ai/game-core';
 import { minuteLabel, type ActionPlan, type GameState, type KillerStrategy, type Narration, type NarrationContext, type RecommendedAction, type RuleResult, type StoryLogEntry, type TurnResolution } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
-import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy, verifyNarration } from '../ai/turnCoordinator';
+import { createTurnBlackboard, verifyActionPlan, verifyNarration } from '../ai/turnCoordinator';
 import { scoreNarrationWithDirector } from '../ai/directorScorer';
 import { buildKillerPromptPayload } from '../ai/killerPrompt';
 import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObject';
@@ -87,7 +87,7 @@ function collectNarrationOutcomeWarnings(
     : ambientNarration;
 
   if (decisiveNarration?.ending) {
-    warnings.push(`narrated ending proposal ignored: ${decisiveNarration.ending}; rules/director must validate world-state changes.`);
+    warnings.push(`narrated ending proposal ignored: ${decisiveNarration.ending}; only deterministic rules may validate world-state changes.`);
   }
   if (actionNarration?.isFatal || ambientNarration?.isFatal) {
     warnings.push('fatal narration proposal ignored: narration cannot directly set death.');
@@ -119,10 +119,11 @@ async function parseActionForFrontend(input: string, state: GameState, blackboar
   }
 }
 
-function actionOnlyContext(context: NarrationContext, playerResult: RuleResult): NarrationContext {
+function actionOnlyContext(context: NarrationContext): NarrationContext {
   return {
     ...context,
-    events: playerResult.events,
+    events: context.events.filter((event) => event.kind === 'action' || event.kind === 'clue' || event.kind === 'state_change' || event.kind === 'ending'),
+    confirmedFacts: context.confirmedFacts.filter((fact) => fact.origin === 'player' || fact.origin === 'rule'),
     forbiddenFacts: [
       ...context.forbiddenFacts,
       '行动回应只写玩家动作的直接结果，不能写下一波敲门、脚步、断电、来电或陌生号码回复。',
@@ -130,11 +131,12 @@ function actionOnlyContext(context: NarrationContext, playerResult: RuleResult):
   };
 }
 
-function ambientOnlyContext(context: NarrationContext, killerResult: RuleResult): NarrationContext {
+function ambientOnlyContext(context: NarrationContext): NarrationContext {
   const ambientEvents = context.events.filter((event) => !['action', 'clue'].includes(event.kind));
   return {
     ...context,
-    events: ambientEvents.length ? ambientEvents : killerResult.events,
+    events: ambientEvents,
+    confirmedFacts: context.confirmedFacts.filter((fact) => fact.origin === 'killer' || fact.origin === 'world'),
     forbiddenFacts: [
       ...context.forbiddenFacts,
       '环境播报只写外部环境和暗线反馈，不能复述玩家刚刚做了什么，也不能替玩家总结行动。',
@@ -142,9 +144,8 @@ function ambientOnlyContext(context: NarrationContext, killerResult: RuleResult)
   };
 }
 
-async function chooseKillerStrategyForFrontend(state: GameState, plan?: ActionPlan, playerResult?: RuleResult, blackboard = createTurnBlackboard('', state)): Promise<KillerStrategy> {
-  const killerContext = buildKillerContext(state, { plan, playerResult });
-  const fallback = chooseFallbackKillerStrategy(state);
+async function chooseKillerStrategyForFrontend(killerContext: KillerContext, blackboard: ReturnType<typeof createTurnBlackboard>): Promise<KillerStrategy> {
+  const fallback = chooseFallbackKillerStrategy(killerContext);
   try {
     const ai = await completeRoleJson(
       'killer',
@@ -159,38 +160,41 @@ async function chooseKillerStrategyForFrontend(state: GameState, plan?: ActionPl
       '如果玩家本回合是在回复陈怀民、陌生号码或门外人，优先选择 message_reply，只承接对话，不要突然切到敲门、断电、脚步逼近。',
       '如果玩家已经有证据外传、官方核验、门窗防御较强，可以选择 retreat 或 framing_pressure，不要硬杀。',
       'title 要像章节小标题，短而有画面；rationale 写给调试看，说明为什么这一步合理；visibleToPlayer 只表示玩家能感知到外部现象。',
+      '短信策略硬规则：选择 phone_probe、message_reply、framing_pressure 时，responseHint 必填，且必须包含玩家能看到的具体短信原文（用中文引号）。不能只写“收到一条消息”。',
+      '避免复读：检查 killerContext.visibleState.recentKillerActions/observableEvents，上一条短信问过什么，这一条必须换问法或升级压力。',
+      '施压触发不只来自未回复短信：玩家拒绝开门/反锁门、核实身份、录音拍照、外传证据、拖延交出包裹，都可以让陈怀民升级为 framing_pressure。',
+      'framing_pressure 话术边界：用“拿错别人东西/偷拿/房东登记/限时放回门口”施压；禁止主动说“毒品/违禁品/走私/贩毒”等定性词，除非剧情事件明确写入陈怀民可用这种话术。',
       '只输出一个裸 JSON 对象，不要包在 strategy/killerStrategy/result 字段里。',
-      '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"可选，若是短信/对话则写他发来的具体话","visibleToPlayer":true,"risk":"low|medium|high"}',
+      '必须包含且只需要这些字段：{"id":"killer-短id","type":"phone_probe|soft_knock|landlord_excuse|fake_police|spare_key_entry|window_route|framing_pressure|power_cut|lure_linyue|fake_neighbor|fake_callback|message_reply|wait_for_fatigue|retreat","title":"短标题","rationale":"为什么陈怀民在有限信息下会这么做","responseHint":"短信/对话/威胁的具体可见原文；非短信策略可省略","visibleToPlayer":true,"risk":"low|medium|high"}',
     ].join('\n') + '\n' + formatWorldInfoPromptBlock(killerContext.worldInfo, 'killer'),
     buildKillerPromptPayload(killerContext),
     { temperature: 0.55 },
   );
   const parsed = KillerStrategySchema.safeParse(unwrapJsonObject(ai));
   if (!parsed.success) throw new Error('killer strategy schema mismatch');
-  return verifyKillerStrategy(state, parsed.data, blackboard);
+  blackboard.artifacts.killerStrategy = parsed.data;
+  return parsed.data;
   } catch (error) {
     blackboard.warnings.push(`killer strategy AI failed; using fallback strategy. ${error instanceof Error ? error.message : String(error)}`);
-    return verifyKillerStrategy(state, fallback, blackboard);
+    blackboard.artifacts.killerStrategy = fallback;
+    return fallback;
   }
 }
 
-async function narrateActionForFrontend(context: NarrationContext, playerResult: RuleResult, killerResult: RuleResult, state: GameState, blackboard = createTurnBlackboard('', state)): Promise<Narration> {
-  const narrationContext = actionOnlyContext(context, playerResult);
-  const allowedTimeLabels = Array.from(new Set([
-    minuteLabel(narrationContext.minute),
-    ...narrationContext.recentLog.map((entry) => minuteLabel(entry.minute)),
-  ]));
+async function narrateActionForFrontend(context: NarrationContext, blackboard: ReturnType<typeof createTurnBlackboard>): Promise<Narration> {
+  const narrationContext = actionOnlyContext(context);
+  const allowedTimeLabels = [minuteLabel(narrationContext.minute)];
   const system = [
       '你是《23:47》的”行动回应”作者。只写玩家这次动作的落地结果，不写下一波环境推进。',
       '你只能使用 narrationContext.events 里的事实。不要新增证据，不改变时间、生死、NPC 状态，不让角色突然进场。',
       '',
-      '【动作核对】上下文中有 playerInput 字段——这是玩家原始输入。叙事中每个动作必须对应 playerInput 中的动词。',
+      '【动作核对】只写 narrationContext.confirmedFacts 中 origin=player 或 origin=rule 的已确认动作和后果。',
       '玩家输入”我打开纸条，看看这是什么东西”→ 叙事主体是打开纸条/看纸条，绝不能写成冲出门/翻包裹。',
       '',
       '目标是让玩家感到输入被认真执行：动作顺序、物体变化、代价、遗漏和可利用信息都要具体。',
       '文风参考悬疑网文：段落有推进，句子有钩子，但不要中二，不要空喊恐惧。多写门锁、猫眼、手机冷光、纸箱气味、脚步距离、手上动作。',
       '可以有极短的第一人称反应，但不能替玩家悟出真相，不能泄露凶手内心。',
-      '必须查看 narrationContext.recentLog，避免复述最近两回合已经出现过的短信问法、敲门借口和具体句子。',
+      '不得借用未出现在 confirmedFacts 中的旧叙事细节来补充本回合事实。',
       '',
       '【★ 信息边界——叙事不能替玩家下结论 ★】',
       '沈知夏只是一个普通租客。她打开包裹看到旧书、药盒、纸条——但她不知道这是毒品。',
@@ -204,72 +208,92 @@ async function narrateActionForFrontend(context: NarrationContext, playerResult:
       `【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造上下文里不存在的时间。`,
       '220-520 个中文字符。只输出 JSON：{“title”:”...”,”text”:”...”,“ending”:”可选 endingId”}。',
     ].join('\n')
-      + '\n' + formatConfirmedWorldEventsPromptBlock(narrationContext.confirmedWorldEvents)
-      + '\n' + formatWorldInfoPromptBlock(narrationContext.worldInfo, 'narrator');
-  const fallback = createFallbackActionNarration(playerResult);
+      + '\n' + formatConfirmedWorldEventsPromptBlock(narrationContext.confirmedWorldEvents);
+  const fallback = createFallbackActionNarrationFromConfirmedFacts(narrationContext);
 
   const ai = await completeRoleJson(
     'narrator',
     system,
-    { narrationContext, playerResult, state },
+    { narrationContext },
     { temperature: 0.72 },
   ).catch(() => null);
   const parsed = NarrationSchema.safeParse(ai);
   let narration = parsed.success ? verifyNarration(parsed.data, fallback, blackboard, 'actionNarration', {
     currentMinute: narrationContext.minute,
-    allowedMinutes: [narrationContext.minute, ...narrationContext.recentLog.map((entry) => entry.minute)],
+    allowedMinutes: [narrationContext.minute],
   }) : fallback;
   if (!parsed.success) {
     blackboard.warnings.push('actionNarration AI failed schema validation; scored fallback narration instead.');
     blackboard.artifacts.actionNarration = fallback;
   }
-  const score = await scoreNarrationWithDirector({ slot: 'action', narration, context: narrationContext, playerResult, killerResult, state });
-  blackboard.directorScores.push(score);
-
   return narration;
 }
 
-async function narrateAmbientForFrontend(context: NarrationContext, playerResult: RuleResult, killerResult: RuleResult, state: GameState, blackboard = createTurnBlackboard('', state)): Promise<Narration> {
-  const narrationContext = ambientOnlyContext(context, killerResult);
-  const allowedTimeLabels = Array.from(new Set([
-    minuteLabel(narrationContext.minute),
-    ...narrationContext.recentLog.map((entry) => minuteLabel(entry.minute)),
-  ]));
+async function narrateAmbientForFrontend(context: NarrationContext, blackboard: ReturnType<typeof createTurnBlackboard>): Promise<Narration> {
+  const narrationContext = ambientOnlyContext(context);
+  const allowedTimeLabels = [minuteLabel(narrationContext.minute)];
   const system = [
       '你是《23:47》的”环境播报/暗线镜头”。只写门外、楼道、手机、时间、来电、灯光、窗外等环境变化。',
       '不要复述玩家动作细节，不要写玩家心理，不要解释凶手计划。你只呈现玩家能直接感知的现象。',
       '【信息边界】不使用”毒品””违禁品””走私”等玩家尚不知情的定性词。只呈现可感知的外部现象。',
       '节奏要短促、有镜头感：每次只推进一个压力点。不要每回合都大爆发，安静、停顿、误导同样重要。',
       '语言要像悬疑网文的收尾钩子：具体、克制、最后一句压住下一步选择。',
-      '必须查看 narrationContext.recentLog，避免复述最近两回合已经出现过的短信问法、敲门借口和具体句子。',
+      '不得借用未出现在 confirmedFacts 中的旧叙事细节来补充本回合事实。',
       '【严格结局声明】只有当本回合事件已经把结局坐实时，才能声明 ending / isFatal / killerKilled。',
       '不能因为玩家嘴上说自己已经脱险就直接给结局；必须是外部事件已经把结果坐实。',
       `【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造上下文里不存在的时间。`,
       '90-240 个中文字符。只输出 JSON：{"title":"...","text":"...","ending":"可选 endingId"}。',
     ].join('\n')
-      + '\n' + formatConfirmedWorldEventsPromptBlock(narrationContext.confirmedWorldEvents)
-      + '\n' + formatWorldInfoPromptBlock(narrationContext.worldInfo, 'narrator');
-  const fallback = createFallbackAmbientNarration(playerResult, killerResult);
+      + '\n' + formatConfirmedWorldEventsPromptBlock(narrationContext.confirmedWorldEvents);
+  const fallback = createFallbackAmbientNarrationFromConfirmedFacts(narrationContext);
 
   const ai = await completeRoleJson(
     'narrator',
     system,
-    { narrationContext, killerResult, state },
+    { narrationContext },
     { temperature: 0.78 },
   ).catch(() => null);
   const parsed = NarrationSchema.safeParse(ai);
   let narration = parsed.success ? verifyNarration(parsed.data, fallback, blackboard, 'ambientNarration', {
     currentMinute: narrationContext.minute,
-    allowedMinutes: [narrationContext.minute, ...narrationContext.recentLog.map((entry) => entry.minute)],
+    allowedMinutes: [narrationContext.minute],
   }) : fallback;
   if (!parsed.success) {
     blackboard.warnings.push('ambientNarration AI failed schema validation; scored fallback narration instead.');
     blackboard.artifacts.ambientNarration = fallback;
   }
-  const score = await scoreNarrationWithDirector({ slot: 'ambient', narration, context: narrationContext, playerResult, killerResult, state });
-  blackboard.directorScores.push(score);
-
   return narration;
+}
+
+async function critiqueNarrationForFrontend(input: {
+  directorContext: DirectorContext;
+  narrationContext: NarrationContext;
+}) {
+  const [actionScore, ambientScore] = await Promise.all([
+    scoreNarrationWithDirector({
+      slot: 'action',
+      narration: input.directorContext.actionNarration,
+      context: input.narrationContext,
+    }),
+    scoreNarrationWithDirector({
+      slot: 'ambient',
+      narration: input.directorContext.ambientNarration,
+      context: input.narrationContext,
+    }),
+  ]);
+  const average = (left: number, right: number) => Math.round((left + right) / 20);
+  const violations = [...actionScore.issues, ...ambientScore.issues];
+
+  return {
+    score: {
+      pacing: average(actionScore.pace, ambientScore.pace),
+      infoLeak: average(actionScore.infoSafety, ambientScore.infoSafety),
+      ruleConsistency: average(actionScore.ruleConsistency, ambientScore.ruleConsistency),
+      prose: average(actionScore.prose, ambientScore.prose),
+    },
+    passed: actionScore.verdict === 'pass' && ambientScore.verdict === 'pass',
+    violations,
+  };
 }
 
 export function createFrontendHarnessAdapters(input: string, state: GameState) {
@@ -277,11 +301,10 @@ export function createFrontendHarnessAdapters(input: string, state: GameState) {
   const aiAdapters: AiAdapters = {
     parseAction: async (actionInput, currentState) =>
       verifyActionPlan(actionInput, await parseActionForFrontend(actionInput, currentState, blackboard), blackboard),
-    chooseKillerStrategy: (currentState, plan, playerResult) => chooseKillerStrategyForFrontend(currentState, plan, playerResult, blackboard),
-    narrateAction: (context, playerResult, killerResult, currentState) =>
-      narrateActionForFrontend(context, playerResult, killerResult, currentState, blackboard),
-    narrateAmbient: (context, playerResult, killerResult, currentState) =>
-      narrateAmbientForFrontend(context, playerResult, killerResult, currentState, blackboard),
+    chooseKillerStrategy: (killerContext) => chooseKillerStrategyForFrontend(killerContext, blackboard),
+    narrateAction: (context) => narrateActionForFrontend(context, blackboard),
+    narrateAmbient: (context) => narrateAmbientForFrontend(context, blackboard),
+    reviewNarration: critiqueNarrationForFrontend,
   };
 
   return {
@@ -290,7 +313,6 @@ export function createFrontendHarnessAdapters(input: string, state: GameState) {
       warnings: blackboard.warnings,
       judgements: {
         facts: blackboard.facts,
-        directorScores: blackboard.directorScores,
       },
     },
   };

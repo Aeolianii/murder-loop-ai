@@ -15,7 +15,6 @@ export interface TurnBlackboard {
     actionNarration?: Narration;
     ambientNarration?: Narration;
   };
-  directorScores: DirectorScore[];
 }
 
 const forbiddenMetaWords = ['ActionPlanSchema', 'KillerStrategySchema', 'NarrationSchema', 'fallback', 'GameState', 'threatDelta', 'timePassed'];
@@ -44,7 +43,6 @@ export function createTurnBlackboard(input: string, state: GameState): TurnBlack
       knownClues: state.clues.map(c => c.id),
     },
     artifacts: {},
-    directorScores: [],
   };
 }
 

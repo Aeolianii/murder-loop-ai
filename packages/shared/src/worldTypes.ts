@@ -56,7 +56,16 @@ export interface NpcLastPlan {
   destination?: LocationId;
 }
 
-export type KnowledgeSource = 'seen' | 'heard' | 'message' | 'inferred' | 'lied_by_other' | 'memory';
+export type KnowledgeSource =
+  | 'seen'
+  | 'heard'
+  | 'message'
+  | 'inferred'
+  | 'lied_by_other'
+  | 'memory'
+  | 'informant'
+  | 'intercepted'
+  | 'surveillance';
 
 export interface KnowledgeFact {
   confidence: number;
@@ -98,6 +107,7 @@ export interface WorldState {
   objects: Record<ObjectId, ObjectState>;
   knowledge: Record<CharacterId, KnowledgeState>;
   events: WorldEvent[];
+  narrationCursor: number;
   pendingNarration: WorldEvent[];
   consumedNarrationEventIds: string[];
   affectedCharacters: CharacterId[];

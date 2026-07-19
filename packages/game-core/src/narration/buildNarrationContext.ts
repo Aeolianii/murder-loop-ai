@@ -1,15 +1,46 @@
-import type { NarrationContext, RuleEvent, RuleResult } from '@murder-loop-ai/shared';
-import { buildVisibleMemoryForAgent } from '../memory/loopMemory';
+import type { ConfirmedNarrationFact, NarrationContext, RuleEvent, RuleResult } from '@murder-loop-ai/shared';
+import type { DomainEvent } from '../domain/domainEvents';
 
 export function event(kind: RuleEvent['kind'], subject: string, summary: string, sensoryHints: string[] = [], visibility: RuleEvent['visibility'] = 'player'): RuleEvent {
   return { kind, subject, summary, sensoryHints, visibility };
 }
 
 export function mergeEvents(...results: Array<Pick<RuleResult, 'events'>>): RuleEvent[] {
-  return results.flatMap((result) => result.events);
+  return results.flatMap((result) => result.events).filter((item) => item.visibility !== 'hidden');
 }
 
-export function buildNarrationContext(playerResult: RuleResult, killerResult: RuleResult, playerActionSummary: string, playerInput?: string): NarrationContext {
+function confirmedFactsFromResult(
+  result: RuleResult,
+  origin: 'player' | 'killer',
+): ConfirmedNarrationFact[] {
+  const domainEvents = (result as RuleResult & { domainEvents?: DomainEvent[] }).domainEvents ?? [];
+  const domainFacts = domainEvents
+    .filter((item) => item.visibility === 'player' || item.visibility === 'public')
+    .map((item): ConfirmedNarrationFact => ({
+      id: item.id,
+      origin,
+      type: item.eventType,
+      subject: item.subject,
+      summary: item.summary,
+      facts: [...item.facts],
+      visibility: item.visibility as 'player' | 'public',
+      causationId: item.causationId,
+    }));
+  const ruleFacts = result.events
+    .filter((item) => item.visibility === 'player')
+    .map((item, index): ConfirmedNarrationFact => ({
+      id: `rule_event.${origin}.${index}.${item.subject}`,
+      origin,
+      type: `rule_event:${item.kind}`,
+      subject: item.subject,
+      summary: item.summary,
+      facts: [...item.sensoryHints],
+      visibility: 'player',
+    }));
+  return [...domainFacts, ...ruleFacts];
+}
+
+export function buildNarrationContext(playerResult: RuleResult, killerResult: RuleResult): NarrationContext {
   const state = killerResult.state;
 
   const phaseDescriptions: Record<string, string> = {
@@ -31,9 +62,16 @@ export function buildNarrationContext(playerResult: RuleResult, killerResult: Ru
     run: state.run,
     minute: state.minute,
     turnIndex: state.log.length,
-    playerActionSummary,
-    playerInput,
+    playerActionSummary: confirmedFactsFromResult(playerResult, 'player')
+      .map((fact) => fact.summary)
+      .filter(Boolean)
+      .join(' | ') || playerResult.title,
     events: mergeEvents(playerResult, killerResult),
+    confirmedFacts: [
+      ...confirmedFactsFromResult(playerResult, 'player'),
+      ...confirmedFactsFromResult(killerResult, 'killer'),
+    ],
+    confirmedTitles: { action: playerResult.title, ambient: killerResult.title },
     stateSnapshot: {
       phase: state.phase,
       killerPhase: state.killerPhase,
@@ -53,14 +91,7 @@ export function buildNarrationContext(playerResult: RuleResult, killerResult: Ru
       playerHolding: state.playerHolding,
       combatTriggered: state.combatTriggered,
     },
-    recentLog: state.log.slice(-5).map((entry) => ({
-      minute: entry.minute,
-      title: entry.title,
-      text: entry.text.slice(0, 160),
-      channel: entry.channel,
-    })),
     knownClueTitles: state.clues.map(c => c.title),
-    memorySummary: buildVisibleMemoryForAgent(state.memory, 'narrator'),
     combatContext: state.combatTriggered ? {
       playerWeapon: state.playerHolding,
       killerArmed: state.killerStatus === 'confronting' || state.threat > 60,
@@ -76,7 +107,6 @@ export function buildNarrationContext(playerResult: RuleResult, killerResult: Ru
       '不要替玩家写心理感受、内心独白、恐惧、担忧、领悟或判断。',
       '不要写”我害怕””我明白””我意识到””我感觉””我知道他在想什么”。',
       '不要照抄规则 fallback 文本。',
-      '不要复述 recentLog 里最近两回合已经出现过的具体句子、短信问法或敲门借口。',
     ],
     styleGuide: [
       '第一人称限知视角，但只呈现现实反馈，不替玩家思考。',

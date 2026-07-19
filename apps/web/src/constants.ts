@@ -7,7 +7,7 @@ export const INITIAL_STATE: GameState = {
   isParsing: false,
   isParsingAction: false,
   actionConfirmation: null,
-  coordination: { warnings: [], directorScores: [] },
+  coordination: { warnings: [] },
   ending: null,
   deathTitle: null,
   deathSummary: null,
@@ -29,19 +29,19 @@ export const INITIAL_STATE: GameState = {
     {
       id: 'msg-1',
       type: 'narrative',
-      content: '你猛地睁开眼，从床上坐起。冷汗浸透了你的睡衣。\n外面正在下雨，雨水拍打着那扇松动的铝合金窗，发出细碎的噪音。',
+      content: '你猛地睁开眼，从地板上撑起身。冷汗浸透睡衣，后脑勺一阵阵发钝，像是刚撞过墙角或门框。窗外的雨把铝合金窗敲得细碎，手机屏幕停在 23:00。',
       timestamp: '23:00',
     },
     {
       id: 'msg-2',
       type: 'narrative',
-      content: '后脑勺隐隐作痛，像是撞到了什么硬物。你最后残存的记忆碎片里，只有一股纸箱潮湿发霉的味道，以及一个低沉的男声在问：“东西呢？”',
+      content: '记忆像断片的监控画面往回跳：傍晚时，房东陈怀民把 503 的钥匙交到你手里；晚些时候，维修工林越拎着工具箱来查煤气管道，提醒你这栋楼夜里水压不稳。',
       timestamp: '23:00',
     },
     {
       id: 'msg-3',
       type: 'narrative',
-      content: '你环顾四周，凌乱的行李箱还堆在门边，这是你搬进青荷公寓503的第一天。一切看起来都很正常，除了桌上那个被拆开一半的陌生包裹。你隐约觉得它不属于自己，也许该拍张照片发给楼里的维修工林越，问问他知不知道这是什么。',
+      content: '再往后的记忆只剩一股潮湿纸箱的霉味。你环顾四周，行李箱还堆在门边，桌上却多了一个被拆开一半的陌生包裹，旧书和药板露在纸箱里。黑暗里似乎有人压低声音问过：“东西呢？”它也许是林越检查煤气时漏在这里的，也许该先拍张照片问问他。',
       timestamp: '23:00',
     }
   ]

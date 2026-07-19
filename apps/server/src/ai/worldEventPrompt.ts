@@ -1,6 +1,6 @@
-import type { WorldEvent } from '@murder-loop-ai/shared';
+import type { ConfirmedWorldNarrationEvent } from '@murder-loop-ai/shared';
 
-export function formatConfirmedWorldEventsPromptBlock(events: WorldEvent[] | undefined): string {
+export function formatConfirmedWorldEventsPromptBlock(events: ConfirmedWorldNarrationEvent[] | undefined): string {
   if (!events?.length) return '';
 
   return [

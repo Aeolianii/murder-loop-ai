@@ -1,4 +1,5 @@
 import type { ActionPlan } from '@murder-loop-ai/shared';
+import type { DomainEvent } from '../domain/domainEvents';
 import { applyEventEffects } from './worldSimulator';
 import type { CharacterId, EventEffect, WorldEvent, WorldState } from './worldTypes';
 
@@ -15,6 +16,11 @@ export type WorldInputEvent =
     }
   | {
       type: 'player_sent_photo_to_linyue';
+      minute: number;
+      facts: string[];
+    }
+  | {
+      type: 'player_reported_door_activity_to_linyue';
       minute: number;
       facts: string[];
     }
@@ -38,11 +44,87 @@ function hasPackagePhoto(world: WorldState) {
 
 function mentionsPackagePhoto(text: string) {
   const lower = text.toLowerCase();
-  return lower.includes('photo') || lower.includes('picture') || lower.includes('package');
+  return lower.includes('photo')
+    || lower.includes('picture')
+    || lower.includes('package')
+    || text.includes('照片')
+    || text.includes('拍照')
+    || text.includes('包裹');
 }
 
 function mentionsCloset(text: string) {
   return text.toLowerCase().includes('closet');
+}
+
+function mentionsDoorActivity(text: string) {
+  const lower = text.toLowerCase();
+  return lower.includes('door')
+    || lower.includes('hallway')
+    || lower.includes('corridor')
+    || lower.includes('police')
+    || lower.includes('knock')
+    || lower.includes('voice')
+    || text.includes('门')
+    || text.includes('楼道')
+    || text.includes('警察')
+    || text.includes('敲门')
+    || text.includes('原话');
+}
+
+export function buildWorldInputsFromDomainEvents(events: DomainEvent[], world: WorldState): WorldInputEvent[] {
+  return events.flatMap((domainEvent): WorldInputEvent[] => {
+    if (domainEvent.eventType === 'police_alert_raised') {
+      return [{
+        type: 'player_called_police',
+        minute: world.minute,
+        facts: ['player_called_police', 'report_received', 'reported_fake_police'],
+      }];
+    }
+
+    if (domainEvent.eventType === 'package_photographed') {
+      return [{
+        type: 'player_photographed_package',
+        minute: world.minute,
+        facts: ['player_photographed_package', 'package_photo_exists'],
+      }];
+    }
+
+    if (domainEvent.eventType === 'photo_sent_to_linyue') {
+      return [{
+        type: 'player_sent_photo_to_linyue',
+        minute: world.minute,
+        facts: ['player_sent_photo_to_linyue', 'linyue_has_package_photo'],
+      }];
+    }
+
+    if (domainEvent.eventType === 'door_activity_reported_to_linyue') {
+      return [{
+        type: 'player_reported_door_activity_to_linyue',
+        minute: world.minute,
+        facts: ['player_reported_door_activity_to_linyue', 'player_reported_door_activity'],
+      }];
+    }
+
+    if (domainEvent.eventType === 'player_lied_to_chen') {
+      return [{
+        type: 'player_lied_to_chen',
+        minute: world.minute,
+        factId: typeof domainEvent.payload?.factId === 'string' ? domainEvent.payload.factId : 'player_false_statement',
+        confidence: typeof domainEvent.payload?.confidence === 'number' ? domainEvent.payload.confidence : 0.65,
+        facts: ['player_lied_to_chen'],
+      }];
+    }
+
+    if (domainEvent.eventType === 'player_messaged_chen') {
+      return [{
+        type: 'player_messaged_chen',
+        minute: world.minute,
+        facts: ['player_messaged_chen'],
+      }];
+    }
+
+    return [];
+  });
 }
 
 export function buildWorldInputsFromPlayerPlan(plan: ActionPlan, world: WorldState): WorldInputEvent[] {
@@ -76,6 +158,15 @@ export function buildWorldInputsFromPlayerPlan(plan: ActionPlan, world: WorldSta
         type: 'player_sent_photo_to_linyue',
         minute: world.minute,
         facts: ['player_sent_photo_to_linyue', 'linyue_has_package_photo'],
+      });
+      continue;
+    }
+
+    if (action.intent === 'communicate' && action.target === 'linyue' && mentionsDoorActivity(raw)) {
+      inputs.push({
+        type: 'player_reported_door_activity_to_linyue',
+        minute: world.minute,
+        facts: ['player_reported_door_activity_to_linyue', 'player_reported_door_activity'],
       });
       continue;
     }
@@ -191,6 +282,27 @@ function inputEffects(input: WorldInputEvent): EventEffect[] {
     ];
   }
 
+  if (input.type === 'player_reported_door_activity_to_linyue') {
+    return [
+      {
+        target: 'knowledge',
+        targetId: 'lin_yue',
+        op: 'add',
+        path: 'facts.player_reported_door_activity',
+        value: { confidence: 1, source: 'message', minuteLearned: input.minute },
+        reason: 'Player explicitly tells Lin Yue about door or hallway activity.',
+      },
+      {
+        target: 'character',
+        targetId: 'lin_yue',
+        op: 'add',
+        path: 'goalStack',
+        value: 'stay_safe_and_verify_externally',
+        reason: 'Lin Yue should help only from a safe external position after hearing about door activity.',
+      },
+    ];
+  }
+
   if (input.type === 'player_lied_to_chen') {
     return [
       {
@@ -236,7 +348,11 @@ function inputToWorldEvent(input: WorldInputEvent, sequence: number): WorldEvent
   return {
     id: `input.${input.type}.${input.minute}.${sequence}`,
     minute: input.minute,
-    type: input.type === 'player_called_police' || input.type === 'player_messaged_chen' ? 'message' : 'knowledge',
+    type: input.type === 'player_called_police'
+      || input.type === 'player_messaged_chen'
+      || input.type === 'player_reported_door_activity_to_linyue'
+      ? 'message'
+      : 'knowledge',
     actors: ['player'],
     facts: input.facts,
     visibility: 'player',

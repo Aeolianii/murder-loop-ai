@@ -159,21 +159,15 @@ export const narratorAgentContract: AgentContractSpec = {
 
 export const directorAgentContract: AgentContractSpec = {
   agent: 'director',
-  responsibility: 'Review narration quality and provide pacing/consistency feedback without executing game rules.',
-  callTiming: 'Primary handler for NarrationDone; reviewer for HighRiskScenarioDetected if emitted.',
+  responsibility: 'Asynchronously critique completed narration without participating in the playable turn path.',
+  callTiming: 'Deferred reviewer for NarrationCritiqueRequested after the narration has already been accepted.',
   inputFields: [
-    { name: 'narration', type: 'Narration', meaning: 'Primary narration shown for compatibility.', required: true, mutableByAgent: false },
-    { name: 'actionNarration', type: 'Narration', meaning: 'Action narration proposal.', required: true, mutableByAgent: false },
-    { name: 'ambientNarration', type: 'Narration', meaning: 'Ambient narration proposal.', required: true, mutableByAgent: false },
-    { name: 'state', type: 'GameState', meaning: 'Resolved state snapshot.', required: true, mutableByAgent: false },
-    { name: 'narrationContext', type: 'NarrationContext', meaning: 'Context used by narrator.', required: false, mutableByAgent: false },
-    { name: 'playerResult', type: 'RuleResult', meaning: 'Confirmed player result.', required: false, mutableByAgent: false },
-    { name: 'killerResult', type: 'RuleResult', meaning: 'Confirmed killer result.', required: false, mutableByAgent: false },
+    { name: 'directorContext', type: 'DirectorContext', meaning: 'Read-only projected state, events, narration, and trace summary.', required: true, mutableByAgent: false },
+    { name: 'narrationContext', type: 'NarrationContext', meaning: 'Confirmed facts used by the narrator.', required: true, mutableByAgent: false },
   ],
   aiResponsibilities: [
     'Score pacing, information leakage, rule consistency, and prose quality.',
-    'Return violations and optional moodSignal.',
-    'Offer direction for future narration quality only.',
+    'Return violations for diagnostics and future tuning only.',
   ],
   outputSchemaName: 'DirectorOutputSchema',
   outputSchema: DirectorOutputSchema,
@@ -186,8 +180,8 @@ export const directorAgentContract: AgentContractSpec = {
   ],
   validationAndFallback: [
     'Invalid score ranges, missing fields, or malformed JSON reject the AI review.',
-    'On rejection or timeout, DirectorAgent fallback returns a passing conservative review.',
-    'Director output is advisory and must not change normal turn logic.',
+    'On rejection or timeout, DirectorAgent fallback returns a conservative diagnostic review.',
+    'Critic output is advisory and must not change narration, state, UI, or normal turn logic.',
   ],
 };
 

@@ -33,6 +33,8 @@ function testSyncEvidenceAndLinYueKnowledge() {
   assert.equal(world.objects.package_photo.flags.sharedWithLinYue, true);
   assert.equal(world.knowledge.player.facts.package_photo.source, 'seen');
   assert.equal(world.knowledge.lin_yue.facts.package_photo.source, 'message');
+  assert.equal(world.knowledge.lin_yue.facts.player_reported_door_activity, undefined);
+  assert.equal(world.knowledge.lin_yue.facts.report_received, undefined);
 }
 
 function testSyncPoliceKnowledge() {

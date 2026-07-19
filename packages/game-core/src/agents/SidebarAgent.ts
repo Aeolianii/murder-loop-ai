@@ -30,8 +30,6 @@ export interface SidebarPayload {
   timeLabel: string;
   /** 阶段 */
   phaseLabel: string;
-  /** 氛围信号 */
-  moodSignal: string;
   /** NPC 状态摘要 */
   npcStatus: Array<{ name: string; status: string; risk: 'safe' | 'warning' | 'danger' }>;
   /** 房间状态摘要 */
@@ -128,7 +126,7 @@ export const SidebarAgent: AgentRegistration = {
   },
   handler: async () => ({}),
   fallback: async (input: unknown) => {
-    const payload = input as { finalState: GameState; moodSignal?: string };
+    const payload = input as { finalState: GameState };
     const state = payload.finalState;
 
     const sidebar: SidebarPayload = {
@@ -147,7 +145,6 @@ export const SidebarAgent: AgentRegistration = {
       },
       timeLabel: formatMinute(state.minute),
       phaseLabel: PHASE_LABELS[state.phase] ?? state.phase,
-      moodSignal: payload.moodSignal ?? '',
       npcStatus: buildNpcStatus(state),
       roomStatus: buildRoomStatus(state),
     };

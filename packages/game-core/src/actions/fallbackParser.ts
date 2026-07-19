@@ -1,6 +1,10 @@
 import type { ActionIntent, ActionPlan, ActionTarget, ParsedAction } from '@murder-loop-ai/shared';
 
 const includesAny = (text: string, words: string[]) => words.some((word) => text.includes(word));
+const firstIndexOfAny = (text: string, words: string[]) => {
+  const indexes = words.map((word) => text.indexOf(word)).filter(index => index >= 0);
+  return indexes.length > 0 ? Math.min(...indexes) : Number.MAX_SAFE_INTEGER;
+};
 const includesOpenDoorNegation = (text: string) =>
   includesAny(text, [
     '不开门',
@@ -50,6 +54,27 @@ function createAction(raw: string, intent: ActionIntent, target: ActionTarget, m
     noise,
     risk,
   };
+}
+
+function actionOrderIndex(action: ParsedAction, text: string) {
+  if (action.intent === 'secure_entry' && action.target === 'front_door') {
+    return firstIndexOfAny(text, ['锁门', '锁上门', '把门锁上', '门锁上', '锁好门', '扣上门锁', '反锁', '门链', '堵门', '抵住门', '顶住门', '椅子', '行李箱']);
+  }
+  if (action.intent === 'inspect' && action.target === 'front_door') {
+    return firstIndexOfAny(text, ['猫眼', '看门外', '查看门外', '观察门外', '门外', '门缝', '检查门锁', '查看门锁', '观察门锁', '看门锁', '锁芯', '锁链', '链条']);
+  }
+  if (action.target === 'package') {
+    return firstIndexOfAny(text, ['包裹', '纸箱', '快递', '旧书', '药盒', '药板']);
+  }
+  if (action.target === 'linyue') {
+    return firstIndexOfAny(text, ['林越', '维修工', '发给他', '让他报警', '让他在楼下', '别上楼', '不要上楼', '短信']);
+  }
+  if (action.target === 'police') return firstIndexOfAny(text, ['报警', '110', '警察', '警方']);
+  if (action.target === 'phone') return firstIndexOfAny(text, ['手机', '拍照', '拍下来', '照片', '录音', '录像', '静音', '勿扰']);
+  if (action.target === 'window') return firstIndexOfAny(text, ['窗', '阳台', '窗帘', '雨棚', '窗台']);
+  if (action.target === 'room') return firstIndexOfAny(text, ['衣柜', '床底', '卫生间', '检查房间', '搜一遍', '通风口']);
+  if (action.target === 'chen_huaimin') return firstIndexOfAny(text, ['房东', '陈怀民', '陌生号码', '回复', '套话', '假装', '问他']);
+  return Number.MAX_SAFE_INTEGER;
 }
 
 export function fallbackParseAction(input: string): ActionPlan {
@@ -108,15 +133,15 @@ export function fallbackParseAction(input: string): ActionPlan {
     actions.push(createAction(raw, 'secure_entry', 'phone', '让手机保持安静', 0.84, 1, 0, 'low'));
   }
 
-  if (includesAny(text, ['锁门', '反锁', '门链', '堵门', '抵住门', '顶住门', '椅子', '行李箱'])) {
-    actions.push(createAction(raw, 'secure_entry', 'front_door', '处理门锁和门链', 0.92, 2, includesAny(text, ['轻轻', '小声', '尽量不要']) ? 1 : 3, 'medium'));
+  if (includesAny(text, ['锁门', '锁上门', '把门锁上', '门锁上', '锁好门', '扣上门锁', '反锁', '门链', '堵门', '抵住门', '顶住门', '椅子', '行李箱'])) {
+    actions.push(createAction(raw, 'secure_entry', 'front_door', '处理门锁和门链', 0.92, 2, includesAny(text, ['悄悄', '轻轻', '小声', '尽量不要']) ? 1 : 3, 'medium'));
   }
 
   if (!includesOpenDoorNegation(text) && includesAny(text, ['开门', '打开门', '让他进来'])) {
     actions.push(createAction(raw, 'open_door', 'front_door', '打开入户门', 0.94, 1, 1, 'high'));
   }
 
-  if (includesAny(text, ['猫眼', '看门外', '门外', '门缝', '门锁', '锁链', '链条'])) {
+  if (includesAny(text, ['猫眼', '看门外', '查看门外', '观察门外', '门外', '门缝', '检查门锁', '查看门锁', '观察门锁', '看门锁', '锁芯', '锁链', '链条'])) {
     actions.push(createAction(raw, 'inspect', 'front_door', '观察门外和门锁状态', 0.86, 2, 0, 'medium'));
   }
 
@@ -250,13 +275,17 @@ export function fallbackParseAction(input: string): ActionPlan {
     warnings.push('这个行动比较开放，当前版本会先按谨慎观察处理。');
   }
 
-  const confidence = actions.reduce((sum, action) => sum + action.confidence, 0) / actions.length;
+  const orderedActions = actions
+    .map((action, index) => ({ action, index, order: actionOrderIndex(action, text) }))
+    .sort((a, b) => (a.order - b.order) || (a.index - b.index))
+    .map(entry => entry.action);
+  const confidence = orderedActions.reduce((sum, action) => sum + action.confidence, 0) / orderedActions.length;
 
   return {
     id: `plan-${Date.now()}`,
     raw,
-    summary: actions.map((action) => action.method).join('；'),
-    actions: actions.slice(0, 6),
+    summary: orderedActions.map((action) => action.method).join('；'),
+    actions: orderedActions.slice(0, 6),
     confidence,
     warnings,
   };

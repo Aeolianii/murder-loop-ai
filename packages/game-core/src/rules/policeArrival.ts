@@ -11,11 +11,6 @@ export function ensurePoliceArrivalCountdown(state: GameState): void {
     state.policeArrivalMinute = state.minute + POLICE_ARRIVAL_DELAY_MINUTES;
   }
   state.phase = 'confrontation';
-  state.plotGuidance = [
-    '真警已经接线并在路上，后台倒计时正在推进，但不要向玩家显示剩余时间。',
-    '剧情进入高潮：陈怀民意识到权威介入，施压应更急、更现实，但不能再伪装真警。',
-    '叙事重点写楼道远处的真实动静、门外压力和玩家守住现场，不要泄露机械倒计时。',
-  ].join('\n');
 }
 
 export function isPoliceArrivalDue(state: GameState): boolean {

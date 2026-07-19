@@ -1,18 +1,119 @@
-import type { GameState, KillerStrategy } from '@murder-loop-ai/shared';
+import type { KillerStrategy } from '@murder-loop-ai/shared';
+import type { KillerDecisionContext, KillerVisibleState } from './knowledge';
 
-function recentlyUsed(state: GameState, type: KillerStrategy['type'], windowSize = 5) {
+type FallbackKillerState = KillerVisibleState & {
+  killerKnowledge: KillerVisibleState['knowledge'];
+  log: Array<{ title: string; text: string; channel: 'ambient' | 'action' }>;
+};
+
+function toFallbackState(context: KillerDecisionContext): FallbackKillerState {
+  const visible = context.visibleState;
+  return {
+    ...visible,
+    killerKnowledge: visible.knowledge,
+    log: visible.recentKillerActions.map((entry) => ({ ...entry, channel: 'ambient' as const })),
+  };
+}
+
+function recentlyUsed(state: FallbackKillerState, type: KillerStrategy['type'], windowSize = 5) {
+  if (state.recentStrategyTypes.slice(-windowSize).includes(type)) return true;
   const recent = state.log.slice(-windowSize);
   return recent.some((entry) => entry.title.includes(type) || entry.text.includes(type) || (
-    type === 'phone_probe' && entry.text.includes('是否睡着') && entry.text.includes('快递')
+    type === 'phone_probe' && entry.text.includes('陌生号码') && (entry.text.includes('快递') || entry.text.includes('包裹'))
   ));
 }
 
-function wasPhoneProbeUsed(state: GameState) {
-  return state.log.some((entry) => entry.text.includes('是否睡着') && entry.text.includes('快递'));
+function wasPhoneProbeUsed(state: FallbackKillerState) {
+  return state.log.some((entry) => entry.text.includes('陌生号码') && (entry.text.includes('快递') || entry.text.includes('包裹')));
+}
+
+function lastStrangerMessageIndex(state: FallbackKillerState) {
+  for (let i = state.log.length - 1; i >= 0; i--) {
+    const text = state.log[i].text;
+    if (text.includes('陌生号码') && (text.includes('快递') || text.includes('包裹') || text.includes('纸箱') || text.includes('东西'))) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function hasPlayerRepliedToStrangerAfter(state: FallbackKillerState, index: number) {
+  if (index < 0) return false;
+  return state.log.slice(index + 1).some((entry) =>
+    entry.channel === 'action'
+    && (entry.text.includes('联系陈怀民') || entry.text.includes('回复陌生号码') || entry.text.includes('发了出去')));
+}
+
+function unansweredStrangerMessageCount(state: FallbackKillerState) {
+  const lastIndex = lastStrangerMessageIndex(state);
+  if (lastIndex < 0 || hasPlayerRepliedToStrangerAfter(state, lastIndex)) return 0;
+  return state.log.slice(lastIndex).filter((entry) =>
+    entry.text.includes('陌生号码') && (entry.text.includes('快递') || entry.text.includes('包裹') || entry.text.includes('纸箱') || entry.text.includes('东西'))).length;
+}
+
+function pickMessage(items: string[], state: FallbackKillerState) {
+  return items[Math.abs(state.minute + state.threat + state.log.length) % items.length];
+}
+
+function phoneProbeHint(state: FallbackKillerState) {
+  return pickMessage([
+    '陌生号码：“沈小姐，睡了吗？门口那个快递你看见没有？”',
+    '陌生号码：“房东让我确认一下，503 门口那个快递还在吗？”',
+    '陌生号码：“你是不是拿错了一个纸箱？看见的话先别拆。”',
+  ], state);
+}
+
+function messageReplyHint(state: FallbackKillerState) {
+  return pickMessage([
+    '手机屏幕在十几秒后再次亮起。陌生号码只回：“哪个包裹？你先别动，我上来确认一下。”',
+    '陌生号码很快回：“你不用知道那是什么。放回门口，我让人来拿。”',
+    '陌生号码回得很短：“别拍照，别发给别人。你现在只需要把东西放回去。”',
+  ], state);
+}
+
+function framingPressureHint(state: FallbackKillerState) {
+  return pickMessage([
+    '陌生号码：“那个纸箱不是你的。别给自己惹麻烦，把它放回门口。”',
+    '陌生号码：“你不回消息，我只能当你已经拿进去了。现在把东西交出来，还来得及。”',
+    '陌生号码：“别装没看见。房东登记过门口的东西，继续占着对你没有好处。”',
+    '陌生号码：“你不开门也行，把纸箱放到门外。我们只拿东西，不找你。”',
+  ], state);
+}
+
+function lastActionSuggestsResistance(state: FallbackKillerState) {
+  const lastAction = state.log.slice().reverse().find((entry) => entry.channel === 'action');
+  const text = `${lastAction?.title ?? ''}\n${lastAction?.text ?? ''}`;
+  if (!lastAction) return false;
+  return [
+    '不开门',
+    '不要开门',
+    '不打开门',
+    '门已锁',
+    '反锁',
+    '门链',
+    '核实身份',
+    '警号',
+    '回拨',
+    '录音',
+    '录像',
+    '拍照',
+    '照片',
+    '备份',
+    '发给林越',
+    '报警',
+    '110',
+  ].some((word) => text.includes(word));
+}
+
+function shouldUseFramingPressure(state: FallbackKillerState) {
+  return unansweredStrangerMessageCount(state) > 0
+    || lastActionSuggestsResistance(state)
+    || state.killerKnowledge.suspectsPlayerIsAlert
+    || state.killerKnowledge.knowsPlayerPhotographedPackage;
 }
 
 /** 统计连续无有效行动的回合数（wait/open_door 且无防御加固） */
-function countIdleTurns(state: GameState): number {
+function countIdleTurns(state: FallbackKillerState): number {
   let count = 0;
   for (let i = state.log.length - 1; i >= 0; i--) {
     const entry = state.log[i];
@@ -24,8 +125,10 @@ function countIdleTurns(state: GameState): number {
   return count;
 }
 
-export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
+export function chooseFallbackKillerStrategy(context: KillerDecisionContext): KillerStrategy {
+  const state = toFallbackState(context);
   const k = state.killerKnowledge;
+  const knowsPoliceCalled = state.policeActive;
 
   if (state.ending) {
     return {
@@ -85,7 +188,20 @@ export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
   }
 
   const lastAction = state.log.slice().reverse().find((entry) => entry.channel === 'action');
-  if (state.policePhase === 'real_police_en_route') {
+  const playerMessagedChen = state.observedFactIds.includes('player_messaged_chen')
+    || context.observableEvents.some((event) => event.subject === 'player_messaged_chen');
+  if (playerMessagedChen) {
+    return {
+      id: `killer-${Date.now()}`,
+      type: 'message_reply',
+      title: 'Message received',
+      rationale: 'Chen received a direct player message and can respond without inferring any private action.',
+      responseHint: messageReplyHint(state),
+      visibleToPlayer: true,
+      risk: 'medium',
+    };
+  }
+  if (knowsPoliceCalled && state.policePhase === 'real_police_en_route') {
     return {
       id: `killer-${Date.now()}`,
       type: 'direct_confrontation',
@@ -103,13 +219,25 @@ export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
       type: 'message_reply',
       title: '消息接上了',
       rationale: '玩家刚刚回复了陈怀民或陌生号码，本回合应该先承接对话，而不是切到新的敲门/断电压力。',
-      responseHint: '手机屏幕在十几秒后再次亮起。陌生号码只回：“哪个包裹？你先别动，我上来确认一下。”字句很短，却把话题钉回了门口那只纸箱。',
+      responseHint: messageReplyHint(state),
       visibleToPlayer: true,
       risk: 'medium',
     };
   }
 
-  if (state.policePhase !== 'not_contacted' && !state.clues.some(c => c.id === 'police_verified') && state.threat >= 55) {
+  if (shouldUseFramingPressure(state)) {
+    return {
+      id: `killer-${Date.now()}`,
+      type: 'framing_pressure',
+      title: '陌生号码施压',
+      rationale: '玩家的沉默、拒绝开门、核实身份、取证或外部联系会被陈怀民视为失控信号；他改用“拿错别人东西”的话术逼迫交出包裹。',
+      responseHint: framingPressureHint(state),
+      visibleToPlayer: true,
+      risk: 'medium',
+    };
+  }
+
+  if (knowsPoliceCalled && state.policePhase !== 'not_contacted' && state.threat >= 55) {
     return {
       id: `killer-${Date.now()}`,
       type: 'fake_callback',
@@ -120,7 +248,7 @@ export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
     };
   }
 
-  if (state.linYuePhase === 'received_photo' && state.threat >= 45) {
+  if (k.knowsPlayerContactedLinYue && state.linYuePhase === 'received_photo' && state.threat >= 45) {
     return {
       id: `killer-${Date.now()}`,
       type: 'lure_linyue',
@@ -132,7 +260,7 @@ export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
   }
 
   // 高压阶段 → 不再用电表箱，直接施压
-  if (state.threat >= 58 && state.player.stress >= 35 && !state.room.front_door.state.barricaded) {
+  if (state.threat >= 58 && !k.knowsDoorBarricaded) {
     return {
       id: `killer-${Date.now()}`,
       type: 'spare_key_entry',
@@ -143,7 +271,7 @@ export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
     };
   }
 
-  if (state.threat >= 52 && !state.room.window.state.locked) {
+  if (state.threat >= 52 && !k.knowsWindowLocked) {
     return {
       id: `killer-${Date.now()}`,
       type: 'window_route',
@@ -154,7 +282,7 @@ export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
     };
   }
 
-  if (state.policePhase !== 'not_contacted' && !state.clues.some(c => c.id === 'police_verified')) {
+  if (knowsPoliceCalled && state.policePhase !== 'not_contacted') {
     return {
       id: `killer-${Date.now()}`,
       type: 'fake_police',
@@ -182,12 +310,13 @@ export function chooseFallbackKillerStrategy(state: GameState): KillerStrategy {
       type: 'phone_probe',
       title: '陌生号码试探',
       rationale: '陈怀民还不确定沈知夏是否意识到包裹价值，先用电话试探。',
+      responseHint: phoneProbeHint(state),
       visibleToPlayer: true,
       risk: 'medium',
     };
   }
 
-  if (state.threat >= 64 && !state.room.front_door.state.barricaded) {
+  if (state.threat >= 64 && !k.knowsDoorBarricaded) {
     return {
       id: `killer-${Date.now()}`,
       type: 'spare_key_entry',

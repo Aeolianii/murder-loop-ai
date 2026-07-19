@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
-import type { RuleEvent, RuleResult } from '@murder-loop-ai/shared';
+import type { RuleEvent, RuleResult, WorldEvent } from '@murder-loop-ai/shared';
 import type { AgentTraceEntryContract } from '@murder-loop-ai/ai-contracts';
+import { DirectorAgentInputSchema, KillerAgentInputSchema, NarratorAgentInputSchema } from '@murder-loop-ai/ai-contracts';
 import { createInitialGameState } from '../state/createInitialState';
 import { createInitialWorldState } from '../world/worldSimulator';
 import {
@@ -103,6 +104,8 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   assert(!context.worldInfo.some((card) => card.id === 'clue.linyue_has_photo'));
   assert(!context.worldInfo.some((card) => card.id === 'style.no_player_mind_reading'));
   assert(context.uncertainty.some((line) => line.includes('hidden player facts')));
+  assert.equal(KillerAgentInputSchema.safeParse({ killerContext: context }).success, true);
+  assert.equal(KillerAgentInputSchema.safeParse({ killerContext: context, state }).success, false);
 }
 
 {
@@ -123,20 +126,27 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
     state,
     playerResult,
     killerResult,
-    playerActionSummary: 'open package, then narrator checks whether this causes an ending',
-    playerInput: 'I open the package and wonder if this causes an ending',
   });
 
-  assert(context.memorySummary?.some((line) => line.includes('previous loop')));
-  assert(context.worldInfo?.some((card) => card.id === 'object.package'));
-  assert(context.worldInfo?.some((card) => card.id === 'rule.narrator_no_rule_change'));
-  assert(context.forbiddenFacts.some((line) => line.includes('must not decide endings')));
+  const contextRecord = context as unknown as Record<string, unknown>;
+  assert.equal('playerInput' in contextRecord, false);
+  assert.equal('recentLog' in contextRecord, false);
+  assert.equal('memorySummary' in contextRecord, false);
+  assert.equal('worldInfo' in contextRecord, false);
+  assert(context.confirmedFacts.some((fact) => fact.subject === 'package_opened'));
+  assert(context.confirmedFacts.some((fact) => fact.subject === 'knock_heard'));
+  assert.equal(NarratorAgentInputSchema.safeParse({ narrationContext: context }).success, true);
+  assert.equal(NarratorAgentInputSchema.safeParse({ narrationContext: context, state }).success, false);
+  assert.equal(NarratorAgentInputSchema.safeParse({
+    narrationContext: { ...context, playerInput: 'unconfirmed action' },
+  }).success, false);
+  assert(context.forbiddenFacts.some((line) => line.includes('不要改变死亡')));
 }
 
 {
   const state = createInitialGameState();
   state.world = createInitialWorldState();
-  state.world.pendingNarration = [{
+  const conflictEvent: WorldEvent = {
     id: 'conflict.chen_intercepts_linyue',
     minute: state.minute + 1,
     type: 'conflict',
@@ -146,7 +156,9 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
     visibility: 'player',
     effects: [],
     narrationHint: 'Narrate only the confirmed corridor encounter.',
-  }];
+  };
+  state.world.events.push(conflictEvent);
+  state.world.pendingNarration = [conflictEvent];
   const playerResult = ruleResult([event('package_opened', 'player')], state);
   const killerResult = ruleResult([event('knock_heard', 'player')], state);
 
@@ -154,13 +166,22 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
     state,
     playerResult,
     killerResult,
-    playerActionSummary: 'send the photo to Lin Yue',
   });
 
   assert.equal(context.confirmedWorldEvents?.length, 1);
   assert.equal(context.confirmedWorldEvents?.[0].id, 'conflict.chen_intercepts_linyue');
   assert.deepEqual(context.confirmedWorldEvents?.[0].facts, ['chen_intercepts_linyue', 'linyue_has_external_evidence']);
+  assert.equal('effects' in (context.confirmedWorldEvents?.[0] ?? {}), false);
+  assert(context.confirmedFacts.some((fact) => fact.id === 'conflict.chen_intercepts_linyue'));
   assert(context.forbiddenFacts.some((line) => line.includes('confirmedWorldEvents')));
+
+  state.world.narrationCursor = state.world.events.length;
+  const replayContext = buildNarratorContext({ state, playerResult, killerResult });
+  assert.deepEqual(replayContext.confirmedWorldEvents, []);
+  assert.equal(
+    replayContext.confirmedFacts.some((fact) => fact.id === 'conflict.chen_intercepts_linyue'),
+    false,
+  );
 }
 
 {
@@ -179,13 +200,15 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   ];
 
   const before = JSON.stringify(state);
+  const playerResult = ruleResult([event('door_checked', 'player')]);
+  const killerResult = ruleResult();
   const context = buildDirectorContext({
     state,
     narration: { title: 'Door', text: 'The door stays shut.' },
     actionNarration: { title: 'Door', text: 'The door stays shut.' },
     ambientNarration: { title: 'Rain', text: 'Rain continues.' },
-    playerResult: ruleResult([event('door_checked', 'player')]),
-    killerResult: ruleResult(),
+    playerResult,
+    killerResult,
     agentTrace: trace,
   });
 
@@ -194,4 +217,7 @@ function ruleResult(events: RuleEvent[] = [], state = createInitialGameState()):
   assert(context.worldInfo.some((card) => card.id === 'rule.world_info_not_authority'));
   assert(context.worldInfo.some((card) => card.id === 'rule.narrator_no_rule_change'));
   assert(context.consistencyChecklist.some((line) => line.includes('rule results')));
+  const narrationContext = buildNarratorContext({ state, playerResult, killerResult });
+  assert.equal(DirectorAgentInputSchema.safeParse({ directorContext: context, narrationContext }).success, true);
+  assert.equal(DirectorAgentInputSchema.safeParse({ directorContext: context, narrationContext, state }).success, false);
 }

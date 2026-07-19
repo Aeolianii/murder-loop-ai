@@ -13,7 +13,6 @@ function resetStore() {
     inputBusy: false,
     serverStatus: 'unknown',
     lastTurnDebug: null,
-    worldTickEnabled: false,
   });
 }
 
@@ -46,12 +45,11 @@ const turnResponse: HarnessTurnResponse = {
 
 const submitRequests: unknown[] = [];
 mockHarnessResponse(turnResponse, submitRequests);
-useGameStore.getState().setWorldTickEnabled(true);
 const submitted = await useGameStore.getState().submitAction(' 我拍下包裹 ');
 const afterSubmit = useGameStore.getState();
 
 assert(submitted?.time === turnResponse.time, 'submitAction should return the harness response');
-assert((submitRequests[0] as { debug?: { advanceWorldTick?: boolean } }).debug?.advanceWorldTick === true, 'submitAction should send the World Tick switch');
+assert((submitRequests[0] as { debug?: unknown }).debug === undefined, 'submitAction should not send a World Tick debug switch');
 assert(afterSubmit.frontendState.time === '23:08', 'submitAction should merge response into frontendState');
 assert((afterSubmit.frontendState.coreState as { minute: number }).minute === 1388, 'submitAction should preserve returned coreState');
 assert(afterSubmit.frontendState.storyLog.filter(node => node.type === 'player_input').length === 1, 'submitAction should not duplicate server player_input nodes');
@@ -82,7 +80,7 @@ const rewound = await useGameStore.getState().rewind();
 const afterRewind = useGameStore.getState();
 
 assert(rewound?.time === rewindResponse.time, 'rewind should return the harness response');
-assert((rewindRequests[0] as { debug?: { advanceWorldTick?: boolean } }).debug?.advanceWorldTick === undefined, 'rewind should not advance World Tick');
+assert((rewindRequests[0] as { debug?: unknown }).debug === undefined, 'rewind should not send debug controls');
 assert(afterRewind.frontendState.phase === 'loop_started', 'rewind should merge the rewound phase');
 assert(afterRewind.frontendState.ending === null, 'rewind should clear ending state');
 assert(afterRewind.frontendState.deathTitle === null, 'rewind should clear death title');

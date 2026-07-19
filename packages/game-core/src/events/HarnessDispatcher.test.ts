@@ -217,6 +217,37 @@ async function testCommandRunsObserverArtifacts() {
   assert.deepEqual(dispatcher.getLatestArtifact('sidebar', 'PlayerActionSubmitted'), { value: 'observer' });
 }
 
+async function testDeferredCriticDoesNotBlockAndRecordsDiagnosticArtifact() {
+  const bus = new GameEventBus();
+  const registry = new AgentRegistry(bus);
+  let releaseCritic!: () => void;
+  const criticGate = new Promise<void>((resolve) => {
+    releaseCritic = resolve;
+  });
+  registry.register(createAgent({
+    id: 'director',
+    subscriptions: [{ event: 'NarrationCritiqueRequested', priority: 80, role: 'reviewer', defer: true }],
+    handler: async () => {
+      await criticGate;
+      return { value: 'critique' };
+    },
+  }));
+  const dispatcher = new HarnessDispatcher(bus, registry);
+
+  dispatcher.dispatchDeferred('NarrationCritiqueRequested', {
+    directorContext: {},
+    narrationContext: {} as never,
+  });
+
+  assert.equal(dispatcher.getLatestArtifact('director', 'NarrationCritiqueRequested'), undefined);
+  releaseCritic();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(
+    dispatcher.getLatestArtifact('director', 'NarrationCritiqueRequested'),
+    { value: 'critique' },
+  );
+}
+
 await testCommandUsesPrimaryAgentResult();
 await testCommandFallsBackWhenAiThrows();
 await testCommandFallsBackWhenAiViolatesContract();
@@ -226,3 +257,4 @@ await testFallbackModeFailureTraceUsesFallbackSource();
 await testCommandRejectsInvalidFallbackOutput();
 await testRuleAgentRejectsMalformedDeterministicOutput();
 await testCommandRunsObserverArtifacts();
+await testDeferredCriticDoesNotBlockAndRecordsDiagnosticArtifact();

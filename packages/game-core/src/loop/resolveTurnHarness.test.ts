@@ -3,6 +3,8 @@ import { DEADLINE_MINUTE, type ActionPlan } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
 import { createHarness, resolveTurnHarness } from './resolveTurn';
 import { createInitialWorldState } from '../world/worldSimulator';
+import { buildKillerContext, buildNpcVisibleContext } from '../context/ContextBuilder';
+import type { NpcAdapter } from '../world/npcTypes';
 
 async function testResolveTurnHarnessReturnsTraceAndFinalState() {
   const state = createInitialGameState();
@@ -12,9 +14,19 @@ async function testResolveTurnHarnessReturnsTraceAndFinalState() {
 
   assert.equal(resolution.plan.raw, 'check the package');
   assert.ok(resolution.finalState.log.length > state.log.length);
+  const killerDomainEvents = (resolution.killerResult as typeof resolution.killerResult & {
+    domainEvents?: Array<{ eventType: string }>;
+  }).domainEvents ?? [];
+  assert.ok(killerDomainEvents.some((event) => event.eventType === 'killer_strategy_applied'));
   assert.ok(resolution.actionNarration?.text || resolution.narration.text);
   assert.ok(harness.dispatcher.getTrace().some((entry) => entry.eventType === 'PlayerActionSubmitted'));
   assert.ok(harness.dispatcher.getTrace().some((entry) => entry.eventType === 'NarrationRequested'));
+  assert.deepEqual(
+    harness.dispatcher.getTrace()
+      .filter((entry) => ['parser', 'rule', 'killer', 'narrator', 'ui-adapter'].includes(entry.agentId))
+      .map((entry) => entry.eventType),
+    ['PlayerActionSubmitted', 'ActionParsed', 'RulesApplied', 'KillerActed', 'NarrationRequested', 'TurnCompleted'],
+  );
 
   const agentTrace = harness.dispatcher.getAgentTrace();
   const parserTrace = agentTrace.find((entry) => entry.agent === 'parser');
@@ -23,7 +35,13 @@ async function testResolveTurnHarnessReturnsTraceAndFinalState() {
 
   assert.ok(parserTrace?.worldInfo?.some((card) => card.id === 'object.package'));
   assert.ok(killerTrace?.worldInfo && killerTrace.worldInfo.length > 0);
-  assert.ok(narratorTrace?.worldInfo?.some((card) => card.id === 'object.package'));
+  assert.ok(narratorTrace);
+  assert.equal(narratorTrace.worldInfo, undefined);
+  assert.deepEqual(Object.keys(narratorTrace.input as Record<string, unknown>), ['narrationContext']);
+  assert.equal('state' in (narratorTrace.input as Record<string, unknown>), false);
+  assert.equal('plan' in (narratorTrace.input as Record<string, unknown>), false);
+  assert.equal('playerResult' in (narratorTrace.input as Record<string, unknown>), false);
+  assert.equal('killerResult' in (narratorTrace.input as Record<string, unknown>), false);
   assert.equal('content' in (parserTrace?.worldInfo?.[0] ?? {}), false);
 }
 
@@ -403,6 +421,119 @@ async function testResolveTurnHarnessAppliesPlayerWorldInputs() {
   assert.equal(state.world, undefined);
 }
 
+async function testChinesePhotoShareAndDoorLockFlowKeepsFactsSeparated() {
+  const state = createInitialGameState();
+  let receivedKillerInput: unknown;
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-photo-linyue-lock-door',
+      raw: '我把包裹拍照发给林越，然后反锁门。',
+      summary: '拍照留证，发给林越，然后反锁门',
+      actions: [
+        {
+          id: 'action-photo-package',
+          raw: '把包裹拍照',
+          intent: 'preserve_evidence',
+          target: 'package',
+          method: '拍下包裹和面单',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+        {
+          id: 'action-send-linyue',
+          raw: '把包裹照片发给林越',
+          intent: 'communicate',
+          target: 'linyue',
+          method: '把刚拍的包裹照片发给林越',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+        {
+          id: 'action-lock-door',
+          raw: '然后反锁门',
+          intent: 'secure_entry',
+          target: 'front_door',
+          method: '反锁门并扣上门链，不搬家具',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+      ],
+      confidence: 0.98,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async (killerContext) => {
+      receivedKillerInput = killerContext;
+      return ({
+      id: 'killer-phone-probe',
+      type: 'phone_probe',
+      title: '短信试探',
+      rationale: '陈怀民只能确认屋内有人警觉，不能直接知道照片发给了林越。',
+      responseHint: '陌生号码：“门口那个包裹你拿进去了吗？”',
+      visibleToPlayer: true,
+      risk: 'medium',
+      });
+    },
+    narrateAction: async () => ({
+      title: '证据留在外面',
+      text: '你拍下包裹，把照片发给林越，又把门从里面反锁，门链扣回金属槽里。',
+    }),
+    narrateAmbient: async () => ({
+      title: '屏幕亮起',
+      text: '陌生号码：“门口那个包裹你拿进去了吗？”',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, '我把包裹拍照发给林越，然后反锁门。', harness);
+  const world = resolution.finalState.world;
+
+  assert.equal(resolution.plan.actions.length, 3);
+  assert.deepEqual(resolution.plan.actions.map((action) => action.intent), [
+    'preserve_evidence',
+    'communicate',
+    'secure_entry',
+  ]);
+  assert.equal(resolution.playerResult.timePassed, 3);
+  assert.equal(resolution.finalState.minute, state.minute + 3);
+  assert.ok(resolution.finalState.clues.some((clue) => clue.id === 'package_photo'));
+  assert.ok(resolution.finalState.clues.some((clue) => clue.id === 'linyue_has_photo'));
+  assert.equal(resolution.finalState.room.front_door.state.locked, true);
+  assert.equal(resolution.finalState.room.front_door.state.chainLocked, true);
+  assert.equal(resolution.finalState.room.front_door.state.barricaded, false);
+  assert.ok(world);
+  assert.ok(world.events.some((event) => event.id.startsWith('input.player_photographed_package')));
+  assert.ok(world.events.some((event) => event.id.startsWith('input.player_sent_photo_to_linyue')));
+  assert.equal(world.objects.package_photo.flags.exists, true);
+  assert.equal(world.objects.package_photo.flags.sharedWithLinYue, true);
+  assert.equal(world.knowledge.lin_yue.facts.package_photo.source, 'message');
+  assert.equal(world.knowledge.chen_huaimin.facts.package_photo, undefined);
+  assert.equal(world.knowledge.chen_huaimin.facts.linyue_has_package_photo, undefined);
+
+  const killerContext = buildKillerContext(resolution.finalState, {
+    plan: resolution.plan,
+    playerResult: resolution.playerResult,
+  });
+  const killerVisibleText = JSON.stringify({
+    visibleState: killerContext.visibleState,
+    planSummary: killerContext.planSummary,
+    observableEvents: killerContext.observableEvents,
+  });
+  assert.equal(killerContext.visibleState.linYuePhase, 'unknown');
+  assert.equal(killerContext.observableEvents.length, 0);
+  assert.equal((receivedKillerInput as typeof killerContext).visibleState.linYuePhase, 'unknown');
+  assert.equal('state' in (receivedKillerInput as Record<string, unknown>), false);
+  assert.equal('plan' in (receivedKillerInput as Record<string, unknown>), false);
+  assert.equal('playerResult' in (receivedKillerInput as Record<string, unknown>), false);
+  assert.doesNotMatch(killerVisibleText, /linyue_has_package_photo|lin_yue.*package_photo|照片发给林越/);
+  assert.doesNotMatch(resolution.actionNarration?.text ?? resolution.narration.text, /死亡|逃脱|警察到了/);
+  assert.doesNotMatch(resolution.ambientNarration?.text ?? '', /死亡|逃脱|警察到了/);
+}
+
 async function testLinYueMessageReplyStaysInActionNarration() {
   const state = createInitialGameState();
   const harness = createHarness({
@@ -470,6 +601,122 @@ async function testLinYueMessageReplyStaysInActionNarration() {
   assert.match(actionLog?.text ?? '', /林越|Lin Yue|这不是我的包裹/);
 }
 
+async function testLinYueVisibleContextKeepsPhotoSeparateFromDoorAndPoliceKnowledge() {
+  const state = createInitialGameState();
+  state.linYuePhase = 'received_photo';
+  state.policePhase = 'real_police_en_route';
+  state.killerStatus = 'confronting';
+  state.room.front_door.state.locked = true;
+  state.room.front_door.state.chainLocked = true;
+  state.room.package.state.photographed = true;
+
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-share-photo',
+      raw: 'photograph the package and send the package photo to Lin Yue',
+      summary: 'Photograph the package and send the photo to Lin Yue',
+      actions: [
+        {
+          id: 'action-photo-package',
+          raw: 'photograph the package',
+          intent: 'preserve_evidence',
+          target: 'package',
+          method: 'take a clear photo of the package',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+        {
+          id: 'action-send-linyue',
+          raw: 'send the package photo to Lin Yue',
+          intent: 'communicate',
+          target: 'linyue',
+          method: 'send only the package photo to Lin Yue and ask whether he recognizes it',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+      ],
+      confidence: 0.98,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-wait',
+      type: 'wait_for_fatigue',
+      title: 'Wait outside',
+      rationale: 'Keep this test focused on Lin Yue knowledge.',
+      visibleToPlayer: false,
+      risk: 'low',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, 'share the package photo with Lin Yue', harness);
+  const context = buildNpcVisibleContext(resolution.finalState, 'linyue', 'Do you recognize this package?');
+
+  assert.equal(context.canReference.packagePhoto, true);
+  assert.equal(context.canReference.doorActivity, false);
+  assert.equal(context.canReference.policeReport, false);
+  assert.equal(context.canReference.fakePoliceSuspicion, false);
+  assert.ok(context.knownFactIds.includes('package_photo'));
+  assert.ok(!context.knownFactIds.includes('player_reported_door_activity'));
+  assert.equal('policePhase' in (context as unknown as Record<string, unknown>), false);
+  assert.equal('room' in (context as unknown as Record<string, unknown>), false);
+  assert.equal('killerStatus' in (context as unknown as Record<string, unknown>), false);
+}
+
+async function testLinYuePhotoOnlyRecommendationsDoNotMentionDoorQuoteOrPolice() {
+  const state = createInitialGameState();
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-share-photo',
+      raw: 'photograph the package and send the package photo to Lin Yue',
+      summary: 'Photograph the package and send the photo to Lin Yue',
+      actions: [
+        {
+          id: 'action-photo-package',
+          raw: 'photograph the package',
+          intent: 'preserve_evidence',
+          target: 'package',
+          method: 'take a clear photo of the package',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+        {
+          id: 'action-send-linyue',
+          raw: 'send the package photo to Lin Yue',
+          intent: 'communicate',
+          target: 'linyue',
+          method: 'send only the package photo to Lin Yue',
+          confidence: 0.98,
+          timeCost: 1,
+          noise: 0,
+          risk: 'low',
+        },
+      ],
+      confidence: 0.98,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-wait',
+      type: 'wait_for_fatigue',
+      title: 'Wait outside',
+      rationale: 'No exposed door coordination in this turn.',
+      visibleToPlayer: false,
+      risk: 'low',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, 'share the package photo with Lin Yue', harness);
+  const labels = resolution.recommendedActions?.map((action) => action.id + ' ' + action.label).join('\n') ?? '';
+
+  assert.equal(labels.includes('send_door_quote_to_linyue'), false);
+  assert.doesNotMatch(labels, /door quote|police|110|门外|原话|报警|警察/);
+}
+
 async function testDoorCoordinationCreatesPlayableNextSteps() {
   const state = createInitialGameState();
   state.policePhase = 'dispatch_pending';
@@ -522,7 +769,99 @@ async function testDoorCoordinationCreatesPlayableNextSteps() {
   assert.match(labels, /110|接线员/);
 }
 
-async function testResolveTurnHarnessOptionallyAdvancesWorldTick() {
+async function testMessageReplyAmbientNarrationIncludesConcreteMessageText() {
+  const state = createInitialGameState();
+  const responseHint = '陌生号码回：“哪个包裹？你先别动，我上来确认一下。”';
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-answer-chen',
+      raw: 'reply to Chen and ask what package he means',
+      summary: 'Reply to Chen Huaimin',
+      actions: [{
+        id: 'action-message-chen',
+        raw: 'reply to Chen and ask what package he means',
+        intent: 'communicate',
+        target: 'chen_huaimin',
+        method: 'send a message asking what package he means',
+        confidence: 0.95,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.95,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-message-reply',
+      type: 'message_reply',
+      title: 'Message reply',
+      rationale: 'The killer replies to the player message.',
+      responseHint,
+      visibleToPlayer: true,
+      risk: 'medium',
+    }),
+    narrateAction: async () => ({
+      title: 'Message sent',
+      text: 'You send the question and wait.',
+    }),
+    narrateAmbient: async () => ({
+      title: 'Phone screen',
+      text: 'The phone screen lights up. Chen Huaimin has replied, but the room stays quiet.',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, 'reply to Chen and ask what package he means', harness);
+
+  assert.match(resolution.ambientNarration?.text ?? '', /哪个包裹/);
+  assert.match(resolution.ambientNarration?.text ?? '', /你先别动/);
+}
+
+async function testVagueActionNarrationIncludesConcretePhoneProbeText() {
+  const state = createInitialGameState();
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-lock-door',
+      raw: 'quietly lock the door',
+      summary: 'Quietly lock the door',
+      actions: [{
+        id: 'action-lock-door',
+        raw: 'quietly lock the door',
+        intent: 'secure_entry',
+        target: 'front_door',
+        method: 'quietly lock the front door',
+        confidence: 0.95,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.95,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-phone-probe',
+      type: 'phone_probe',
+      title: 'Phone probe',
+      rationale: 'The killer tests whether the player noticed the package.',
+      responseHint: '陌生号码：“门口那个包裹你拿进去了吗？”',
+      visibleToPlayer: true,
+      risk: 'medium',
+    }),
+    narrateAction: async () => ({
+      title: 'Door locked',
+      text: '门已锁好。你退后半步，手机屏幕还亮着，一条陌生号码的信息停在屏幕上。',
+    }),
+    narrateAmbient: async () => ({
+      title: 'Hallway',
+      text: '楼道里传来两个不同的脚步声。',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, '悄悄把门锁上', harness);
+
+  assert.match(resolution.actionNarration?.text ?? '', /门口那个包裹你拿进去了吗/);
+}
+
+async function testResolveTurnHarnessAdvancesWorldTickByDefault() {
   const state = createInitialGameState();
   state.world = createInitialWorldState();
   state.world.characters.chen_huaimin.location = 'corridor_5f';
@@ -563,11 +902,11 @@ async function testResolveTurnHarnessOptionallyAdvancesWorldTick() {
       id: 'killer-wait',
       type: 'wait_for_fatigue',
       title: 'Wait outside',
-      rationale: 'Keep the test focused on optional world tick',
+      rationale: 'Keep the test focused on the product world tick',
       visibleToPlayer: false,
       risk: 'low',
     }),
-  }, { advanceWorldTick: true });
+  });
 
   const resolution = await resolveTurnHarness(state, 'share the package photo with Lin Yue', harness);
   const world = resolution.finalState.world;
@@ -579,10 +918,122 @@ async function testResolveTurnHarnessOptionallyAdvancesWorldTick() {
   assert.equal(tickEventIds.some((id) => id.startsWith('input.')), false);
   assert.equal(world.pendingNarration.length, 0);
   assert.ok(world.consumedNarrationEventIds.includes('conflict.chen_intercepts_linyue'));
+  assert.equal(world.narrationCursor, world.events.length);
   assert.ok(world.characters.lin_yue.goalStack.includes('preserve_photo'));
   assert.ok(world.characters.chen_huaimin.goalStack.includes('suppress_lin_yue'));
   assert.notEqual(resolution.finalState.linYuePhase, 'endangered');
   assert.equal(state.world.events.length, 0);
+}
+
+async function testResolveTurnHarnessCanDisableWorldTickForControlledRuns() {
+  const state = createInitialGameState();
+  const harness = createHarness(undefined, { worldTick: 'disabled' });
+
+  const resolution = await resolveTurnHarness(state, '检查门锁', harness);
+
+  assert.deepEqual(resolution.worldTickTrace, []);
+}
+
+async function testHarnessUsesAiNpcAdapterForProductWorldTick() {
+  const plannedNpcIds: string[] = [];
+  const npcAdapter: NpcAdapter = {
+    processNpc: async ({ npcId }) => {
+      plannedNpcIds.push(npcId);
+      return { npcId, plan: null };
+    },
+  };
+  const state = createInitialGameState();
+  state.room.package.state.photographed = true;
+  state.evidencePhase = 'package_photographed';
+  state.world = createInitialWorldState();
+  for (const character of Object.values(state.world.characters)) {
+    character.destination = undefined;
+  }
+  state.world.characters.real_police.location = 'lobby';
+  state.world.characters.fake_police.location = 'parking_lot';
+  state.world.characters.chen_huaimin.location = 'room_501';
+  state.world.characters.lin_yue.location = 'lobby';
+  const harness = createHarness({
+    npcAdapter,
+    parseAction: async () => ({
+      id: 'plan-send-photo-to-linyue',
+      raw: '把包裹照片发给林越',
+      summary: '把包裹照片发给林越',
+      actions: [{
+        id: 'action-send-photo-to-linyue',
+        raw: '把包裹照片发给林越',
+        intent: 'communicate',
+        target: 'linyue',
+        method: '把包裹照片发给林越',
+        confidence: 1,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 1,
+      warnings: [],
+    }),
+  });
+
+  assert.equal(harness.options.npcAdapter, npcAdapter);
+  assert.equal(harness.options.worldTick, 'enabled');
+
+  const resolution = await resolveTurnHarness(state, '把包裹照片发给林越', harness);
+
+  assert.deepEqual(plannedNpcIds, ['lin_yue']);
+  assert.deepEqual(resolution.finalState.world?.affectedCharacters, []);
+}
+
+async function testDirectorRunsAsDeferredCriticOutsideTurnPath() {
+  const state = createInitialGameState();
+  let criticStarted = false;
+  let releaseCritic!: () => void;
+  const criticGate = new Promise<void>((resolve) => {
+    releaseCritic = resolve;
+  });
+  const harness = createHarness({
+    reviewNarration: async (input) => {
+      criticStarted = true;
+      assert.deepEqual(Object.keys(input).sort(), ['directorContext', 'narrationContext']);
+      assert.equal(Object.isFrozen(input), true);
+      assert.equal(Object.isFrozen(input.directorContext), true);
+      await criticGate;
+      return {
+        score: { pacing: 8, infoLeak: 9, ruleConsistency: 9, prose: 8 },
+        passed: true,
+        violations: [],
+      };
+    },
+  });
+  const subscriptions = harness.registry.getAgentsForEvent('NarrationCritiqueRequested');
+  assert.equal(subscriptions.some((subscription) => subscription.role === 'primary'), false);
+  assert.equal(subscriptions[0]?.role, 'reviewer');
+  assert.equal(subscriptions[0]?.defer, true);
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const resolution = await Promise.race([
+    resolveTurnHarness(state, '检查门锁', harness),
+    new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error('turn waited for deferred critic')), 1_000);
+    }),
+  ]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+
+  assert.equal(criticStarted, true);
+  assert.ok(resolution.finalState);
+  assert.equal(harness.dispatcher.getLatestArtifact('director', 'NarrationCritiqueRequested'), undefined);
+
+  releaseCritic();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(
+    harness.dispatcher.getLatestArtifact('director', 'NarrationCritiqueRequested'),
+    {
+      score: { pacing: 8, infoLeak: 9, ruleConsistency: 9, prose: 8 },
+      passed: true,
+      violations: [],
+    },
+  );
 }
 
 await testResolveTurnHarnessReturnsTraceAndFinalState();
@@ -596,6 +1047,14 @@ await testStoryNodeShortCircuitsAfterParser();
 await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();
 await testResolveTurnHarnessPersistsSyncedWorldState();
 await testResolveTurnHarnessAppliesPlayerWorldInputs();
+await testChinesePhotoShareAndDoorLockFlowKeepsFactsSeparated();
 await testLinYueMessageReplyStaysInActionNarration();
+await testLinYueVisibleContextKeepsPhotoSeparateFromDoorAndPoliceKnowledge();
+await testLinYuePhotoOnlyRecommendationsDoNotMentionDoorQuoteOrPolice();
 await testDoorCoordinationCreatesPlayableNextSteps();
-await testResolveTurnHarnessOptionallyAdvancesWorldTick();
+await testMessageReplyAmbientNarrationIncludesConcreteMessageText();
+await testVagueActionNarrationIncludesConcretePhoneProbeText();
+await testResolveTurnHarnessAdvancesWorldTickByDefault();
+await testResolveTurnHarnessCanDisableWorldTickForControlledRuns();
+await testHarnessUsesAiNpcAdapterForProductWorldTick();
+await testDirectorRunsAsDeferredCriticOutsideTurnPath();

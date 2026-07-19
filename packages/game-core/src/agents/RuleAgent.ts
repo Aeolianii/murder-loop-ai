@@ -8,7 +8,7 @@ import { ruleContract } from '../contracts/rule.contract';
  * 规则系统 Agent。
  * 纯确定性逻辑，不调用 AI。负责：
  * 1. 在 ActionParsed 后执行玩家行动效果
- * 2. 在 KillerActed 后校验凶手策略的合法性
+ * 2. 将 KillerStrategy 提案确认成 DomainEvent，再由 reducer 执行
  */
 export const RuleAgent: AgentRegistration = {
   id: 'rule',
@@ -27,6 +27,7 @@ export const RuleAgent: AgentRegistration = {
       return applyPlayerActions(payload.state as GameState, payload.plan as ActionPlan);
     }
     if (event?.type === 'KillerActed') {
+      // applyKillerStrategy is the rule boundary: Strategy -> DomainEvent -> State.
       return applyKillerStrategy(
         payload.state as GameState,
         payload.killerStrategy as KillerStrategy,

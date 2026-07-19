@@ -15,7 +15,7 @@ export async function buildSidebarPayload(
   runTurnCompleted = false,
 ) {
   if (runTurnCompleted) {
-    await harness.dispatcher.runCommand('TurnCompleted', { finalState, moodSignal: undefined });
+    await harness.dispatcher.runCommand('TurnCompleted', { finalState });
   }
   return harness.dispatcher.getLatestArtifact('sidebar', 'TurnCompleted') ?? null;
 }

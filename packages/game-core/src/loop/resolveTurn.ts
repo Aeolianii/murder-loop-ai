@@ -19,7 +19,7 @@ import {
   sanitizeNarration,
 } from '../narration/fallbackNarration';
 import { buildNarrationContext } from '../narration/buildNarrationContext';
-import { buildDirectorContext, buildKillerContext, buildNarratorContext, buildParserContext } from '../context/ContextBuilder';
+import { buildDirectorContext, buildKillerContext, buildNarratorContext, buildNpcVisibleContext, buildParserContext, type DirectorContext, type KillerContext } from '../context/ContextBuilder';
 import { advanceAmbientTurn } from '../ambient/advanceAmbientTurn';
 import { GameEventBus } from '../events/EventBus';
 import { AgentRegistry } from '../events/AgentRegistry';
@@ -37,10 +37,12 @@ import { clearReviveProtection, hasReviveProtection } from './reviveProtection';
 import { resolveStoryNode } from '../storyNodes/resolveStoryNode';
 import type { StoryNodeResolution } from '../storyNodes/storyNodeTypes';
 import { ensureWorldState } from '../world/syncGameWorld';
-import { applyWorldInputs, buildWorldInputsFromPlayerPlan } from '../world/worldInputs';
+import { applyWorldInputs, buildWorldInputsFromDomainEvents } from '../world/worldInputs';
 import { advanceWorldTick } from '../world/worldSimulator';
 import type { NpcAdapter } from '../world/npcTypes';
 import { calculateTurnTime } from '../rules/applyPlayerActions';
+import type { DomainEvent } from '../domain/domainEvents';
+import { commitWorldNarrationBatch, readWorldNarrationBatch } from '../world/narrationCursor';
 
 export { GameEventBus, AgentRegistry, HarnessDispatcher };
 export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcAgent, UIAdapterAgent, SidebarAgent };
@@ -51,38 +53,14 @@ export { ParserAgent, RuleAgent, KillerAgent, NarratorAgent, DirectorAgent, NpcA
 
 export interface AiAdapters {
   parseAction?: (input: string, state: GameState) => Promise<ActionPlan>;
-  chooseKillerStrategy?: (
-    state: GameState,
-    plan?: ActionPlan,
-    playerResult?: TurnResolution['playerResult'],
-  ) => Promise<KillerStrategy>;
-  narrate?: (
-    context: NarrationContext,
-    playerResult: TurnResolution['playerResult'],
-    killerResult: TurnResolution['killerResult'],
-    state: GameState,
-  ) => Promise<Narration>;
-  narrateAction?: (
-    context: NarrationContext,
-    playerResult: TurnResolution['playerResult'],
-    killerResult: TurnResolution['killerResult'],
-    state: GameState,
-  ) => Promise<Narration>;
-  narrateAmbient?: (
-    context: NarrationContext,
-    playerResult: TurnResolution['playerResult'],
-    killerResult: TurnResolution['killerResult'],
-    state: GameState,
-  ) => Promise<Narration>;
+  chooseKillerStrategy?: (context: KillerContext) => Promise<KillerStrategy>;
+  narrate?: (context: NarrationContext) => Promise<Narration>;
+  narrateAction?: (context: NarrationContext) => Promise<Narration>;
+  narrateAmbient?: (context: NarrationContext) => Promise<Narration>;
   reviewNarration?: (input: {
-    narration: Narration;
-    actionNarration: Narration;
-    ambientNarration: Narration;
-    state: GameState;
-    narrationContext?: NarrationContext;
-    playerResult?: TurnResolution['playerResult'];
-    killerResult?: TurnResolution['killerResult'];
-  }) => Promise<{ score: unknown; passed: boolean; violations: string[]; moodSignal?: string }>;
+    directorContext: DirectorContext;
+    narrationContext: NarrationContext;
+  }) => Promise<{ score: unknown; passed: boolean; violations: string[] }>;
   npcReply?: (
     speaker: NpcReply['speaker'],
     input: string,
@@ -92,7 +70,7 @@ export interface AiAdapters {
 }
 
 export interface HarnessOptions {
-  advanceWorldTick?: boolean;
+  worldTick?: 'enabled' | 'disabled';
   npcAdapter?: NpcAdapter;
 }
 
@@ -198,18 +176,20 @@ function buildStoryNodeTurnResolution(
   };
 }
 
-async function applyPlayerPlanToWorldState(
-  state: GameState,
+async function applyConfirmedPlayerEventsToWorldState(
+  beforeState: GameState,
+  resolvedState: GameState,
   plan: ActionPlan,
-  shouldAdvanceWorldTick = false,
+  confirmedEvents: DomainEvent[],
+  worldTickEnabled: boolean,
   npcAdapter?: NpcAdapter,
 ): Promise<{ state: GameState; worldTickTrace: WorldEvent[]; interrupted?: WorldEvent }> {
-  let world = ensureWorldState(state);
-  const inputs = buildWorldInputsFromPlayerPlan(plan, world);
+  let world = ensureWorldState(beforeState);
+  const inputs = buildWorldInputsFromDomainEvents(confirmedEvents, world);
   if (inputs.length > 0) world = applyWorldInputs(world, inputs);
   let worldTickTrace: WorldEvent[] = [];
   let interrupted: WorldEvent | undefined;
-  if (shouldAdvanceWorldTick) {
+  if (worldTickEnabled) {
     const totalMinutes = calculateTurnTime(plan.actions);
     for (let i = 0; i < totalMinutes && !interrupted; i++) {
       const beforeCount = world.events.length;
@@ -219,29 +199,7 @@ async function applyPlayerPlanToWorldState(
       interrupted = newEvents.find((e) => e.type === 'ending' || e.type === 'threat');
     }
   }
-  return { state: { ...state, world }, worldTickTrace, interrupted };
-}
-
-function consumePendingWorldNarration(state: GameState, confirmedWorldEvents?: WorldEvent[]): GameState {
-  if (!state.world || !confirmedWorldEvents?.length || state.world.pendingNarration.length === 0) return state;
-  const pendingIds = new Set(state.world.pendingNarration.map((event) => event.id));
-  const consumedIds = confirmedWorldEvents
-    .map((event) => event.id)
-    .filter((id) => pendingIds.has(id));
-  if (consumedIds.length === 0) return state;
-
-  const consumedSet = new Set(consumedIds);
-  return {
-    ...state,
-    world: {
-      ...state.world,
-      pendingNarration: state.world.pendingNarration.filter((event) => !consumedSet.has(event.id)),
-      consumedNarrationEventIds: [...new Set([
-        ...(state.world.consumedNarrationEventIds ?? []),
-        ...consumedIds,
-      ])],
-    },
-  };
+  return { state: { ...resolvedState, world }, worldTickTrace, interrupted };
 }
 
 function npcReplyTitle(reply: NpcReply) {
@@ -256,6 +214,42 @@ function applyNpcReplyToActionNarration(narration: Narration, reply?: NpcReply |
     ...narration,
     title: npcReplyTitle(reply),
     text: reply.text,
+  };
+}
+
+function extractConcreteMessageText(context: NarrationContext) {
+  const candidates = context.confirmedFacts
+    .filter((fact) => fact.origin === 'killer' || fact.origin === 'world')
+    .flatMap((fact) => [fact.summary, ...fact.facts]);
+
+  for (const candidate of candidates) {
+    const quoted = candidate.match(/[“"]([^”"]+)[”"]/)?.[1]?.trim();
+    if (quoted) return candidate;
+  }
+  return undefined;
+}
+
+function narrationMentionsVagueMessage(text: string) {
+  return hasText(text, ['陌生号码', '短信', '消息', '手机屏幕', '屏幕亮起'])
+    && !/[“"][^”"]+[”"]/.test(text);
+}
+
+function ensureNarrationIncludesConcreteVisibleMessage(
+  narration: Narration,
+  context: NarrationContext,
+): Narration {
+  const concreteMessage = extractConcreteMessageText(context);
+  if (!concreteMessage) return narration;
+  const isConfirmedReply = context.confirmedFacts.some(
+    (fact) => fact.origin === 'killer' && fact.subject === 'message_reply',
+  );
+  if (!isConfirmedReply && !narrationMentionsVagueMessage(narration.text)) return narration;
+  if (narration.text.includes(concreteMessage)) return narration;
+  const quoted = concreteMessage.match(/[“"]([^”"]+)[”"]/)?.[1];
+  if (quoted && narration.text.includes(quoted)) return narration;
+  return {
+    ...narration,
+    text: `${narration.text}\n\n${concreteMessage}`,
   };
 }
 
@@ -334,7 +328,11 @@ function buildRecommendedActionsForTurn(
     });
   }
 
-  if (state.linYuePhase === 'received_photo' || state.linYuePhase === 'calling_police') {
+  const linYueVisibleContext = buildNpcVisibleContext(state, 'linyue', plan.raw);
+  if (
+    (state.linYuePhase === 'received_photo' || state.linYuePhase === 'calling_police')
+    && linYueVisibleContext.canReference.doorActivity
+  ) {
     actions.push({
       id: 'send_door_quote_to_linyue',
       label: '把门外原话发给林越，让他只在楼下找真正警察，不要上楼。',
@@ -350,69 +348,6 @@ function buildRecommendedActionsForTurn(
 // ============================================================================
 // 新架构：Harness 工厂 + 事件驱动的回合解析
 // ============================================================================
-
-/**
- * 回合上下文 — 在事件处理过程中累积中间结果。
- * 每个 Agent 在处理事件时读取/写入此上下文，
- * 替代旧架构中通过函数参数传递的临时变量。
- */
-export interface TurnContext {
-  /** 玩家原始输入 */
-  input: string;
-  /** 当前游戏状态（在处理过程中会变化） */
-  state: GameState;
-  /** 行动解析结果 */
-  plan?: ActionPlan;
-  /** 玩家行动执行结果 */
-  playerResult?: TurnResolution['playerResult'];
-  /** 凶手策略 */
-  killerStrategy?: KillerStrategy;
-  /** 凶手行动执行结果 */
-  killerResult?: TurnResolution['killerResult'];
-  /** 行动叙事 */
-  actionNarration?: Narration;
-  /** 环境叙事 */
-  ambientNarration?: Narration;
-  npcReply?: NpcReply | null;
-  /** 叙事上下文 */
-  narrationContext?: NarrationContext;
-  /** 导演评分结果 */
-  directorResult?: { score: unknown; passed: boolean; violations: string[]; moodSignal?: string };
-  /** Autonomous World tick events only; player input bridge events are excluded. */
-  worldTickTrace?: WorldEvent[];
-}
-
-// ============================================================================
-// 致命行为检测 & 对话节点复活
-// ============================================================================
-
-// Fatal outcomes are resolved by rule execution and reviewed narration proposals, not by intent lookup.
-
-/**
- * 保存对话检查点到 memory，用于死亡后复活到最近对话节点。
- * 只在有 NPC 通信时保存。
- */
-function saveConversationCheckpoint(state: GameState): void {
-  const lastCommunicate = [...state.log].reverse().find(
-    (entry) =>
-      entry.channel === 'action' &&
-      (entry.text.includes('林越') || entry.text.includes('陈怀民') || entry.text.includes('陌生号码') || entry.text.includes('警察')),
-  );
-  if (!lastCommunicate) return;
-
-  // 检查是否已保存过同一对话的检查点
-  const alreadySaved = state.memory.currentRun.some(
-    (m) => m.id === `checkpoint-${lastCommunicate.id}`,
-  );
-  if (alreadySaved) return;
-
-  state.memory.currentRun.push({
-    id: `checkpoint-${lastCommunicate.id}`,
-    run: state.run,
-    title: '对话节点',
-    text: `你在那一刻和外界建立了联系。如果发生意外，这是你最后的锚点。`,
-  });
-}
 
 /**
  * 创建 Harness 系统（EventBus + AgentRegistry 含所有 Agent）。
@@ -467,8 +402,8 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
     if (agent) {
       const aiFn = aiAdapters.chooseKillerStrategy;
       agent.handler = async (payload: unknown) => {
-        const ctx = payload as TurnContext;
-        return aiFn(ctx.state, ctx.plan, ctx.playerResult);
+        const { killerContext } = payload as { killerContext: KillerContext };
+        return aiFn(killerContext);
       };
       agent.mode = 'ai';
     }
@@ -482,21 +417,14 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
         if (!actionNarrator && !ambientNarrator) {
           throw new Error('no narrate adapter provided');
         }
-        const ctx = payload as TurnContext;
-        const context = ctx.narrationContext ?? buildNarratorContext({
-          state: ctx.state,
-          playerResult: ctx.playerResult!,
-          killerResult: ctx.killerResult!,
-          playerActionSummary: ctx.plan?.summary ?? '',
-          playerInput: ctx.input,
-        });
+        const { narrationContext: context } = payload as { narrationContext: NarrationContext };
         // 并行调用两个叙事 AI，任一个失败即抛错误让 dispatcher fallback
         const [actionNarration, ambientNarration] = await Promise.all([
           actionNarrator
-            ? actionNarrator(context, ctx.playerResult!, ctx.killerResult!, ctx.state)
+            ? actionNarrator(context)
             : (agent.fallback(payload) as Promise<{ actionNarration: Narration; ambientNarration: Narration }>).then(f => f.actionNarration),
           ambientNarrator
-            ? ambientNarrator(context, ctx.playerResult!, ctx.killerResult!, ctx.state)
+            ? ambientNarrator(context)
             : (agent.fallback(payload) as Promise<{ actionNarration: Narration; ambientNarration: Narration }>).then(f => f.ambientNarration),
         ]);
         return { actionNarration, ambientNarration };
@@ -510,13 +438,8 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
       const aiFn = aiAdapters.reviewNarration;
       agent.handler = async (payload: unknown) => {
         const ctx = payload as {
-          narration: Narration;
-          actionNarration: Narration;
-          ambientNarration: Narration;
-          state: GameState;
-          narrationContext?: NarrationContext;
-          playerResult?: TurnResolution['playerResult'];
-          killerResult?: TurnResolution['killerResult'];
+          directorContext: DirectorContext;
+          narrationContext: NarrationContext;
         };
         return aiFn(ctx);
       };
@@ -546,251 +469,289 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
     dispatcher,
     narrationAiUsage,
     options: {
-      advanceWorldTick: Boolean(options.advanceWorldTick),
-      npcAdapter: options.npcAdapter,
+      worldTick: options.worldTick ?? 'enabled',
+      npcAdapter: options.npcAdapter ?? aiAdapters?.npcAdapter,
     },
   };
 }
 
-/**
- * 事件驱动的回合解析 — 新架构入口。
- *
- * 流程：
- * 1. 构建 TurnContext（包含输入和初始状态）
- * 2. 依次发射事件，Agent 通过 EventBus 订阅响应
- * 3. 收集最终状态和诊断信息
- *
- * 与旧 resolveTurn 的接口兼容，返回值结构相同。
- */
-export async function resolveTurnHarness(
+/** Strongly typed stage data for the event-driven turn pipeline. */
+type HarnessRuntime = ReturnType<typeof createHarness>;
+
+interface ParsedHarnessTurn {
+  input: string;
+  state: GameState;
+  plan: ActionPlan;
+  worldTickTrace: WorldEvent[];
+  startedWithReviveProtection: boolean;
+}
+
+interface ResolvedHarnessTurn extends ParsedHarnessTurn {
+  playerResult: TurnResolution['playerResult'];
+  killerStrategy: KillerStrategy;
+  killerResult: TurnResolution['killerResult'];
+  npcReply: NpcReply | null;
+  playerLogId?: string;
+  killerLogId?: string;
+}
+
+interface NarratedHarnessTurn extends ResolvedHarnessTurn {
+  narrationContext: NarrationContext;
+  actionNarration: Narration;
+  ambientNarration: Narration;
+}
+
+async function parseHarnessTurn(
   state: GameState,
   input: string,
-  harness: ReturnType<typeof createHarness>,
-): Promise<TurnResolution> {
+  harness: HarnessRuntime,
+): Promise<ParsedHarnessTurn> {
   const startedWithReviveProtection = hasReviveProtection(state);
-  // 构建回合上下文 — 在事件链中共享的可变状态
-  const ctx: TurnContext = { input, state: { ...state } };
-
-  // Step 1: 解析行动
-  const parserContext = buildParserContext(input, ctx.state);
+  const turnState = { ...state };
+  const parserContext = buildParserContext(input, turnState);
   const plan = await harness.dispatcher.runCommand('PlayerActionSubmitted', {
     input,
-    state: ctx.state,
+    state: turnState,
     traceContext: { worldInfo: parserContext.worldInfo },
   });
 
-  ctx.plan = plan;
-  const worldUpdate = await applyPlayerPlanToWorldState(ctx.state, plan, harness.options.advanceWorldTick, harness.options.npcAdapter);
-  ctx.state = worldUpdate.state;
-  ctx.worldTickTrace = worldUpdate.worldTickTrace;
-
-  const storyNode = resolveStoryNode(ctx.state, plan);
-  if (storyNode) {
-    const resolution = buildStoryNodeTurnResolution(ctx.state, plan, storyNode);
-    if (startedWithReviveProtection) {
-      clearReviveProtection(resolution.finalState);
-    }
-    resolution.worldTickTrace = ctx.worldTickTrace ?? [];
-    recordTurnMemory(resolution.finalState, {
-      playerInput: ctx.input,
-      summary: plan.summary,
-      title: storyNode.title,
-      text: storyNode.text,
-    });
-    resolution.finalState.world = ensureWorldState(resolution.finalState);
-    await harness.dispatcher.runCommand('TurnCompleted', {
-      finalState: resolution.finalState,
-      moodSignal: undefined,
-    });
-    return resolution;
-  }
-
-  // Step 1.5: 致命行为检测 — AI 或规则判定危及生命的行为直接死亡
-  const fatalResult = null as null | { endingId: import('@murder-loop-ai/shared').EndingId; title: string; text: string };
-  if (fatalResult) {
-    const deathState = { ...ctx.state };
-    deathState.ending = fatalResult.endingId;
-    deathState.phase = 'death' as const;
-    deathState.log = [
-      ...deathState.log,
-      {
-        id: `death-${Date.now()}`,
-        run: deathState.run,
-        minute: deathState.minute,
-        title: fatalResult.title,
-        text: fatalResult.text,
-        tone: 'death' as const,
-        channel: 'action' as const,
-      },
-    ];
-    // 保存对话检查点到 memory（用于复活）
-    saveConversationCheckpoint(deathState);
-
-    return {
-      plan,
-      playerResult: { title: fatalResult.title, text: fatalResult.text, tone: 'death' as const, addedClues: [], timePassed: 0, threatDelta: 0, events: [], state: deathState },
-      killerStrategy: { id: 'fatal', type: 'retreat' as const, title: '无', rationale: '玩家已死亡', risk: 'low' as const, visibleToPlayer: false },
-      killerResult: { title: '', text: '', tone: 'system' as const, addedClues: [], timePassed: 0, threatDelta: 0, events: [], state: deathState },
-      narration: { title: fatalResult.title, text: fatalResult.text },
-      actionNarration: { title: fatalResult.title, text: fatalResult.text },
-      ambientNarration: { title: '', text: '' },
-      worldTickTrace: ctx.worldTickTrace ?? [],
-      finalState: deathState,
-    };
-  }
-
-  // Step 2: 执行规则
-  const playerResult = await harness.dispatcher.runCommand('ActionParsed', {
+  return {
+    input,
+    state: turnState,
     plan,
-    state: ctx.state,
+    worldTickTrace: [],
+    startedWithReviveProtection,
+  };
+}
+
+async function resolveStoryNodeTurn(
+  turn: ParsedHarnessTurn,
+  harness: HarnessRuntime,
+): Promise<TurnResolution | undefined> {
+  const storyNode = resolveStoryNode(turn.state, turn.plan);
+  if (!storyNode) return undefined;
+
+  const resolution = buildStoryNodeTurnResolution(turn.state, turn.plan, storyNode);
+  if (turn.startedWithReviveProtection) {
+    clearReviveProtection(resolution.finalState);
+  }
+  resolution.worldTickTrace = turn.worldTickTrace;
+  recordTurnMemory(resolution.finalState, {
+    playerInput: turn.input,
+    summary: turn.plan.summary,
+    title: storyNode.title,
+    text: storyNode.text,
   });
-  ctx.playerResult = playerResult;
-  ctx.state = playerResult.state;
-  ctx.npcReply = (harness.dispatcher.getLatestArtifact('npc', 'ActionParsed') as NpcReply | null | undefined) ?? null;
-  const playerLogId = ctx.state.log[ctx.state.log.length - 1]?.id;
+  resolution.finalState.world = ensureWorldState(resolution.finalState);
+  await harness.dispatcher.runCommand('TurnCompleted', {
+    finalState: resolution.finalState,
+  });
+  return resolution;
+}
 
-  // Step 3: 凶手策略
-  const killerContext = buildKillerContext(ctx.state, { plan, playerResult });
-  const killerStrategy = ctx.state.ending
-    ? chooseFallbackKillerStrategy(ctx.state)
-    : await harness.dispatcher.runCommand('RulesApplied', {
-        playerResult,
-        state: ctx.state,
-        plan,
-        traceContext: { worldInfo: killerContext.worldInfo },
-      });
-  ctx.killerStrategy = killerStrategy;
-
-  // Step 4: 执行凶手策略 + 叙事
-  const killerResult = ctx.state.ending
-    ? { ...playerResult, text: '', title: '对抗结束', tone: 'system' as const, addedClues: [], timePassed: 0, threatDelta: 0, events: [] }
+async function resolveRuleStages(
+  turn: ParsedHarnessTurn,
+  harness: HarnessRuntime,
+): Promise<ResolvedHarnessTurn> {
+  const playerResult = await harness.dispatcher.runCommand('ActionParsed', {
+    plan: turn.plan,
+    state: turn.state,
+  });
+  const confirmedEvents = (
+    playerResult as TurnResolution['playerResult'] & { domainEvents?: DomainEvent[] }
+  ).domainEvents ?? [];
+  const worldUpdate = await applyConfirmedPlayerEventsToWorldState(
+    turn.state,
+    playerResult.state,
+    turn.plan,
+    confirmedEvents,
+    harness.options.worldTick === 'enabled',
+    harness.options.npcAdapter,
+  );
+  const projectedPlayerResult = { ...playerResult, state: worldUpdate.state };
+  const npcReply = (
+    harness.dispatcher.getLatestArtifact('npc', 'ActionParsed') as NpcReply | null | undefined
+  ) ?? null;
+  const playerLogId = projectedPlayerResult.state.log[projectedPlayerResult.state.log.length - 1]?.id;
+  const killerContext = buildKillerContext(projectedPlayerResult.state, {
+    plan: turn.plan,
+    playerResult: projectedPlayerResult,
+  });
+  const killerStrategy = projectedPlayerResult.state.ending
+    ? chooseFallbackKillerStrategy(killerContext)
+    : await harness.dispatcher.runCommand('RulesApplied', { killerContext });
+  const killerResult: TurnResolution['killerResult'] = projectedPlayerResult.state.ending
+    ? {
+        ...projectedPlayerResult,
+        text: '',
+        title: '对抗结束',
+        tone: 'system',
+        addedClues: [],
+        timePassed: 0,
+        threatDelta: 0,
+        events: [],
+      }
     : await harness.dispatcher.runCommand('KillerActed', {
         killerStrategy,
-        playerResult,
-        state: ctx.state,
+        playerResult: projectedPlayerResult,
+        state: projectedPlayerResult.state,
       });
-  ctx.killerResult = killerResult;
-  ctx.state = killerResult.state;
-  const killerLogId = ctx.state.ending ? undefined : ctx.state.log[ctx.state.log.length - 1]?.id;
+  const killerLogId = killerResult.state.ending
+    ? undefined
+    : killerResult.state.log[killerResult.state.log.length - 1]?.id;
 
-  // Step 5: 叙事生成
+  return {
+    ...turn,
+    state: killerResult.state,
+    worldTickTrace: worldUpdate.worldTickTrace,
+    playerResult: projectedPlayerResult,
+    killerStrategy,
+    killerResult,
+    npcReply,
+    playerLogId,
+    killerLogId,
+  };
+}
+
+async function renderHarnessTurn(
+  turn: ResolvedHarnessTurn,
+  harness: HarnessRuntime,
+): Promise<NarratedHarnessTurn> {
+  const worldNarrationBatch = turn.state.world
+    ? readWorldNarrationBatch(turn.state.world)
+    : undefined;
   const narrationContext = buildNarratorContext({
-    state: ctx.state,
-    playerResult,
-    killerResult,
-    playerActionSummary: plan.summary,
-    playerInput: ctx.input,
+    state: turn.state,
+    playerResult: turn.playerResult,
+    killerResult: turn.killerResult,
+    worldEvents: worldNarrationBatch?.events,
   });
-  ctx.narrationContext = narrationContext;
-
   const narrationPair = await harness.dispatcher.runCommand('NarrationRequested', {
-    plan,
-    playerResult,
-    killerResult,
-    state: ctx.state,
     narrationContext,
   });
-  const actionNarration = applyNpcReplyToActionNarration(
-    sanitizeNarration(narrationPair.actionNarration),
-    ctx.npcReply,
+  const actionNarration = ensureNarrationIncludesConcreteVisibleMessage(
+    applyNpcReplyToActionNarration(
+      sanitizeNarration(narrationPair.actionNarration),
+      turn.npcReply,
+    ),
+    narrationContext,
   );
-  const ambientNarration = playerResult.state.ending
+  const ambientNarration = turn.playerResult.state.ending
     ? actionNarration
-    : sanitizeNarration(narrationPair.ambientNarration);
-  ctx.actionNarration = actionNarration;
-  ctx.ambientNarration = ambientNarration;
-  ctx.state = consumePendingWorldNarration(ctx.state, narrationContext.confirmedWorldEvents);
+    : ensureNarrationIncludesConcreteVisibleMessage(
+        sanitizeNarration(narrationPair.ambientNarration),
+        narrationContext,
+      );
 
-  // Step 6: Director review uses the same agent event chain, but it is kept
-  // outside the response critical path. Narration proposals are advisory now,
-  // so a slow pro-model review should not delay the next playable beat.
-  const directorPayload = {
-    narration: actionNarration,
+  return {
+    ...turn,
+    state: worldNarrationBatch && turn.state.world
+      ? {
+          ...turn.state,
+          world: commitWorldNarrationBatch(turn.state.world, worldNarrationBatch),
+        }
+      : turn.state,
+    narrationContext,
     actionNarration,
     ambientNarration,
-    state: ctx.state,
-    narrationContext,
-    playerResult,
-    killerResult,
+  };
+}
+
+function dispatchNarrationCritic(
+  turn: NarratedHarnessTurn,
+  harness: HarnessRuntime,
+): void {
+  harness.dispatcher.dispatchDeferred('NarrationCritiqueRequested', {
+    narrationContext: turn.narrationContext,
     directorContext: buildDirectorContext({
-      state: ctx.state,
-      narration: actionNarration,
-      actionNarration,
-      ambientNarration,
-      playerResult,
-      killerResult,
+      state: turn.state,
+      narration: turn.actionNarration,
+      actionNarration: turn.actionNarration,
+      ambientNarration: turn.ambientNarration,
+      playerResult: turn.playerResult,
+      killerResult: turn.killerResult,
       agentTrace: [...harness.dispatcher.getAgentTrace()],
     }),
-  };
-  const directorResult = {
-    score: { pacing: 7, infoLeak: 8, ruleConsistency: 8, prose: 7 },
-    passed: true,
-    violations: [],
-    moodSignal: undefined,
-  };
-  void harness.dispatcher.runCommand('NarrationDone', directorPayload).catch(() => null);
-  ctx.directorResult = directorResult;
+  });
+}
 
-  // Step 7: 组装最终状态
-  const finalState = { ...ctx.state };
-  if (startedWithReviveProtection) {
+async function finalizeHarnessTurn(
+  turn: NarratedHarnessTurn,
+  harness: HarnessRuntime,
+): Promise<TurnResolution> {
+  const finalState = { ...turn.state };
+  if (turn.startedWithReviveProtection) {
     clearReviveProtection(finalState);
   }
 
-  replaceLogEntry(finalState, playerLogId, {
-    title: actionNarration.title,
-    text: actionNarration.text,
+  replaceLogEntry(finalState, turn.playerLogId, {
+    title: turn.actionNarration.title,
+    text: turn.actionNarration.text,
     isAiNarration: harness.narrationAiUsage.action,
     channel: 'action',
-    tone: playerResult.tone,
+    tone: turn.playerResult.tone,
   });
-  replaceLogEntry(finalState, killerLogId, {
-    title: ambientNarration.title,
-    text: ambientNarration.text,
-    isAiNarration: playerResult.state.ending
+  replaceLogEntry(finalState, turn.killerLogId, {
+    title: turn.ambientNarration.title,
+    text: turn.ambientNarration.text,
+    isAiNarration: turn.playerResult.state.ending
       ? harness.narrationAiUsage.action
       : harness.narrationAiUsage.ambient,
     channel: 'ambient',
-    tone: killerResult.tone === 'death' ? 'death' : killerResult.tone,
+    tone: turn.killerResult.tone === 'death' ? 'death' : turn.killerResult.tone,
   });
-
-  // Step 8: 完成回合
   recordTurnMemory(finalState, {
-    playerInput: ctx.input,
-    summary: plan.summary,
-    title: actionNarration.title,
-    text: actionNarration.text,
+    playerInput: turn.input,
+    summary: turn.plan.summary,
+    title: turn.actionNarration.title,
+    text: turn.actionNarration.text,
   });
   if (finalState.phase === 'death') {
     recordDeathMemory(finalState);
   }
   finalState.world = ensureWorldState(finalState);
 
-  await harness.dispatcher.runCommand('TurnCompleted', {
-    finalState,
-    moodSignal: directorResult.moodSignal,
-  });
+  await harness.dispatcher.runCommand('TurnCompleted', { finalState });
 
   return {
-    plan,
-    playerResult,
-    killerStrategy,
-    killerResult,
-    narration: actionNarration,
-    actionNarration,
-    ambientNarration,
-    npcReply: ctx.npcReply ?? null,
+    plan: turn.plan,
+    playerResult: turn.playerResult,
+    killerStrategy: turn.killerStrategy,
+    killerResult: turn.killerResult,
+    narration: turn.actionNarration,
+    actionNarration: turn.actionNarration,
+    ambientNarration: turn.ambientNarration,
+    npcReply: turn.npcReply,
     recommendedActions: buildRecommendedActionsForTurn(
       finalState,
-      plan,
-      killerStrategy,
-      playerResult,
-      killerResult,
-      ctx.npcReply,
+      turn.plan,
+      turn.killerStrategy,
+      turn.playerResult,
+      turn.killerResult,
+      turn.npcReply,
     ),
-    worldTickTrace: ctx.worldTickTrace ?? [],
+    worldTickTrace: turn.worldTickTrace,
     finalState,
   };
+}
+
+/**
+ * Runs one player turn through the Harness pipeline.
+ * Deterministic stages own state changes; AI stages return proposals or render artifacts.
+ */
+export async function resolveTurnHarness(
+  state: GameState,
+  input: string,
+  harness: HarnessRuntime,
+): Promise<TurnResolution> {
+  const parsedTurn = await parseHarnessTurn(state, input, harness);
+  const storyNodeResolution = await resolveStoryNodeTurn(parsedTurn, harness);
+  if (storyNodeResolution) return storyNodeResolution;
+
+  const resolvedTurn = await resolveRuleStages(parsedTurn, harness);
+  const narratedTurn = await renderHarnessTurn(resolvedTurn, harness);
+  dispatchNarrationCritic(narratedTurn, harness);
+  return finalizeHarnessTurn(narratedTurn, harness);
 }
 
 export async function resolveAmbientTurn(
@@ -799,13 +760,14 @@ export async function resolveAmbientTurn(
 ): Promise<AmbientResolution> {
   const startedWithReviveProtection = hasReviveProtection(state);
   const ambientResult = advanceAmbientTurn(state);
+  const killerContext = buildKillerContext(ambientResult.state, { playerResult: ambientResult });
   const killerStrategy = ambientResult.state.ending
-    ? chooseFallbackKillerStrategy(ambientResult.state)
+    ? chooseFallbackKillerStrategy(killerContext)
     : aiAdapters.chooseKillerStrategy
       ? await aiAdapters
-          .chooseKillerStrategy(ambientResult.state)
-          .catch(() => chooseFallbackKillerStrategy(ambientResult.state))
-      : chooseFallbackKillerStrategy(ambientResult.state);
+          .chooseKillerStrategy(killerContext)
+          .catch(() => chooseFallbackKillerStrategy(killerContext))
+      : chooseFallbackKillerStrategy(killerContext);
 
   const killerResult = ambientResult.state.ending
     ? {
@@ -822,11 +784,10 @@ export async function resolveAmbientTurn(
   const narrationContext = buildNarrationContext(
     ambientResult,
     killerResult,
-    '我暂时没有采取新行动，时间和环境继续推进',
   );
   const ambientNarrator = aiAdapters.narrateAmbient ?? aiAdapters.narrate;
   const rawNarration = ambientNarrator
-    ? await ambientNarrator(narrationContext, ambientResult, killerResult, killerResult.state).catch(
+    ? await ambientNarrator(narrationContext).catch(
         () => createFallbackAmbientNarration(ambientResult, killerResult),
       )
     : createFallbackAmbientNarration(ambientResult, killerResult);

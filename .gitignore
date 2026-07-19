@@ -1,4 +1,5 @@
 node_modules/
+apps/web/dist/
 apps/server/.env
 audio set/
 image/

@@ -9,7 +9,38 @@
 但规则系统拥有最终解释权。
 ```
 
-当前版本：`v1.7`
+当前版本：`v1.8`
+
+## v1.8 更新摘要
+
+本版本完成核心回合架构收口。项目正式采用“**Harness 编排 + 确定性规则内核 + World/NPC 投影 + 叙事渲染**”：AI 负责理解、策略和表达，所有业务事实都必须经过 `Command -> DomainEvent -> State` 的确定性写入链路。
+
+正式回合流程：
+
+```txt
+玩家自然语言输入
+  -> Harness 调用 Parser，产出结构化 Command
+  -> 规则内核裁决 Command，产出 confirmed DomainEvent
+  -> reducer 单一写入 GameState
+  -> confirmed events 更新 World/NPC 投影与 NPC 受影响队列
+  -> World Tick 推进 NPC 计划和环境事件
+  -> Killer 只读取自身可见投影，产出 KillerStrategy
+  -> 规则内核将 KillerStrategy 转成 DomainEvent 并写入 State
+  -> Narrator 通过事件游标读取尚未叙述的 confirmed facts
+  -> UI/Sidebar 展示最终状态、线索、时间、威胁和推荐行动
+  -> Director 在主回合外异步执行一致性审查
+```
+
+核心变化：
+
+- 明确区分 `Command`、`DomainEvent` 和 Agent `Artifact`：Command 表示意图，DomainEvent 表示已确认事实，Artifact 只用于 Agent 之间传递结果。
+- 玩家 Command 和 KillerStrategy 都通过 DomainEvent 进入规则内核，业务状态不再由 Parser、Killer、Narrator 或旧 action switch 直接写入。
+- 建立单一状态写入通道，同一个 Command 只裁决一次，再由 reducer 应用事件，避免 GameState 与 WorldState 双写漂移。
+- World/NPC 只读取 confirmed events；NPC 受影响队列会精确触发相关角色重新规划，并在消费后清空。
+- Killer 只消费自身可见投影，无法读取玩家私密行动、其他 NPC 私有知识或完整 `GameState`。
+- World Tick 升级为默认产品能力；测试和受控运行仍可显式关闭。
+- Narrator 使用单调事件游标消费 `world.events`：只暴露 `player/public` 事件，隐藏事件只推进游标，不会泄露或在后续回合重放。
+- Director 从同步裁决者降级为异步 Critic，不再阻塞玩家回合，也不具备修改规则事实的权限。
 
 ## v1.7 更新摘要
 
@@ -186,6 +217,12 @@ apps/web
   -> apps/server/src/routes/harnessTurn.ts
   -> apps/server/src/ai/harnessAiAdapters.ts
   -> packages/game-core/resolveTurnHarness()
+       -> Parser Command
+       -> Rule DomainEvents -> GameState
+       -> World/NPC projections + World Tick
+       -> Killer visible projection -> KillerStrategy -> DomainEvents
+       -> Narrator confirmed facts + world event cursor
+       -> deferred Director Critic
   -> apps/server/src/presenters/frontendTurnPresenter.ts
   -> apps/web renders story, clues, sidebar, audio cue
 ```

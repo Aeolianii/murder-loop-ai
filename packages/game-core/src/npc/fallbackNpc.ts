@@ -1,6 +1,9 @@
 import type { GameState, NpcReply } from '@murder-loop-ai/shared';
+import { buildNpcVisibleContext } from '../context/ContextBuilder';
 
 export function fallbackNpcReply(speaker: NpcReply['speaker'], input: string, state: GameState): NpcReply {
+  const visibleContext = buildNpcVisibleContext(state, speaker, input);
+
   if (speaker === 'police_dispatch') {
     return {
       speaker,
@@ -18,6 +21,16 @@ export function fallbackNpcReply(speaker: NpcReply['speaker'], input: string, st
       intent: '试探玩家是否掌握包裹内容',
       riskWarning: '继续通话可能暴露玩家已经警觉。',
       suggestedExternalAction: '不要承认已经打开或备份证据，尽量录音。',
+    };
+  }
+
+  if (speaker === 'linyue' && !visibleContext.canReference.doorActivity && !visibleContext.canReference.policeReport) {
+    return {
+      speaker: 'linyue',
+      text: 'Lin Yue replies: I do not recognize this package from the photo alone. Do not open the package yet. Keep the photo and any delivery markings, and tell me if there is a sender name, room number, or tracking code.',
+      intent: 'identify_package_from_player_message',
+      riskWarning: 'Lin Yue only knows about the package photo at this point.',
+      suggestedExternalAction: 'Ask Lin Yue to preserve the photo and help verify the package source from a safe place.',
     };
   }
 

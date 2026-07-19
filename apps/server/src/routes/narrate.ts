@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { NarrationSchema } from '@murder-loop-ai/ai-contracts';
-import { createFallbackActionNarration, createFallbackAmbientNarration, createFallbackNarration, sanitizeNarration } from '@murder-loop-ai/game-core';
-import type { NarrationContext, RuleResult } from '@murder-loop-ai/shared';
+import { NarrationContextSchema, NarrationSchema } from '@murder-loop-ai/ai-contracts';
+import { createFallbackActionNarrationFromConfirmedFacts, createFallbackAmbientNarrationFromConfirmedFacts, sanitizeNarration } from '@murder-loop-ai/game-core';
+import type { NarrationContext } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
 
 type NarrationMode = 'mixed' | 'action' | 'ambient';
@@ -15,7 +15,7 @@ function systemPromptFor(mode: NarrationMode) {
       '文风参考悬疑网文：段落有推进，句子有钩子，但不要中二，不要空喊恐惧。多写门锁、猫眼、手机冷光、纸箱气味、脚步距离、手上动作。',
       '结构：动作落地 -> 现场变化 -> 风险/收益 -> 一个小钩子。不要写系统、规则、判定、数值、AI、fallback。',
       '可以有极短第一人称反应，但不能替玩家悟出真相，不能泄露凶手内心。',
-      '必须查看 narrationContext.recentLog，避免复述最近两回合已经出现过的短信问法、敲门借口和具体句子。',
+      '只使用 narrationContext.confirmedFacts 和 stateSnapshot，不得借用未确认的旧叙事细节。',
       '每次 220 到 520 个中文字符。只输出 JSON：{"title":"...","text":"..."}。',
     ].join('\n');
   }
@@ -28,7 +28,7 @@ function systemPromptFor(mode: NarrationMode) {
       '节奏短促、有镜头感：每次只推进一个压力点。不要每回合都大爆发，安静、停顿、误导同样重要。',
       '不要写玩家心理，不要解释凶手计划，不要用上帝视角。只写玩家能看见、听见、摸到、闻到，或现场能直接判断的变化。',
       '语言像悬疑网文的收尾钩子，但保持现实主义：门锁、楼道灯、雨声、电表箱、手机冷光、猫眼、脚步距离。',
-      '必须查看 narrationContext.recentLog，避免复述最近两回合已经出现过的短信问法、敲门借口和具体句子。',
+      '只使用 narrationContext.confirmedFacts 和 stateSnapshot，不得借用未确认的旧叙事细节。',
       '每次 90 到 240 个中文字符。最后一句停在一个可观察压力点上。只输出 JSON：{"title":"...","text":"..."}。',
     ].join('\n');
   }
@@ -44,20 +44,25 @@ function systemPromptFor(mode: NarrationMode) {
     '每次回复 180 到 420 个中文字符。信息密度要高，每句话都提供新的现实变化或可操作线索。',
     '语言要求：具体、克制、现实主义。多写声音、光线、距离、位置、物体状态、他人行为和时间变化，少写形容词。',
     '结构要求：先写玩家动作造成的外部结果，再写环境/NPC/门窗/手机的新变化，最后停在一个现实可观察的压力点上；不要总结主题，不要升华。',
-    '必须查看 narrationContext.recentLog，避免复述最近两回合已经出现过的短信问法、敲门借口和具体句子。',
+    '只使用 narrationContext.confirmedFacts 和 stateSnapshot，不得借用未确认的旧叙事细节。',
     '只输出 JSON：{"title":"...","text":"..."}。',
   ].join('\n');
 }
 
-async function narrate(body: { context?: NarrationContext; playerResult: RuleResult; killerResult: RuleResult; state?: unknown }, mode: NarrationMode) {
-  const fallback =
-    mode === 'action'
-      ? createFallbackActionNarration(body.playerResult)
-      : mode === 'ambient'
-        ? createFallbackAmbientNarration(body.playerResult, body.killerResult)
-        : createFallbackNarration(body.playerResult, body.killerResult);
+async function narrate(body: { context: NarrationContext }, mode: NarrationMode) {
+  const context = NarrationContextSchema.parse(body.context) as NarrationContext;
+  const actionFallback = createFallbackActionNarrationFromConfirmedFacts(context);
+  const ambientFallback = createFallbackAmbientNarrationFromConfirmedFacts(context);
+  const fallback = mode === 'action'
+    ? actionFallback
+    : mode === 'ambient'
+      ? ambientFallback
+      : sanitizeNarration({
+          title: ambientFallback.title || actionFallback.title,
+          text: [actionFallback.text, ambientFallback.text].filter(Boolean).join('\n\n'),
+        });
 
-  const ai = await completeRoleJson('narrator', systemPromptFor(mode), { narrationContext: body.context }, { temperature: mode === 'mixed' ? 0.68 : 0.76 }).catch(() => null);
+  const ai = await completeRoleJson('narrator', systemPromptFor(mode), { narrationContext: context }, { temperature: mode === 'mixed' ? 0.68 : 0.76 }).catch(() => null);
 
   const parsed = NarrationSchema.safeParse(ai);
   return parsed.success ? sanitizeNarration(parsed.data) : fallback;
@@ -65,17 +70,17 @@ async function narrate(body: { context?: NarrationContext; playerResult: RuleRes
 
 export async function narrateRoute(app: FastifyInstance) {
   app.post('/api/narrate', async (request) => {
-    const body = request.body as { context?: NarrationContext; playerResult: RuleResult; killerResult: RuleResult; state?: unknown };
+    const body = request.body as { context: NarrationContext };
     return narrate(body, 'mixed');
   });
 
   app.post('/api/narrate-action', async (request) => {
-    const body = request.body as { context?: NarrationContext; playerResult: RuleResult; killerResult: RuleResult; state?: unknown };
+    const body = request.body as { context: NarrationContext };
     return narrate(body, 'action');
   });
 
   app.post('/api/narrate-ambient', async (request) => {
-    const body = request.body as { context?: NarrationContext; playerResult: RuleResult; killerResult: RuleResult; state?: unknown };
+    const body = request.body as { context: NarrationContext };
     return narrate(body, 'ambient');
   });
 }

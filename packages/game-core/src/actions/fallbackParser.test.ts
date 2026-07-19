@@ -39,6 +39,21 @@ describe('fallbackParseAction - 拍照 vs 录音 distinction', () => {
 });
 
 describe('fallbackParseAction - 复合动作分解', () => {
+  test('悄悄把门锁上 → secure_entry/front_door, not inspect/front_door', () => {
+    const result = fallbackParseAction('悄悄把门锁上');
+    expect(result.actions).toHaveLength(1);
+    expect(result.actions[0]).toMatchObject({ intent: 'secure_entry', target: 'front_door' });
+    expect(result.actions[0].noise).toBe(1);
+  });
+
+  test('悄悄把门锁上并翻找检查包裹 → secure_entry/front_door + inspect/package in order', () => {
+    const result = fallbackParseAction('悄悄把门锁上并翻找检查包裹');
+    expect(result.actions.map(a => [a.intent, a.target])).toEqual([
+      ['secure_entry', 'front_door'],
+      ['inspect', 'package'],
+    ]);
+  });
+
   test('给包裹拍照发给林越 → preserve_evidence + communicate/linyue', () => {
     const result = fallbackParseAction('我给包裹拍了照片，发送给林越');
     expect(result.actions.some(a => a.intent === 'preserve_evidence')).toBe(true);

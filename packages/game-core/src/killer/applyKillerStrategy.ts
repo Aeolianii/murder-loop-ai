@@ -3,6 +3,18 @@ import { cloneGameState } from '../state/createInitialState';
 import { event } from '../narration/buildNarrationContext';
 import { absorbReviveProtection, hasReviveProtection } from '../loop/reviveProtection';
 import { markEnding } from '../rules/endingRules';
+import type { DomainEvent, SimulationIntent } from '../domain/domainEvents';
+import {
+  buildKillerOutcomeDomainEvents,
+  buildKillerStrategyIntent,
+  confirmKillerStrategyIntent,
+  readKillerStrategyFromDomainEvent,
+} from '../domain/killerStrategyDomain';
+
+export interface KillerRuleResult extends RuleResult {
+  simulationIntents: SimulationIntent[];
+  domainEvents: DomainEvent[];
+}
 
 function pickVariant<T>(items: T[], seed: number) {
   return items[Math.abs(seed) % items.length];
@@ -27,7 +39,19 @@ function end(state: GameState, reason: NonNullable<GameState['endingReason']>, t
   return result;
 }
 
-export function applyKillerStrategy(current: GameState, strategy: KillerStrategy): RuleResult {
+export function applyKillerStrategy(current: GameState, strategy: KillerStrategy): KillerRuleResult {
+  const intent = buildKillerStrategyIntent(strategy, { run: current.run, minute: current.minute });
+  const confirmedEvent = confirmKillerStrategyIntent(current, intent);
+  const result = applyKillerStrategyDomainEvent(current, confirmedEvent);
+  return {
+    ...result,
+    simulationIntents: [intent],
+    domainEvents: buildKillerOutcomeDomainEvents(confirmedEvent, current, result.state),
+  };
+}
+
+export function applyKillerStrategyDomainEvent(current: GameState, domainEvent: DomainEvent): RuleResult {
+  const strategy = readKillerStrategyFromDomainEvent(domainEvent);
   const state = cloneGameState(current);
   let title = strategy.title;
   let text = '门外暂时没有新的可见动作；楼道里的底噪仍压在门缝外。';
@@ -57,10 +81,10 @@ export function applyKillerStrategy(current: GameState, strategy: KillerStrategy
 
   switch (strategy.type) {
     case 'phone_probe':
-      text = pickVariant([
-        '陌生号码发来房东名义的信息，询问是否睡着、是否看见快递。',
+      text = strategy.responseHint || pickVariant([
+        '陌生号码发来房东名义的信息：“沈小姐，睡了吗？门口那个快递你看见没有？”',
         '陌生号码只发来一句：“门口那个包裹你拿进去了吗？”发送时间卡在这一分钟。',
-        '手机屏幕亮起，陌生号码没有自报姓名，只说房东让他确认 503 门口的快递。',
+        '手机屏幕亮起，陌生号码没有自报姓名：“房东让我确认一下，503 门口那个快递还在吗？”',
       ], state.minute);
       state.killerPhase = 'soft_pressure';
       break;
@@ -114,7 +138,7 @@ export function applyKillerStrategy(current: GameState, strategy: KillerStrategy
       break;
     case 'framing_pressure':
       state.killerPhase = 'framing';
-      text = '陌生号码开始用“私藏违禁品”的后果施压，逼我把包裹交出去或开门解释。';
+      text = strategy.responseHint || '陌生号码开始施压：“那个纸箱不是你的。别给自己惹麻烦，把它放回门口。”';
       break;
     case 'power_cut':
       // 不再使用电表箱——改用更直接的压力

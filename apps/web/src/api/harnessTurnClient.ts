@@ -11,14 +11,9 @@ export interface HarnessTurnResponse extends Partial<FrontendGameState> {
   };
 }
 
-export interface HarnessTurnOptions {
-  advanceWorldTick?: boolean;
-}
-
 export async function postHarnessTurn(
   input: string,
   state: unknown,
-  options: HarnessTurnOptions = {},
 ): Promise<HarnessTurnResponse> {
   const response = await fetch('/api/harness/turn', {
     method: 'POST',
@@ -26,7 +21,6 @@ export async function postHarnessTurn(
     body: JSON.stringify({
       input,
       state,
-      ...(options.advanceWorldTick ? { debug: { advanceWorldTick: true } } : {}),
     }),
   });
   if (!response.ok) throw new Error(`harness turn failed: ${response.status}`);

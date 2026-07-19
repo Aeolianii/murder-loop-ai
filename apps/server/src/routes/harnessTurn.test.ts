@@ -5,6 +5,16 @@ import type { ActionAudioCue, ActionPlan, GameState, KillerStrategy, Narration, 
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy } from '../ai/turnCoordinator';
 import { harnessTurnRoute } from './harnessTurn';
 
+function registerTestHarnessRoute(
+  app: ReturnType<typeof Fastify>,
+  options: NonNullable<Parameters<typeof harnessTurnRoute>[1]>,
+) {
+  return app.register(harnessTurnRoute, {
+    selectActionAudioCue: async () => null,
+    ...options,
+  });
+}
+
 type HarnessTurnResolution = TurnResolution & {
   coordination: {
     warnings: string[];
@@ -148,7 +158,7 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
     source: 'ai',
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async (input: string, state: GameState) => {
@@ -202,7 +212,7 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
 async function testDefaultHarnessRouteReturnsDispatcherTrace() {
   const app = Fastify({ logger: false });
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({ aiAdapters: {} }),
   });
 
@@ -269,7 +279,7 @@ async function testDefaultHarnessRouteInjectsAiAdapters() {
     text: 'The hallway stays quiet for another breath.',
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => aiPlan,
@@ -281,7 +291,6 @@ async function testDefaultHarnessRouteInjectsAiAdapters() {
         warnings: ['adapter factory used'],
         judgements: {
           facts: { source: 'test' },
-          directorScores: [],
         },
       },
     }),
@@ -308,7 +317,7 @@ async function testDefaultHarnessRouteInjectsAiAdapters() {
   await app.close();
 }
 
-async function testDebugAdvanceWorldTickEnablesWorldTickForRoute() {
+async function testWorldTickRunsAsProductCapabilityForRoute() {
   const app = Fastify({ logger: false });
   const createState = (): GameState => {
     const worldState = createInitialWorldState();
@@ -352,7 +361,7 @@ async function testDebugAdvanceWorldTickEnablesWorldTickForRoute() {
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => aiPlan,
@@ -373,7 +382,7 @@ async function testDebugAdvanceWorldTickEnablesWorldTickForRoute() {
           text: 'The corridor outside tightens around the new evidence.',
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -390,32 +399,16 @@ async function testDebugAdvanceWorldTickEnablesWorldTickForRoute() {
   const defaultBody = defaultResponse.json();
   assert.equal(
     defaultBody.coreState.world.events.some((event: { id: string }) => event.id === 'conflict.chen_intercepts_linyue'),
-    false,
-    'World tick should stay disabled unless debug.advanceWorldTick is true',
+    true,
+    'World tick should advance as a normal product capability',
   );
-  assert.deepEqual(defaultBody.worldTickTrace, []);
+  assert.ok(defaultBody.worldTickTrace.some((event: { id: string }) => event.id === 'conflict.chen_intercepts_linyue'));
 
-  const response = await app.inject({
-    method: 'POST',
-    url: '/api/harness/turn',
-    payload: {
-      input: 'photograph the package and send it to Lin Yue',
-      state: createState(),
-      debug: { advanceWorldTick: true },
-    },
-  });
-
-  assert.equal(response.statusCode, 200);
-  const body = response.json();
-  assert.ok(
-    body.coreState.world.events.some((event: { id: string }) => event.id === 'conflict.chen_intercepts_linyue'),
-    'debug.advanceWorldTick should advance the World once after player inputs',
-  );
-  const tickEventIds = body.worldTickTrace.map((event: { id: string }) => event.id);
+  const tickEventIds = defaultBody.worldTickTrace.map((event: { id: string }) => event.id);
   assert.ok(tickEventIds.includes('conflict.chen_intercepts_linyue'));
   assert.equal(tickEventIds.some((id: string) => id.startsWith('input.')), false);
   assert.notEqual(
-    body.coreState.linYuePhase,
+    defaultBody.coreState.linYuePhase,
     'endangered',
     'World tick should not write back into legacy GameState fields yet',
   );
@@ -446,7 +439,7 @@ async function testFatalNarrationIsOnlyAProposal() {
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => aiPlan,
@@ -468,7 +461,7 @@ async function testFatalNarrationIsOnlyAProposal() {
           text: 'The hallway stays quiet for another breath.',
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -517,7 +510,7 @@ async function testNarratedEscapeEndingIsOnlyAProposalEvenWhenPlausible() {
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => escapePlan,
@@ -539,7 +532,7 @@ async function testNarratedEscapeEndingIsOnlyAProposalEvenWhenPlausible() {
           text: '雨点追着你落下去，楼上的声控灯没有再亮。',
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -583,7 +576,7 @@ async function testNarratedEscapeEndingIsRejectedWhenOnlyPlayerClaimsIt() {
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => bluffPlan,
@@ -605,7 +598,7 @@ async function testNarratedEscapeEndingIsRejectedWhenOnlyPlayerClaimsIt() {
           text: '楼道里没有传来你期待中的远离声，只有雨声贴着窗。',
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -649,7 +642,7 @@ async function testThreatEventsDoNotBecomeDynamicCluesWithoutExplicitEvidence() 
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => inspectPlan,
@@ -670,7 +663,7 @@ async function testThreatEventsDoNotBecomeDynamicCluesWithoutExplicitEvidence() 
           text: '楼道声控灯灭了又亮，雨声盖住了更多细节。',
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -717,7 +710,7 @@ async function testNarrationClueIsAcceptedOnlyWhenVisibleTextExplicitlyMentionsI
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => inspectPlan,
@@ -744,7 +737,7 @@ async function testNarrationClueIsAcceptedOnlyWhenVisibleTextExplicitlyMentionsI
           text: '门外没有再敲，只有雨声贴着窗沿滑下去。',
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -790,7 +783,7 @@ async function testNarrationClueIsRejectedWhenVisibleTextDoesNotExplicitlyMentio
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => inspectPlan,
@@ -817,7 +810,7 @@ async function testNarrationClueIsRejectedWhenVisibleTextDoesNotExplicitlyMentio
           text: '声控灯暗下去，门外那层楼像重新沉进黑里。',
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -863,7 +856,7 @@ async function testContradictoryPaperNoteCluesAreDeduped() {
     warnings: [],
   };
 
-  await app.register(harnessTurnRoute, {
+  await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
       aiAdapters: {
         parseAction: async () => inspectPlan,
@@ -896,7 +889,7 @@ async function testContradictoryPaperNoteCluesAreDeduped() {
           },
         }),
       },
-      coordination: { warnings: [], judgements: { facts: {}, directorScores: [] } },
+      coordination: { warnings: [], judgements: { facts: {} } },
     }),
   });
 
@@ -989,7 +982,7 @@ function testKillerStrategyVerifierDoesNotDowngradeAiOutput() {
 await testHarnessTurnRouteReturnsFrontendPackage();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
-await testDebugAdvanceWorldTickEnablesWorldTickForRoute();
+await testWorldTickRunsAsProductCapabilityForRoute();
 await testFatalNarrationIsOnlyAProposal();
 await testNarratedEscapeEndingIsOnlyAProposalEvenWhenPlausible();
 await testNarratedEscapeEndingIsRejectedWhenOnlyPlayerClaimsIt();

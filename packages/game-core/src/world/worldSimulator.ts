@@ -82,6 +82,7 @@ export function createInitialWorldState(): WorldState {
       fake_police: knowledge(),
     },
     events: [],
+    narrationCursor: 0,
     pendingNarration: [],
     consumedNarrationEventIds: [],
     affectedCharacters: [],
@@ -169,7 +170,7 @@ function movementEvents(state: WorldState): WorldEvent[] {
     const canMove = state.locations[from].neighbors.includes(actor.destination);
     if (!canMove) {
       events.push({
-        id: `movement.${actor.id}.blocked`,
+        id: `movement.${actor.id}.blocked.${actor.destination}.at.${state.minute}`,
         minute: state.minute,
         type: 'movement',
         actors: [actor.id],
@@ -189,7 +190,7 @@ function movementEvents(state: WorldState): WorldEvent[] {
     }
 
     events.push({
-      id: `movement.${actor.id}.to.${actor.destination}`,
+      id: `movement.${actor.id}.from.${from}.to.${actor.destination}.at.${state.minute}`,
       minute: state.minute,
       type: 'movement',
       actors: [actor.id],
@@ -221,6 +222,7 @@ function movementEvents(state: WorldState): WorldEvent[] {
 }
 
 function realPoliceMeetsFakePolice(state: WorldState): WorldEvent | null {
+  if (state.events.some((event) => event.id === 'encounter.real_police_meets_fake_police')) return null;
   const realPolice = state.characters.real_police;
   const fakePolice = state.characters.fake_police;
   if (realPolice.location !== fakePolice.location) return null;
@@ -264,6 +266,7 @@ function realPoliceMeetsFakePolice(state: WorldState): WorldEvent | null {
 }
 
 function chenInterceptsLinYue(state: WorldState): WorldEvent | null {
+  if (state.events.some((event) => event.id === 'conflict.chen_intercepts_linyue')) return null;
   const chen = state.characters.chen_huaimin;
   const linYue = state.characters.lin_yue;
   const linYueHasPhoto = Boolean(state.knowledge.lin_yue.facts.package_photo);
@@ -344,6 +347,7 @@ function replanAffectedCharacters(state: WorldState, affectedCharacters: Charact
 
 function applyEvents(state: WorldState, events: WorldEvent[]) {
   for (const event of events) {
+    if (state.events.some((existing) => existing.id === event.id)) continue;
     state.events.push(event);
     state.pendingNarration.push(event);
     const affected = applyEventEffects(state, event);
@@ -354,8 +358,7 @@ function applyEvents(state: WorldState, events: WorldEvent[]) {
 export async function advanceWorldTick(current: WorldState, npcAdapter?: NpcAdapter): Promise<WorldState> {
   const state = structuredClone(current) as WorldState;
   state.minute += 1;
-  state.pendingNarration = [];
-  state.affectedCharacters = [];
+  state.affectedCharacters = uniqueCharacters(state.affectedCharacters);
   applyEvents(state, movementEvents(state));
   applyEvents(state, detectWorldEvents(state));
   const coordinator = new NpcCoordinator(npcAdapter ?? null);
@@ -365,11 +368,11 @@ export async function advanceWorldTick(current: WorldState, npcAdapter?: NpcAdap
 export function advanceWorldTickSync(current: WorldState): WorldState {
   const state = structuredClone(current) as WorldState;
   state.minute += 1;
-  state.pendingNarration = [];
-  state.affectedCharacters = [];
+  state.affectedCharacters = uniqueCharacters(state.affectedCharacters);
   applyEvents(state, movementEvents(state));
   applyEvents(state, detectWorldEvents(state));
   replanAffectedCharacters(state, state.affectedCharacters);
+  state.affectedCharacters = [];
   return state;
 }
 

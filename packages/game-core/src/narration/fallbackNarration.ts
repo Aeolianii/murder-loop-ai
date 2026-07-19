@@ -1,4 +1,4 @@
-import type { Narration, RuleResult } from '@murder-loop-ai/shared';
+import type { Narration, NarrationContext, RuleResult } from '@murder-loop-ai/shared';
 import { clueBook } from '@murder-loop-ai/content';
 
 function normalizeForCompare(text: string) {
@@ -107,5 +107,31 @@ export function createFallbackAmbientNarration(ambientResult: RuleResult, killer
   return sanitizeNarration({
     title: killerResult.tone === 'death' ? killerResult.title : killerResult.title || ambientResult.title,
     text: polishRuleText(eventText || '电子钟往前跳了一格。楼道、电器底噪和雨声还在变化，门外的安静没有离开这一层。'),
+  });
+}
+
+export function createFallbackActionNarrationFromConfirmedFacts(context: NarrationContext): Narration {
+  const text = context.confirmedFacts
+    .filter((fact) => fact.origin === 'player' || fact.origin === 'rule')
+    .map((fact) => fact.summary)
+    .filter((summary) => Boolean(summary) && !isSystemLikeSummary(summary))
+    .slice(0, 5)
+    .join('\n');
+  return sanitizeNarration({
+    title: context.confirmedTitles.action || '行动结果',
+    text: polishRuleText(text || '这个动作暂时没有改变可确认的关键事实。'),
+  });
+}
+
+export function createFallbackAmbientNarrationFromConfirmedFacts(context: NarrationContext): Narration {
+  const text = context.confirmedFacts
+    .filter((fact) => fact.origin === 'killer' || fact.origin === 'world')
+    .map((fact) => fact.summary)
+    .filter((summary) => Boolean(summary) && !isSystemLikeSummary(summary))
+    .slice(0, 5)
+    .join('\n');
+  return sanitizeNarration({
+    title: context.confirmedTitles.ambient || '环境变化',
+    text: polishRuleText(text || '电子钟继续向前，暂时没有新的可确认外部变化。'),
   });
 }

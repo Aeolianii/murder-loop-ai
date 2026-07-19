@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Narration, NarrationContext, RuleResult, GameState } from '@murder-loop-ai/shared';
+import type { Narration, NarrationContext } from '@murder-loop-ai/shared';
 import { completeRoleJson } from './openaiClient';
 import { heuristicDirectorScore, type DirectorScore } from './turnCoordinator';
 
@@ -25,16 +25,13 @@ export async function scoreNarrationWithDirector(options: {
   slot: DirectorScore['slot'];
   narration: Narration;
   context: NarrationContext;
-  playerResult: RuleResult;
-  killerResult: RuleResult;
-  state: GameState;
 }): Promise<DirectorScore> {
   const heuristic = heuristicDirectorScore(options.narration, options.slot, contextSummary(options.context));
 
   const ai = await completeRoleJson(
     'recap',
     [
-      '你是《23:47》的剧情导演评分器，不写正文，只审稿。',
+      '你是《23:47》的异步叙事 Critic，不写正文，只做开发诊断。',
       '你要判断一段叙事是否适合互动悬疑游戏：节奏是否好、是否泄露信息、是否违反规则事实、文笔是否有吸引力。',
       '评分维度：pace 节奏/钩子；infoSafety 信息边界与无剧透；ruleConsistency 是否只使用事件事实；prose 文笔与画面感。',
       '如果出现开发词、内部 id、schema、系统判定、规则数值、上帝视角、替玩家悟出真相，必须扣重分并要求 rewrite。',

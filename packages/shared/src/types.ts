@@ -237,8 +237,6 @@ export interface GameState {
   reviveProtectionTurns?: number;
   /** Hidden resolver: once real police are confirmed, the background minute when they arrive. */
   policeArrivalMinute?: number;
-  /** Plot Director 生成的剧情指导——下一回合注入给叙事/杀手 AI */
-  plotGuidance?: string;
   /** Optional Behavior Network snapshot while legacy GameState remains authoritative. */
   world?: WorldState;
 }
@@ -276,14 +274,38 @@ export interface CombatContext {
   advantage: 'player' | 'killer' | 'mutual';
 }
 
+export interface ConfirmedNarrationFact {
+  id: string;
+  origin: 'player' | 'killer' | 'world' | 'rule';
+  type: string;
+  subject: string;
+  summary: string;
+  facts: string[];
+  visibility: 'player' | 'public';
+  causationId?: string;
+}
+
+export interface ConfirmedWorldNarrationEvent {
+  id: string;
+  minute: number;
+  type: WorldEvent['type'];
+  actors: WorldEvent['actors'];
+  location?: WorldEvent['location'];
+  facts: string[];
+  visibility: 'player' | 'public';
+  narrationHint?: string;
+}
+
 export interface NarrationContext {
   run: number;
   minute: number;
   turnIndex: number;
   playerActionSummary: string;
-  /** 玩家原始输入——叙事 AI 用它核对动作，防止跑题 */
-  playerInput?: string;
   events: RuleEvent[];
+  /** Player-visible facts confirmed by the rule kernel or world simulator. */
+  confirmedFacts: ConfirmedNarrationFact[];
+  /** Deterministic titles may guide presentation but carry no state authority. */
+  confirmedTitles: { action: string; ambient: string };
   stateSnapshot: {
     phase: GamePhase;
     killerPhase: KillerPhase;
@@ -303,7 +325,6 @@ export interface NarrationContext {
     playerHolding: string | null;
     combatTriggered: boolean;
   };
-  recentLog: Array<Pick<StoryLogEntry, 'minute' | 'title' | 'text' | 'channel'>>;
   /** AI 生成线索时的参考：已有线索标题列表 */
   knownClueTitles: string[];
   /** 战斗上下文（仅在 combatTriggered 时提供） */
@@ -312,12 +333,8 @@ export interface NarrationContext {
   plotPhase: string;
   /** 玩家处境摘要 */
   playerSituation: string;
-  /** Structured memory visible to narration only; rules and endings must ignore it. */
-  memorySummary?: string[];
   /** Confirmed Behavior Network events visible to narration only; these are read-only facts. */
-  confirmedWorldEvents?: WorldEvent[];
-  /** Selected world facts for this turn. These are context only, not rule authority. */
-  worldInfo?: Array<{ id: string; title: string; content: string; tags: string[]; priority: number }>;
+  confirmedWorldEvents?: ConfirmedWorldNarrationEvent[];
   forbiddenFacts: string[];
   styleGuide: string[];
 }
