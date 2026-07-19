@@ -186,6 +186,7 @@ assert.equal(arbitrationMetrics.permissionLeakCount, 1);
 assert.equal(arbitrationMetrics.specialistReplacementRate, 1 / 3);
 assert.equal(arbitrationMetrics.fallbackRate, 1 / 3);
 assert.equal(arbitrationMetrics.highRiskDecisions.defer, 1);
+assert.equal(arbitrationMetrics.highRiskDecisions.pass, 0, 'reversible events are not high-risk metrics');
 
 const deathDecision = report.highRiskDecisions.find((item) => item.eventId === 'event.shadow.killer_death_claim');
 assert.equal(deathDecision?.decision, 'defer');
@@ -221,6 +222,92 @@ assert(differences.items.some((item) => item.kind === 'legacy_only'));
 assert.equal(differences.items.every((item) => item.explanation.length > 0), true);
 assert.equal(differences.unexplainedCount, 0);
 
+const factMismatch = compareShadowWithLegacy(
+  runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [proposal({
+      id: 'proposal.fact-mismatch',
+      sourceAgent: 'main-world-model',
+      domain: 'player',
+      events: [{
+        ...proposedEvent('event.fact-mismatch', 'inspection_completed'),
+        subject: 'package',
+        facts: ['package_exterior_seen'],
+      }],
+    })],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    sourcePolicies: {
+      'main-world-model': { allowedDomains: ['player'], authorizedFactIds: [] },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  }),
+  [{
+    id: 'legacy.fact-mismatch',
+    eventType: 'inspection_completed',
+    subject: 'package',
+    facts: ['package_interior_seen'],
+  }],
+);
+assert.equal(factMismatch.items.length, 2, 'same event shell with different facts must remain visible in the diff');
+
+{
+  const unsafeClue = proposal({
+    id: 'proposal.unsafe-clue',
+    sourceAgent: 'main-world-model',
+    domain: 'clue',
+    events: [proposedEvent('event.unsafe-clue', 'clue_discovered')],
+  });
+  unsafeClue.observations = [{
+    id: 'observation.unsafe',
+    subject: 'package',
+    predicate: 'contains',
+    value: 'secret-note',
+    scope: 'interior',
+    basedOnEffectIds: ['effect.missing'],
+  }];
+  unsafeClue.clueCandidates = [{
+    id: 'clue.unsafe',
+    claims: ['package_contains_secret_note'],
+    basedOnObservationIds: ['observation.unsafe'],
+    visibleFactIds: ['fact.killer.private_memory'],
+    confidence: 0.9,
+  }];
+  unsafeClue.displayFragments[0].claimRefs = ['fact.killer.private_memory'];
+  unsafeClue.proposedEvents[0].visibility = ['hidden'];
+  unsafeClue.recommendations = [{
+    id: 'recommendation.unsafe',
+    label: 'Use hidden knowledge',
+    rationale: 'A hidden event said so.',
+    basedOnEventIds: [unsafeClue.proposedEvents[0].id],
+  }];
+
+  const unsafeReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [unsafeClue],
+    specialistCandidates: [],
+    requiredDomains: ['clue'],
+    sourcePolicies: {
+      'main-world-model': { allowedDomains: ['clue'], authorizedFactIds: [] },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  const rejection = unsafeReport.rejectedProposals.find((item) => item.proposalId === unsafeClue.id);
+  assert(rejection?.reasonCodes.includes('observation_effect_reference_invalid'));
+  assert(rejection?.reasonCodes.includes('clue_visible_fact_unauthorized'));
+  assert(rejection?.reasonCodes.includes('recommendation_source_missing'));
+  assert(rejection?.reasonCodes.includes('display_claim_reference_invalid'));
+  assert.deepEqual(unsafeReport.transition.fallbackDomains, ['clue']);
+}
+
 {
   const attack = proposedEvent(
     'event.shadow.attack',
@@ -241,4 +328,30 @@ assert.equal(differences.unexplainedCount, 0);
   );
   assert.equal(decisions.find((item) => item.eventId === attack.id)?.decision, 'pass');
   assert.equal(decisions.find((item) => item.eventId === death.id)?.decision, 'pass');
+}
+
+{
+  const rejectedAttack = proposedEvent(
+    'event.shadow.rejected-attack',
+    'attack_confirmed',
+    'high_impact',
+    ['invariant.missing'],
+  );
+  const dependentDeath = proposedEvent(
+    'event.shadow.dependent-death',
+    'ending_reached',
+    'irreversible',
+    [rejectedAttack.id],
+    [rejectedAttack.id],
+  );
+  const decisions = evaluateShadowHighRiskGate(
+    [rejectedAttack, dependentDeath],
+    new Set(),
+  );
+  assert.equal(decisions.find((item) => item.eventId === rejectedAttack.id)?.decision, 'reject');
+  assert.equal(decisions.find((item) => item.eventId === dependentDeath.id)?.decision, 'reject');
+  assert(
+    decisions.find((item) => item.eventId === dependentDeath.id)
+      ?.reasonCodes.includes('causal_parent_not_approved'),
+  );
 }

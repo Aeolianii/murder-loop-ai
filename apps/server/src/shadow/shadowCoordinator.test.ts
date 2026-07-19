@@ -184,3 +184,62 @@ const unavailableCoordinator = createShadowRunCoordinator({
 const unavailableSession = unavailableCoordinator.start({ rawInput: 'wait', state });
 await unavailableCoordinator.complete(unavailableSession, resolution);
 assert.equal(unavailableStore.get('shadow-unavailable')?.payload?.kind, 'compiler_unavailable');
+
+let latestFinalizeInput: FinalizeShadowRunInput | undefined;
+let nextId = 0;
+const latestCoordinator = createShadowRunCoordinator({
+  adapters: {
+    semanticCompiler: { compile: async () => { throw new Error('unused test adapter'); } },
+    mainWorldModel: async () => ({ proposals: [] }),
+    specialists: [],
+  },
+  store: new ShadowReportStore(3),
+  createTurnId: () => `shadow-latest-${nextId += 1}`,
+  runCandidateWave: async (input) => ({
+    status: 'completed',
+    envelope: input.envelope,
+    semantic: { status: 'compiled', durationMs: 1, issues: [] },
+    mainProposals: [],
+    specialistCandidates: [],
+    callRecords: [],
+    completedAt: new Date(),
+  } as ShadowCandidateWave),
+  finalize: (input) => {
+    latestFinalizeInput = input;
+    return report;
+  },
+});
+const oldLoopSession = latestCoordinator.start({ rawInput: 'wait', state });
+latestCoordinator.start({ rawInput: 'new loop', state: { ...state, run: state.run + 1 } });
+await latestCoordinator.complete(oldLoopSession, resolution);
+assert.equal(
+  latestFinalizeInput?.current.loopId,
+  `legacy-run-${state.run + 1}`,
+  'late Shadow completion must be compared with the latest observed loop',
+);
+
+nextId = 0;
+const evictionCoordinator = createShadowRunCoordinator({
+  adapters: {
+    semanticCompiler: { compile: async () => { throw new Error('unused test adapter'); } },
+    mainWorldModel: async () => ({ proposals: [] }),
+    specialists: [],
+  },
+  store: new ShadowReportStore(1),
+  createTurnId: () => `shadow-evicted-${nextId += 1}`,
+  runCandidateWave: async (input) => ({
+    status: 'compiler_unavailable',
+    envelope: input.envelope,
+    semantic: { status: 'clarification_required', durationMs: 1, issues: ['clarify'] },
+    mainProposals: [],
+    specialistCandidates: [],
+    callRecords: [],
+    completedAt: new Date(),
+  }),
+});
+const evictedSession = evictionCoordinator.start({ rawInput: 'old', state });
+evictionCoordinator.start({ rawInput: 'new', state });
+await assert.doesNotReject(
+  () => evictionCoordinator.complete(evictedSession, resolution),
+  'report eviction must not create an unhandled background rejection',
+);

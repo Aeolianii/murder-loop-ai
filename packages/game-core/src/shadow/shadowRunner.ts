@@ -127,11 +127,16 @@ export interface ShadowRunReport {
   metrics: ShadowRunMetrics;
   replay: {
     envelope: TurnEnvelope;
+    semantic: ShadowSemanticRecord;
     turnBrief: TurnBrief;
     mainProposals: Proposal[];
     specialistCandidates: SpecialistCandidate[];
+    callRecords: ShadowCandidateCallRecord[];
     arbitration: ShadowArbiterReport;
+    legacyPlan: ActionPlan;
     legacyEvents: LegacyEventSnapshot[];
+    current: TurnFreshnessSnapshot;
+    completedAt: string;
   };
 }
 
@@ -304,11 +309,19 @@ export function finalizeShadowRun(input: FinalizeShadowRunInput): ShadowRunRepor
     },
     replay: {
       envelope: input.wave.envelope,
+      semantic: input.wave.semantic,
       turnBrief: input.wave.turnBrief,
       mainProposals: input.wave.mainProposals,
       specialistCandidates: input.wave.specialistCandidates,
+      callRecords: input.wave.callRecords,
       arbitration: input.wave.arbitration,
+      legacyPlan: input.legacyPlan,
       legacyEvents: input.legacyEvents,
+      current: {
+        ...input.current,
+        committedTurnIds: [...input.current.committedTurnIds],
+      },
+      completedAt: input.wave.completedAt.toISOString(),
     },
   };
 }

@@ -170,60 +170,118 @@ export function evaluateShadowHighRiskGate(
   events: ProposedEvent[],
   availableEvidenceRefs: Set<string>,
 ): HighRiskDecision[] {
-  const acceptedEventIds = new Set(events.map((event) => event.id));
-  return events.map((event) => {
-    if (event.riskClass === 'reversible') {
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const decisions = new Map<string, HighRiskDecision>();
+  const evaluating = new Set<string>();
+
+  const decide = (event: ProposedEvent): HighRiskDecision => {
+    const existing = decisions.get(event.id);
+    if (existing) return existing;
+    if (evaluating.has(event.id)) {
       return {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: event.evidenceRefs,
+        decision: 'reject',
+        reasonCodes: ['causal_chain_cycle'],
+      };
+    }
+    if (event.riskClass === 'reversible') {
+      const decision: HighRiskDecision = {
         eventId: event.id,
         riskClass: event.riskClass,
         evidenceRefs: event.evidenceRefs,
         decision: 'pass',
         reasonCodes: ['reversible_event'],
       };
+      decisions.set(event.id, decision);
+      return decision;
     }
 
-    const missingParents = event.causalParentIds.filter((id) => !acceptedEventIds.has(id));
+    evaluating.add(event.id);
+    const missingParents = event.causalParentIds.filter((id) => !eventsById.has(id));
     if (missingParents.length > 0) {
-      return {
+      const decision: HighRiskDecision = {
         eventId: event.id,
         riskClass: event.riskClass,
         evidenceRefs: event.evidenceRefs,
         decision: 'reject',
         reasonCodes: ['causal_chain_incomplete'],
       };
+      evaluating.delete(event.id);
+      decisions.set(event.id, decision);
+      return decision;
+    }
+
+    const parentDecisions = event.causalParentIds.map((id) => decide(eventsById.get(id)!));
+    if (parentDecisions.some((decision) => decision.decision === 'reject')) {
+      const decision: HighRiskDecision = {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: event.evidenceRefs,
+        decision: 'reject',
+        reasonCodes: ['causal_parent_not_approved'],
+      };
+      evaluating.delete(event.id);
+      decisions.set(event.id, decision);
+      return decision;
+    }
+    if (parentDecisions.some((decision) => decision.decision === 'defer')) {
+      const decision: HighRiskDecision = {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: event.evidenceRefs,
+        decision: 'defer',
+        reasonCodes: ['causal_parent_deferred'],
+      };
+      evaluating.delete(event.id);
+      decisions.set(event.id, decision);
+      return decision;
     }
 
     if (event.evidenceRefs.length === 0) {
-      return {
+      const decision: HighRiskDecision = {
         eventId: event.id,
         riskClass: event.riskClass,
         evidenceRefs: [],
         decision: 'defer',
         reasonCodes: ['deterministic_evidence_missing'],
       };
+      evaluating.delete(event.id);
+      decisions.set(event.id, decision);
+      return decision;
     }
 
     const invalidEvidence = event.evidenceRefs.filter((ref) => (
-      !availableEvidenceRefs.has(ref) && !acceptedEventIds.has(ref)
+      !availableEvidenceRefs.has(ref)
+      && (!eventsById.has(ref) || decide(eventsById.get(ref)!).decision !== 'pass')
     ));
     if (invalidEvidence.length > 0) {
-      return {
+      const decision: HighRiskDecision = {
         eventId: event.id,
         riskClass: event.riskClass,
         evidenceRefs: event.evidenceRefs,
         decision: 'reject',
         reasonCodes: ['evidence_reference_invalid'],
       };
+      evaluating.delete(event.id);
+      decisions.set(event.id, decision);
+      return decision;
     }
 
-    return {
+    const decision: HighRiskDecision = {
       eventId: event.id,
       riskClass: event.riskClass,
       evidenceRefs: event.evidenceRefs,
       decision: 'pass',
       reasonCodes: ['causal_chain_complete', 'deterministic_evidence_present'],
     };
-  });
+    evaluating.delete(event.id);
+    decisions.set(event.id, decision);
+    return decision;
+  };
+
+  return events.map(decide);
 }
 
 export function simulateShadowCommit(input: SimulateShadowCommitInput): SimulatedShadowCommit {
@@ -305,6 +363,7 @@ export function buildShadowArbitrationMetrics(
   const selectedSources = Object.values(report.transition.selectedSourceByDomain);
   const domainCount = selectedSources.length + report.transition.fallbackDomains.length;
   const specialistSelections = selectedSources.filter((source) => source !== 'main-world-model').length;
+  const highRiskDecisions = report.highRiskDecisions.filter((decision) => decision.riskClass !== 'reversible');
   return {
     schemaSuccessRate: schemaAttempts > 0 ? schemaSuccesses / schemaAttempts : 1,
     permissionLeakCount: report.rejectedProposals.filter((proposal) => (
@@ -315,9 +374,9 @@ export function buildShadowArbitrationMetrics(
     specialistReplacementRate: domainCount > 0 ? specialistSelections / domainCount : 0,
     fallbackRate: domainCount > 0 ? report.transition.fallbackDomains.length / domainCount : 0,
     highRiskDecisions: {
-      pass: report.highRiskDecisions.filter((decision) => decision.decision === 'pass').length,
-      defer: report.highRiskDecisions.filter((decision) => decision.decision === 'defer').length,
-      reject: report.highRiskDecisions.filter((decision) => decision.decision === 'reject').length,
+      pass: highRiskDecisions.filter((decision) => decision.decision === 'pass').length,
+      defer: highRiskDecisions.filter((decision) => decision.decision === 'defer').length,
+      reject: highRiskDecisions.filter((decision) => decision.decision === 'reject').length,
     },
   };
 }
@@ -388,9 +447,23 @@ function validateProposal(
   }
 
   const proposedEventIds = new Set(proposal.proposedEvents.map((event) => event.id));
+  const proposedEffectIds = new Set(proposal.proposedEffects.map((effect) => effect.id));
+  if (proposal.observations.some((observation) => (
+    observation.basedOnEffectIds.some((id) => !proposedEffectIds.has(id))
+  ))) {
+    reasons.add('observation_effect_reference_invalid');
+  }
+  if (proposal.clueCandidates.some((clue) => (
+    clue.visibleFactIds.some((id) => !authorizedFacts.has(id))
+  ))) {
+    reasons.add('clue_visible_fact_unauthorized');
+  }
+  const visibleProposedEventIds = new Set(proposal.proposedEvents
+    .filter((event) => event.visibility.includes('player') || event.visibility.includes('public'))
+    .map((event) => event.id));
   if (proposal.recommendations.some((recommendation) => (
     recommendation.basedOnEventIds.some((id) => (
-      !input.visibleConfirmedEventIds.includes(id) && !proposedEventIds.has(id)
+      !input.visibleConfirmedEventIds.includes(id) && !visibleProposedEventIds.has(id)
     ))
   ))) {
     reasons.add('recommendation_source_missing');
@@ -400,6 +473,16 @@ function validateProposal(
     || fragment.eventRefs.some((id) => !proposedEventIds.has(id))
   ))) {
     reasons.add('display_event_reference_invalid');
+  }
+  const displayClaimRefs = new Set([
+    ...proposal.proposedEvents.flatMap((event) => event.facts),
+    ...proposal.clueCandidates.flatMap((clue) => clue.claims),
+  ]);
+  if (proposal.displayFragments.some((fragment) => (
+    fragment.claimRefs.length === 0
+    || fragment.claimRefs.some((id) => !displayClaimRefs.has(id))
+  ))) {
+    reasons.add('display_claim_reference_invalid');
   }
 
   return [...reasons];
@@ -422,5 +505,8 @@ function byCandidateRank(left: Proposal, right: Proposal): number {
 }
 
 function eventKey(event: { eventType: string; subject: string }): string {
-  return `${event.eventType}:${event.subject}`;
+  const facts = 'facts' in event && Array.isArray(event.facts)
+    ? [...event.facts].sort().join('|')
+    : '';
+  return `${event.eventType}:${event.subject}:${facts}`;
 }

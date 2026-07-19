@@ -54,6 +54,12 @@ export function createShadowRunCoordinator(
   const createTurnId = options.createTurnId ?? (() => `shadow-${randomUUID()}`);
   const runCandidateWave = options.runCandidateWave ?? runShadowCandidateWave;
   const finalize = options.finalize ?? finalizeShadowRun;
+  let latestObserved: {
+    run: number;
+    loopId: string;
+    stateVersion: number;
+    committedTurnIds: string[];
+  } | undefined;
 
   return {
     start({ rawInput, state }) {
@@ -64,6 +70,19 @@ export function createShadowRunCoordinator(
         inputStateVersion: deriveLegacyShadowStateVersion(state),
         deadlineAt: new Date(startedAt.getTime() + deadlineMs).toISOString(),
       };
+      const observedVersion = deriveLegacyShadowStateVersion(state);
+      if (
+        !latestObserved
+        || state.run > latestObserved.run
+        || (state.run === latestObserved.run && observedVersion >= latestObserved.stateVersion)
+      ) {
+        latestObserved = {
+          run: state.run,
+          loopId: envelope.loopId,
+          stateVersion: observedVersion,
+          committedTurnIds: [],
+        };
+      }
       store.begin(envelope);
       const wave = runCandidateWave({
         state: structuredClone(state),
@@ -92,15 +111,23 @@ export function createShadowRunCoordinator(
           wave,
           legacyPlan: resolution.plan,
           legacyEvents: legacyEventsFromResolution(resolution, session.envelope.turnId),
-          current: {
-            loopId: `legacy-run-${resolution.finalState.run}`,
-            stateVersion: session.envelope.inputStateVersion,
-            committedTurnIds: [],
-          },
+          current: latestObserved
+            ? {
+                loopId: latestObserved.loopId,
+                stateVersion: latestObserved.stateVersion,
+                committedTurnIds: [...latestObserved.committedTurnIds],
+              }
+            : {
+                loopId: `legacy-run-${resolution.finalState.run}`,
+                stateVersion: session.envelope.inputStateVersion,
+                committedTurnIds: [],
+              },
         });
         store.complete(session.envelope.turnId, { kind: 'completed', report });
       } catch (error) {
-        store.fail(session.envelope.turnId, error);
+        if (store.get(session.envelope.turnId)) {
+          store.fail(session.envelope.turnId, error);
+        }
       }
     },
   };

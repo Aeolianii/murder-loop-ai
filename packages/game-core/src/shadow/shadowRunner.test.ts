@@ -227,6 +227,11 @@ function registrations(
   assert.equal(report.metrics.schemaSuccessRate, 1);
   assert.equal(report.replay.envelope.turnId, turnEnvelope.turnId);
   assert.equal(report.replay.mainProposals.length, 6);
+  assert.equal(report.replay.legacyPlan.id, legacyPlan.id);
+  assert.equal(report.replay.current.stateVersion, 0);
+  assert.equal(report.replay.semantic.status, 'compiled');
+  assert.equal(report.replay.callRecords.length, 8);
+  assert.equal(typeof report.replay.completedAt, 'string');
 }
 
 {
