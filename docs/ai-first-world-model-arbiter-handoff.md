@@ -761,6 +761,8 @@ Death / Ending、关键线索、永久 Knowledge、Killer 强入、NPC 永久状
 
 ### 阶段 1：契约与事实层
 
+> 2026-07-20：阶段一代码已按旁路方式实施，正式回合主链保持不变；实施记录与验证范围见 `docs/ai-first-phase-1-implementation.md`。阶段二门禁尚未放行。
+
 - 定义 `Fact`、`TurnEnvelope`、`TurnBrief`、`Proposal`、`SpecialistCandidate`、`StateTransitionResult`、`HighRiskDecision`、`TurnCommitResult` 和 `ConfirmedEvent`；
 - 建立 Fact Ledger；
 - 建立 Player / Killer / NPC Knowledge Projection；
