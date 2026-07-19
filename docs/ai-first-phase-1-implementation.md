@@ -1,6 +1,6 @@
 # AI-first 迁移阶段一实施记录
 
-> 状态：代码实施完成，尚未进入阶段二 Shadow Run
+> 状态：代码实施完成；阶段二实施见 `docs/ai-first-phase-2-implementation.md`
 > 日期：2026-07-20
 > 依据：`docs/ai-first-world-model-arbiter-handoff.md`
 
@@ -32,4 +32,4 @@ npm run test -w @murder-loop-ai/server
 npm run typecheck
 ```
 
-阶段二暂未启用。交接文档要求的 Shadow Schema 成功率 ≥99% 需要在阶段二接入只读影子数据后采集；当前没有用缺失指标替代该门禁，也没有让新组件写正式 State。
+阶段二 Shadow Run 已实现但默认关闭。交接文档要求的真实 Schema 成功率和金标集安全指标仍需在启用只读影子数据后采集；当前没有用缺失指标替代阶段门禁，也没有让新组件写正式 State。

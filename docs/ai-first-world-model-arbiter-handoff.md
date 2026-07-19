@@ -1,8 +1,9 @@
 # AI-first World Model + State Arbiter 架构交接
 
-> - 状态：目标架构，尚未完整实现
+> - 状态：目标架构，阶段一与阶段二 Shadow Run 已实现，阶段三及以后尚未接管
 > - 用途：交给新对话继续设计、拆分计划并实施重构
 > - 当前实现入口：参见 `docs/architecture-current.md`
+> - 迁移记录：参见 `docs/ai-first-phase-1-implementation.md` 与 `docs/ai-first-phase-2-implementation.md`
 > - Hackathon 当前实施范围：参见 `docs/architecture-mvp.md`；未达到其中的复杂度升级门槛前，不实施本文档的生产级扩展
 
 ## 1. 背景与问题定义
@@ -772,6 +773,8 @@ Death / Ending、关键线索、永久 Knowledge、Killer 强入、NPC 永久状
 - 保持现有流程不变。
 
 ### 阶段 2：Semantic Compiler 与并行候选 Shadow Run
+
+> 实施状态（2026-07-20）：代码与只读 Server 接线已完成，默认由 `AI_SHADOW_RUN_ENABLED=false` 关闭；尚未用真实 API 金标回归证明阶段三门禁，详见 `docs/ai-first-phase-2-implementation.md`。
 
 - Semantic Compiler 生成 `TurnBrief`，与现有 Parser 结果对照但暂不接管；
 - 主 World Model 和全部 Specialist 根据相同 `TurnBrief` 的权限投影并行生成候选；

@@ -64,6 +64,20 @@ apps/web
 
 这条链路是当前应该优先维护的主线。后续功能、测试和重构应默认围绕它展开。
 
+阶段二增加了一条默认关闭的只读 Shadow 旁路：
+
+```txt
+POST /api/harness/turn
+  ├─ 正式 resolveTurnHarness() → 正式响应与 State
+  └─ AI_SHADOW_RUN_ENABLED=true 时
+       Semantic Compiler
+       → Main World Model + 全 Specialist 并行候选
+       → Shadow Arbiter / High-Risk Gate / 模拟提交
+       → 内存调试报告
+```
+
+Shadow 旁路不写正式 State，也不阻塞正式响应。实现和运行说明见 `docs/ai-first-phase-2-implementation.md`。
+
 ## 3. Monorepo 模块职责
 
 ### apps/web
