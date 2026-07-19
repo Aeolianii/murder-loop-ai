@@ -141,6 +141,14 @@ const unsafeProposal = await service.prepare(session(wave(brief(), playerProposa
 assert.equal(unsafeProposal.status, 'bypassed');
 if (unsafeProposal.status === 'bypassed') assert.equal(unsafeProposal.reason, 'selected_proposal_not_reversible');
 
+const mismatchedDeadlineBrief: TurnBrief = {
+  ...brief(),
+  deadlineAt: new Date(Date.now() + 20_000).toISOString(),
+};
+const mismatchedDeadline = await service.prepare(session(wave(mismatchedDeadlineBrief)), state);
+assert.equal(mismatchedDeadline.status, 'bypassed');
+if (mismatchedDeadline.status === 'bypassed') assert.equal(mismatchedDeadline.reason, 'envelope_mismatch');
+
 const conflictService = createLowRiskTakeoverService({
   createStore: (initial) => new InMemoryAtomicTurnStore<GameState>({
     ...initial,
@@ -154,3 +162,12 @@ const conflicted = await conflictService.commit(envelope.turnId, conflictPrepare
 assert.equal(conflicted.outcome.result.commitStatus, 'conflict');
 assert.equal(conflicted.state, undefined);
 assert.deepEqual(conflicted.outcome.displayFragments, []);
+
+const discardedService = createLowRiskTakeoverService();
+const discardPrepared = await discardedService.prepare(session(), state);
+assert.equal(discardPrepared.status, 'prepared');
+discardedService.discard(envelope.turnId);
+await assert.rejects(
+  () => discardedService.commit(envelope.turnId, state),
+  /No prepared low-risk takeover/,
+);

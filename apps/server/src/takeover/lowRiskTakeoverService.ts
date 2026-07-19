@@ -34,6 +34,7 @@ export type LowRiskTakeoverCommitResult = Awaited<ReturnType<typeof commitPrepar
 export interface LowRiskTakeoverService {
   prepare(session: ShadowRunSession, state: GameState): Promise<LowRiskTakeoverPrepareResult>;
   commit(turnId: string, finalState: GameState): Promise<LowRiskTakeoverCommitResult>;
+  discard(turnId: string): void;
 }
 
 export interface LowRiskTakeoverServiceOptions {
@@ -97,6 +98,10 @@ export function createLowRiskTakeoverService(
         now: now(),
       });
     },
+
+    discard(turnId) {
+      pending.delete(turnId);
+    },
   };
 }
 
@@ -114,9 +119,11 @@ function validateShadowTakeoverGate(
     wave.envelope.loopId !== session.envelope.loopId
     || wave.envelope.turnId !== session.envelope.turnId
     || wave.envelope.inputStateVersion !== session.envelope.inputStateVersion
+    || wave.envelope.deadlineAt !== session.envelope.deadlineAt
     || wave.turnBrief.loopId !== session.envelope.loopId
     || wave.turnBrief.turnId !== session.envelope.turnId
     || wave.turnBrief.inputStateVersion !== session.envelope.inputStateVersion
+    || wave.turnBrief.deadlineAt !== session.envelope.deadlineAt
   ) {
     return { status: 'bypassed', reason: 'envelope_mismatch' };
   }

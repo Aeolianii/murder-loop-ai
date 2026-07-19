@@ -337,6 +337,7 @@ function takeoverFixture(commitStatus: 'committed' | 'conflict' | 'failed' = 'co
         state: commitStatus === 'committed' ? candidateState : undefined,
       };
     },
+    discard: () => undefined,
   };
   return {
     prepared,

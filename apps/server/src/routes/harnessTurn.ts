@@ -399,6 +399,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               resolution.finalState,
             );
           } catch (error) {
+            lowRiskTakeoverService.discard(shadowSession.envelope.turnId);
             routeWarnings.push(`Low-risk takeover commit failed: ${error instanceof Error ? error.message : String(error)}`);
             if (shadowCoordinator) void shadowCoordinator.complete(shadowSession, resolution);
             return reply.code(503).send({
@@ -450,6 +451,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           };
         }
       } catch (error) {
+        lowRiskTakeoverService.discard(shadowSession.envelope.turnId);
         routeWarnings.push(`Low-risk takeover preparation failed: ${error instanceof Error ? error.message : String(error)}`);
         lowRiskTakeoverCoordination = {
           status: 'bypassed',
