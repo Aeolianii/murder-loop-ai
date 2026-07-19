@@ -31,6 +31,8 @@ export * from './intent/turnBriefValidator';
 export * from './facts/FactLedger';
 export * from './facts/knowledgeProjection';
 export * from './intent/IntentProjector';
+export * from './commit/atomicTurnCommit';
+export * from './commit/loopResetPolicy';
 
 // Harness 架构新增导出
 export { GameEventBus } from './events/EventBus';

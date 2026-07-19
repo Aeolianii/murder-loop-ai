@@ -354,6 +354,7 @@ export type OrderedAction = z.infer<typeof OrderedActionSchema>;
 export type Proposal = z.infer<typeof ProposalSchema>;
 export type SpecialistCandidate = z.infer<typeof SpecialistCandidateSchema>;
 export type ProposedEvent = z.infer<typeof ProposedEventSchema>;
+export type DisplayFragment = z.infer<typeof DisplayFragmentSchema>;
 export type StateTransitionResult = z.infer<typeof StateTransitionResultSchema>;
 export type HighRiskDecision = z.infer<typeof HighRiskDecisionSchema>;
 export type TurnCommitResult = z.infer<typeof TurnCommitResultSchema>;
