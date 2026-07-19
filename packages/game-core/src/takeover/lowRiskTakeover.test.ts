@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
+import { DEADLINE_MINUTE } from '@murder-loop-ai/shared';
 import { InMemoryAtomicTurnStore } from '../commit/atomicTurnCommit';
 import { createInitialGameState } from '../state/createInitialState';
 import {
@@ -99,6 +100,42 @@ const interiorObservation = prepareLowRiskTurn({
 });
 assert.equal(interiorObservation.status, 'not_eligible');
 if (interiorObservation.status === 'not_eligible') assert.equal(interiorObservation.reason, 'observation_scope_not_low_risk');
+
+const inventedBarricade = prepareLowRiskTurn({
+  state,
+  brief: brief([action('invented-barricade', 'secure_entry', ['front_door', 'suitcase'])]),
+  sourceProposalId: 'proposal.invented-barricade',
+});
+assert.equal(inventedBarricade.status, 'not_eligible');
+if (inventedBarricade.status === 'not_eligible') assert.equal(inventedBarricade.reason, 'unsupported_target');
+
+const ordinaryWait = prepareLowRiskTurn({
+  state,
+  brief: brief([action('wait-player', 'wait', ['player'])]),
+  sourceProposalId: 'proposal.wait-player',
+});
+assert.equal(ordinaryWait.status, 'prepared');
+
+const depletedBatteryState = structuredClone(state);
+depletedBatteryState.phoneBattery = 1;
+depletedBatteryState.room.phone.state.battery = 1;
+const batteryDeathBoundary = prepareLowRiskTurn({
+  state: depletedBatteryState,
+  brief: brief([action('wait-low-battery', 'wait', ['player'])]),
+  sourceProposalId: 'proposal.wait-low-battery',
+});
+assert.equal(batteryDeathBoundary.status, 'not_eligible');
+if (batteryDeathBoundary.status === 'not_eligible') assert.equal(batteryDeathBoundary.reason, 'high_risk_boundary');
+
+const deadlineState = structuredClone(state);
+deadlineState.minute = DEADLINE_MINUTE - 1;
+const deadlineBoundary = prepareLowRiskTurn({
+  state: deadlineState,
+  brief: brief([action('wait-at-deadline', 'wait', ['player'])]),
+  sourceProposalId: 'proposal.wait-at-deadline',
+});
+assert.equal(deadlineBoundary.status, 'not_eligible');
+if (deadlineBoundary.status === 'not_eligible') assert.equal(deadlineBoundary.reason, 'high_risk_boundary');
 
 const store = new InMemoryAtomicTurnStore({
   loopId: prepared.envelope.loopId,

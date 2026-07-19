@@ -57,7 +57,8 @@ export type LowRiskTakeoverRejectReason =
   | 'unsupported_actor'
   | 'unsupported_operation'
   | 'unsupported_target'
-  | 'observation_scope_not_low_risk';
+  | 'observation_scope_not_low_risk'
+  | 'high_risk_boundary';
 
 export interface PreparedLowRiskPlayerResult extends RuleResult {
   domainEvents: DomainEvent[];
@@ -92,6 +93,9 @@ export function prepareLowRiskTurn(input: {
 }): LowRiskTakeoverPreparation {
   const eligibility = validateTurnEligibility(input.state, input.brief);
   if (eligibility) return { status: 'not_eligible', reason: eligibility };
+  if (crossesLegacyHighRiskBoundary(input.state, input.brief)) {
+    return { status: 'not_eligible', reason: 'high_risk_boundary' };
+  }
 
   const state = structuredClone(input.state) as GameState;
   const plan = buildActionPlan(input.brief);
@@ -257,7 +261,10 @@ function validateTurnEligibility(state: GameState, brief: TurnBrief): LowRiskTak
     }
     if (operation === 'secure_entry') {
       if (!action.targetIds.includes('front_door')) return 'unsupported_target';
-      if (action.targetIds.some((targetId) => !['front_door', 'chair', 'luggage', 'suitcase'].includes(targetId))) {
+      if (action.targetIds.some((targetId) => (
+        targetId !== 'front_door'
+        && (!['chair', 'luggage', 'suitcase'].includes(targetId) || !state.room[targetId]?.visible)
+      ))) {
         return 'unsupported_target';
       }
     }
@@ -269,11 +276,44 @@ function validateTurnEligibility(state: GameState, brief: TurnBrief): LowRiskTak
     if (operation === 'use_item') {
       if (action.targetIds.length !== 1 || !['phone_charger', 'tape'].includes(action.targetIds[0])) return 'unsupported_target';
     }
-    if (operation === 'wait' && action.targetIds.length > 0 && !action.targetIds.every((id) => id === 'room')) {
+    if (
+      operation === 'wait'
+      && action.targetIds.length > 0
+      && !action.targetIds.every((id) => ['room', 'player', 'self'].includes(id))
+    ) {
       return 'unsupported_target';
     }
   }
   return undefined;
+}
+
+function crossesLegacyHighRiskBoundary(state: GameState, brief: TurnBrief): boolean {
+  if (state.ending || state.combatTriggered || state.policePhase !== 'not_contacted') return true;
+  const timePassed = Math.max(1, Math.min(5, brief.orderedActions.length));
+  if (state.minute + timePassed >= DEADLINE_MINUTE - 10) return true;
+
+  const contactsLinYue = brief.orderedActions.some((action) => (
+    LOW_RISK_OPERATIONS.get(action.operation) === 'communicate'
+    && action.targetIds.some((targetId) => targetId === 'lin_yue' || targetId === 'linyue')
+  ));
+  if (!contactsLinYue && (state.linYuePhase === 'worried' || state.linYuePhase === 'coming_to_apartment')) {
+    return true;
+  }
+
+  let heldItem = state.playerHolding;
+  let chargerUsed = false;
+  for (const action of brief.orderedActions) {
+    const operation = LOW_RISK_OPERATIONS.get(action.operation);
+    if (operation === 'pick_up') heldItem = action.targetIds[0] ?? heldItem;
+    if (operation === 'use_item' && action.targetIds[0] === 'phone_charger' && heldItem === 'phone_charger') {
+      chargerUsed = true;
+    }
+  }
+  if (state.phoneFunctional && !chargerUsed) {
+    const perMinute = state.room.phone?.state.recording === true ? 3 : 1.5;
+    return Math.round(state.phoneBattery - timePassed * perMinute) <= 0;
+  }
+  return false;
 }
 
 function buildActionPlan(brief: TurnBrief): ActionPlan {
