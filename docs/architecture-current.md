@@ -31,6 +31,7 @@ apps/server/src/routes/harnessTurn.ts
 packages/game-core/src/loop/resolveTurn.ts
   createHarness()
   resolveTurnHarness()
+  resolveTurnHarnessFromPreparedPlayerTurn()
 ```
 
 ## 2. 当前主流程
@@ -78,6 +79,22 @@ POST /api/harness/turn
 
 Shadow 旁路不写正式 State，也不阻塞正式响应。实现和运行说明见 `docs/ai-first-phase-2-implementation.md`。
 
+阶段三增加了一条默认关闭的正式低风险接管分支：
+
+```txt
+POST /api/harness/turn
+  └─ AI_LOW_RISK_TAKEOVER_ENABLED=true 时
+       Semantic Compiler + 并行候选 + Shadow Arbiter
+       → 可逆 player proposal 与低风险白名单门禁
+       → 确定性低风险 Reducer
+       → resolveTurnHarnessFromPreparedPlayerTurn()
+          （跳过旧 Parser / 玩家 RuleAgent，继续 World / Killer / Narrator）
+       → Atomic Turn Commit
+       → committed 后发布；conflict/failed 零 State、零故事展示
+```
+
+不满足接管门禁时，路由仍完整执行旧 `resolveTurnHarness()`。阶段三不写 Knowledge、Clue、NPC 永久状态、Death 或 Ending；临近这些高风险边界的回合直接回退旧链。实现、开关和回滚说明见 `docs/ai-first-phase-3-implementation.md`。
+
 ## 3. Monorepo 模块职责
 
 ### apps/web
@@ -109,6 +126,7 @@ Shadow 旁路不写正式 State，也不阻塞正式响应。实现和运行说�
 当前注意点：
 
 - `routes/harnessTurn.ts` 是正式主路由，当前主要负责请求处理、复活/回合编排、动态线索、audio cue、sidebar 与最终响应组装。
+- `takeover/lowRiskTakeoverService.ts` 负责阶段三 Shadow/Arbiter 接管门禁和 Atomic Store 编排；开关关闭或门禁未通过时不改变旧链。
 - `ai/harnessAiAdapters.ts` 负责 `createAiHarness()` 以及 Parser / Killer / Narrator / Director / NPC 的 AI adapter。
 - `state/coerceGameState.ts` 负责旧状态和旧线索兼容。
 - `presenters/frontendTurnPresenter.ts` 负责前端 story/clue/sidebar 派生展示转换。
@@ -136,6 +154,8 @@ src/agents/*.ts
 src/rules/applyPlayerActions.ts
 src/killer/knowledge.ts
 src/killer/applyKillerStrategy.ts
+src/takeover/lowRiskTakeover.ts
+src/commit/atomicTurnCommit.ts
 ```
 
 边界原则：

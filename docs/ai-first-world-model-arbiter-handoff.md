@@ -1,9 +1,9 @@
 # AI-first World Model + State Arbiter 架构交接
 
-> - 状态：目标架构，阶段一与阶段二 Shadow Run 已实现，阶段三及以后尚未接管
+> - 状态：目标架构，阶段一、阶段二与阶段三低风险接管代码已实现；阶段三默认关闭且尚未通过真实流量放量门禁，阶段四及以后尚未接管
 > - 用途：交给新对话继续设计、拆分计划并实施重构
 > - 当前实现入口：参见 `docs/architecture-current.md`
-> - 迁移记录：参见 `docs/ai-first-phase-1-implementation.md` 与 `docs/ai-first-phase-2-implementation.md`
+> - 迁移记录：参见 `docs/ai-first-phase-1-implementation.md`、`docs/ai-first-phase-2-implementation.md` 与 `docs/ai-first-phase-3-implementation.md`
 > - Hackathon 当前实施范围：参见 `docs/architecture-mvp.md`；未达到其中的复杂度升级门槛前，不实施本文档的生产级扩展
 
 ## 1. 背景与问题定义
@@ -785,6 +785,8 @@ Death / Ending、关键线索、永久 Knowledge、Killer 强入、NPC 永久状
 - 收集语义误判、权限泄露、候选替代率、fallback 率、提交冲突、旧循环迟到结果和延迟数据。
 
 ### 阶段 3：接管低风险状态
+
+> 实施状态（2026-07-20）：确定性低风险 Reducer、Harness 接续、Shadow/Arbiter 双门禁、Atomic Commit 与 Server 功能开关已完成；默认由 `AI_LOW_RISK_TAKEOVER_ENABLED=false` 关闭。真实 API 金标、错误率与玩家可见 P95 放量门禁仍待验证，详见 `docs/ai-first-phase-3-implementation.md`。
 
 - 观察范围；
 - 普通物品；
