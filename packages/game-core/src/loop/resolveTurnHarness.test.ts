@@ -765,8 +765,59 @@ async function testDoorCoordinationCreatesPlayableNextSteps() {
   const labels = resolution.recommendedActions?.map((action) => action.label).join('\n') ?? '';
 
   assert.match(labels, /录下|录音/);
-  assert.match(labels, /报单位|警号|接警编号/);
+  assert.match(labels, /身份|姓名|来意/);
+  assert.doesNotMatch(labels, /警号|接警编号/);
   assert.match(labels, /110|接线员/);
+}
+
+async function testFakePoliceClaimCreatesCredentialCheck() {
+  const state = createInitialGameState();
+  state.policePhase = 'dispatch_pending';
+  state.room.front_door.state.locked = true;
+  state.room.front_door.state.chainLocked = true;
+  state.room.front_door.state.barricaded = false;
+  const harness = createHarness({
+    parseAction: async () => ({
+      id: 'plan-wait-behind-door',
+      raw: 'stay quiet and listen behind the locked door',
+      summary: 'Stay quiet and listen behind the locked door',
+      actions: [{
+        id: 'action-wait',
+        raw: 'stay quiet and listen behind the locked door',
+        intent: 'wait',
+        target: 'self',
+        method: 'listen without approaching the door gap',
+        confidence: 0.95,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      }],
+      confidence: 0.95,
+      warnings: [],
+    }),
+    chooseKillerStrategy: async () => ({
+      id: 'killer-fake-police',
+      type: 'fake_police',
+      title: 'Police identity claim',
+      rationale: 'The person outside claims to be a police officer.',
+      responseHint: '门外的人自称警察，要求玩家立刻开门配合调查。',
+      visibleToPlayer: true,
+      risk: 'high',
+    }),
+    narrateAction: async () => ({
+      title: 'Hold position',
+      text: 'You keep the door locked and stay away from the gap.',
+    }),
+    narrateAmbient: async () => ({
+      title: 'Claim outside',
+      text: '门外的人说：“我们是警察，开门配合调查。”',
+    }),
+  });
+
+  const resolution = await resolveTurnHarness(state, 'listen without opening the locked door', harness);
+  const labels = resolution.recommendedActions?.map((action) => action.label).join('\n') ?? '';
+
+  assert.match(labels, /警号|接警编号/);
 }
 
 async function testMessageReplyAmbientNarrationIncludesConcreteMessageText() {
@@ -1111,6 +1162,7 @@ await testLinYueMessageReplyStaysInActionNarration();
 await testLinYueVisibleContextKeepsPhotoSeparateFromDoorAndPoliceKnowledge();
 await testLinYuePhotoOnlyRecommendationsDoNotMentionDoorQuoteOrPolice();
 await testDoorCoordinationCreatesPlayableNextSteps();
+await testFakePoliceClaimCreatesCredentialCheck();
 await testMessageReplyAmbientNarrationIncludesConcreteMessageText();
 await testNpcAgentReplyTakesPriorityOverPackageHandoffFallback();
 await testVagueActionNarrationIncludesConcretePhoneProbeText();

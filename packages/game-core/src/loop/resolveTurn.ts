@@ -272,48 +272,55 @@ function buildRecommendedActionsForTurn(
   killerStrategy: KillerStrategy,
   playerResult: TurnResolution['playerResult'],
   killerResult: TurnResolution['killerResult'],
-  npcReply?: NpcReply | null,
 ): RecommendedAction[] {
   void plan;
   void playerResult;
-  const text = [
-    killerStrategy.type,
+  const observableThreatText = [
+    killerStrategy.visibleToPlayer ? killerStrategy.responseHint ?? '' : '',
     killerResult.title,
     killerResult.text,
     ...killerResult.events.map((event) => `${event.subject} ${event.summary} ${event.sensoryHints.join(' ')}`),
-    npcReply?.riskWarning ?? '',
-    npcReply?.suggestedExternalAction ?? '',
   ].join('\n');
   const actions: RecommendedAction[] = [];
   const door = state.room.front_door?.state ?? {};
   const doorSecuredButNotBarricaded = Boolean(door.locked || door.chainLocked) && !door.barricaded;
   const exposedDoorCoordination = killerStrategy.type === 'spare_key_entry'
     || killerStrategy.type === 'fake_police'
-    || hasText(text, ['门里有东西挡着', '东西挡着', '进不去', '打不开', '压低声音', '冒充警察', '假警察', 'blocked', 'get in']);
+    || hasText(observableThreatText, ['门里有东西挡着', '东西挡着', '进不去', '打不开', '尝试开门', '锁芯', '压低声音', 'blocked', 'get in']);
+  const claimedPoliceIdentity = killerStrategy.type === 'fake_police';
 
   if (doorSecuredButNotBarricaded && exposedDoorCoordination) {
-    actions.push(
-      {
-        id: 'record_blocked_door_voice',
-        label: '录下门外压低声音说“进不去”的原话，别靠近门缝。',
-        rationale: '这句话说明门外的人不是正常核验身份，而是在协调进入方式；录音能变成证据。',
-        intent: 'record',
-        target: 'front_door',
-      },
-      {
+    actions.push({
+      id: 'record_blocked_door_voice',
+      label: '录下门外试图进门或自报身份的原话，别靠近门缝。',
+      rationale: '保留门外实际说法和开门动静，能为后续报警或身份核验提供证据。',
+      intent: 'record',
+      target: 'front_door',
+    });
+
+    if (claimedPoliceIdentity) {
+      actions.push({
         id: 'bait_hallway_speaker',
         label: '隔门套话：让对方报单位、警号和接警编号，但不要开门。',
-        rationale: '真正的身份核验应该经得起复述；对方如果回避或说错，就是新的破绽。',
+        rationale: '对方已经声称自己是警察，此时才需要核验警务身份，并通过 110 独立确认。',
         intent: 'communicate',
-        target: 'chen_huaimin',
-      },
-    );
+        target: 'front_door',
+      });
+    } else {
+      actions.push({
+        id: 'question_hallway_speaker',
+        label: '隔门询问对方是谁、来意是什么、为何试图开门，但不要开门。',
+        rationale: '门外的人没有声称自己是警察；先核对其实际身份和来意，不套用警号核验。',
+        intent: 'communicate',
+        target: 'front_door',
+      });
+    }
   }
 
   if (state.policePhase !== 'not_contacted' && exposedDoorCoordination) {
     actions.push({
       id: 'report_door_coordination_to_police',
-      label: '把“门里有东西挡着，进不去”这句补充给 110 或接线员。',
+      label: '把门外试图开门和低声交谈的实际情况补充给 110 或接线员。',
       rationale: '这能让警方知道门外的人在尝试进入，而不是正常上门询问。',
       intent: 'verify_identity',
       target: 'police',
@@ -730,7 +737,6 @@ async function finalizeHarnessTurn(
       turn.killerStrategy,
       turn.playerResult,
       turn.killerResult,
-      turn.npcReply,
     ),
     worldTickTrace: turn.worldTickTrace,
     finalState,
