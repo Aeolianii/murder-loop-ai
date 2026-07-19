@@ -28,6 +28,9 @@ export * from './domain/playerCommands';
 export * from './domain/playerActionDomain';
 export * from './domain/killerStrategyDomain';
 export * from './intent/turnBriefValidator';
+export * from './facts/FactLedger';
+export * from './facts/knowledgeProjection';
+export * from './intent/IntentProjector';
 
 // Harness 架构新增导出
 export { GameEventBus } from './events/EventBus';
