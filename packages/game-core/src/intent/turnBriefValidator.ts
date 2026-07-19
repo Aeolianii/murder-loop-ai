@@ -7,7 +7,10 @@ import {
 } from '@murder-loop-ai/ai-contracts';
 
 export interface SemanticCompiler {
-  compile(request: SemanticCompilerRequest): Promise<SemanticCompilerResult>;
+  compile(
+    request: SemanticCompilerRequest,
+    context?: { signal: AbortSignal },
+  ): Promise<SemanticCompilerResult>;
 }
 
 export interface TurnBriefValidationResult {

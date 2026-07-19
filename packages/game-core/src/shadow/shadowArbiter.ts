@@ -16,6 +16,8 @@ import { evaluateTurnWorkFreshness, type TurnDiscardReason, type TurnFreshnessSn
 export interface ShadowSourcePolicy {
   allowedDomains: ProposalDomain[];
   authorizedFactIds: string[];
+  authorizedFactIdsByDomain?: Partial<Record<ProposalDomain, string[]>>;
+  authorizedFactIdsByActor?: Record<string, string[]>;
 }
 
 export interface ShadowArbiterInput {
@@ -360,7 +362,12 @@ function validateProposal(
   if (!policy || !policy.allowedDomains.includes(proposal.domain)) {
     reasons.add('source_domain_unauthorized');
   }
-  const authorizedFacts = new Set(policy?.authorizedFactIds ?? []);
+  const authorizedFacts = new Set(
+    policy?.authorizedFactIdsByActor?.[proposal.actorId]
+    ?? policy?.authorizedFactIdsByDomain?.[proposal.domain]
+    ?? policy?.authorizedFactIds
+    ?? [],
+  );
   if (proposal.basedOnFactIds.some((factId) => !authorizedFacts.has(factId))) {
     reasons.add('unauthorized_fact_reference');
   }
