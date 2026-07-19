@@ -55,6 +55,10 @@ export function prepareGameLoopReset(
   state.memory.crossRun = structuredClone(current.memory.crossRun);
   state.memory.characters.player = structuredClone(current.memory.characters.player);
   state.clues = structuredClone(current.clues.filter((clue) => clue.isPersistent));
+  const retainedObservationIds = new Set(state.clues.flatMap((clue) => clue.basedOnObservationIds ?? []));
+  state.observations = structuredClone(
+    current.observations.filter((observation) => retainedObservationIds.has(observation.id)),
+  );
 
   return {
     previousLoopId: options.previousLoopId,

@@ -12,6 +12,8 @@ export function rewindAfterDeath(state: GameState): GameState {
   next.run = state.run + 1;
   next.memory = rewindMemoryAfterDeath({ ...state, memory: sourceMemory });
   next.clues = state.clues.filter((clue) => clue.isPersistent);
+  const retainedObservationIds = new Set(next.clues.flatMap((clue) => clue.basedOnObservationIds ?? []));
+  next.observations = state.observations.filter((observation) => retainedObservationIds.has(observation.id));
   grantReviveProtection(next);
 
   next.log = [

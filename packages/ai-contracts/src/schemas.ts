@@ -112,6 +112,20 @@ export const ClueRecordSchema = z.object({
   weight: z.number(),
   discoveredAt: z.object({ run: z.number(), minute: z.number() }),
   isPersistent: z.boolean(),
+  claims: z.array(z.string()).optional(),
+  basedOnObservationIds: z.array(z.string()).optional(),
+  sourceEventIds: z.array(z.string()).optional(),
+});
+
+export const ObservationRecordSchema = z.object({
+  id: z.string(),
+  subject: z.string(),
+  predicate: z.string(),
+  value: z.union([z.boolean(), z.number(), z.string(), z.null()]),
+  scope: z.string(),
+  visibleFactIds: z.array(z.string()),
+  sourceEventIds: z.array(z.string()),
+  observedAt: z.object({ run: z.number(), minute: z.number() }),
 });
 
 export const GameStateContractSchema = z.object({
@@ -133,6 +147,7 @@ export const GameStateContractSchema = z.object({
   playerHolding: z.string().nullable(),
   combatTriggered: z.boolean(),
   clues: z.array(ClueRecordSchema),
+  observations: z.array(ObservationRecordSchema),
   room: z.record(z.string(), z.unknown()),
   killerKnowledge: z.record(z.string(), z.unknown()),
   memory: z.unknown(),

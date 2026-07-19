@@ -167,6 +167,18 @@ export interface LoopMemory {
   };
 }
 
+/** A player-visible fact captured from one or more events in the same atomic commit. */
+export interface ObservationRecord {
+  id: string;
+  subject: string;
+  predicate: string;
+  value: boolean | number | string | null;
+  scope: string;
+  visibleFactIds: string[];
+  sourceEventIds: string[];
+  observedAt: { run: number; minute: number };
+}
+
 export interface ClueRecord {
   id: string;
   title: string;
@@ -178,6 +190,10 @@ export interface ClueRecord {
   discoveredAt: { run: number; minute: number };
   /** 跨循环保留（默认 true，AI 生成的线索在死亡后依然记得） */
   isPersistent: boolean;
+  /** Phase-four provenance. Legacy saves may omit these fields. */
+  claims?: string[];
+  basedOnObservationIds?: string[];
+  sourceEventIds?: string[];
 }
 
 export interface RoomObjectState {
@@ -226,6 +242,8 @@ export interface GameState {
   combatTriggered: boolean;
   /** 线索列表——ClueRecord[] 替代旧的 string[]，支持 AI 动态生成 */
   clues: ClueRecord[];
+  /** Confirmed player-visible observations used as the only source of phase-four clues. */
+  observations: ObservationRecord[];
   room: Record<string, RoomObjectState>;
   killerKnowledge: KillerKnowledge;
   memory: LoopMemory;

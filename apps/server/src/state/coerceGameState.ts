@@ -56,6 +56,7 @@ export function coerceGameState(rawState: unknown): GameState {
     memory: normalizeLoopMemory(raw.memory ?? fallback.memory),
     log: Array.isArray(raw.log) ? raw.log : fallback.log,
     clues: coerceClues(raw.clues, { ...fallback, run: raw.run ?? fallback.run, minute: raw.minute ?? fallback.minute }),
+    observations: Array.isArray(raw.observations) ? raw.observations : fallback.observations,
     killerStatus: raw.killerStatus ?? fallback.killerStatus,
     playerHolding: raw.playerHolding ?? fallback.playerHolding,
     combatTriggered: raw.combatTriggered ?? fallback.combatTriggered,

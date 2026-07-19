@@ -36,6 +36,7 @@ export * from './commit/loopResetPolicy';
 export * from './shadow/shadowArbiter';
 export * from './shadow/shadowRunner';
 export * from './takeover/lowRiskTakeover';
+export * from './takeover/knowledgeClueTakeover';
 
 // Harness 架构新增导出
 export { GameEventBus } from './events/EventBus';

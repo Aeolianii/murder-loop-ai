@@ -12,6 +12,10 @@ import {
   type CommitEventCandidate,
 } from '../commit/atomicTurnCommit';
 import type { DomainEvent } from '../domain/domainEvents';
+import {
+  buildLowRiskKnowledgeClueCandidates,
+  type KnowledgeClueProjectionCandidates,
+} from './knowledgeClueTakeover';
 
 const LOW_RISK_OPERATIONS = new Map<string, LowRiskOperation>([
   ['inspect', 'inspect'],
@@ -72,6 +76,7 @@ export interface PreparedLowRiskTurn {
   playerResult: PreparedLowRiskPlayerResult;
   eventCandidates: CommitEventCandidate[];
   displayFragments: DisplayFragment[];
+  knowledgeClueCandidates: KnowledgeClueProjectionCandidates;
 }
 
 export type LowRiskTakeoverPreparation = PreparedLowRiskTurn | {
@@ -164,6 +169,10 @@ export function prepareLowRiskTurn(input: {
           : 'investigating';
 
   const allEvents = [...actionEvents, ...supplementalEvents];
+  const knowledgeClueCandidates = buildLowRiskKnowledgeClueCandidates(
+    allEvents.map((event) => event.proposedEvent),
+    { run: state.run, minute: state.minute },
+  );
   const text = actionEvents.map((event) => event.summary).join(' ');
   state.log.push({
     id: `log-low-risk-${input.brief.turnId}`,
@@ -201,6 +210,7 @@ export function prepareLowRiskTurn(input: {
       eventRefs: [proposedEvent.id],
       claimRefs: [...proposedEvent.facts],
     })),
+    knowledgeClueCandidates,
   };
 }
 
@@ -361,7 +371,11 @@ function applyLowRiskAction(input: {
     }
     eventType = 'inspection_completed';
     summary = `Inspected ${subject} without changing concealed contents.`;
-    facts = action.targetIds.map((targetId) => `inspected:${targetId}`);
+    facts = action.targetIds.flatMap((targetId) => [
+      `inspected:${targetId}`,
+      `fact.${targetId}.exterior.observed`,
+      ...(targetId === 'package' ? ['fact.package.exterior.label_ambiguous'] : []),
+    ]);
   } else if (operation === 'preserve_evidence') {
     if (!state.phoneFunctional) {
       eventType = 'photograph_failed';
@@ -371,7 +385,10 @@ function applyLowRiskAction(input: {
       for (const targetId of action.targetIds) state.room[targetId].state.photographed = true;
       eventType = subject === 'package' ? 'package_photographed' : 'object_photographed';
       summary = `Photographed the visible exterior of ${subject}.`;
-      facts = action.targetIds.map((targetId) => `photographed:${targetId}`);
+      facts = action.targetIds.flatMap((targetId) => [
+        `photographed:${targetId}`,
+        `fact.${targetId}.exterior.photo_captured`,
+      ]);
     }
   } else if (operation === 'communicate') {
     ruleKind = 'message';

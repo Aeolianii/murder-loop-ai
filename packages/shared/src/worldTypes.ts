@@ -71,6 +71,8 @@ export interface KnowledgeFact {
   confidence: number;
   source: KnowledgeSource;
   minuteLearned: number;
+  /** Confirmed Event that caused this update. Legacy snapshots may omit it. */
+  sourceEventId?: string;
 }
 
 export interface KnowledgeState {

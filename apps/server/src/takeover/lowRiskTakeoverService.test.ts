@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { Proposal, TurnBrief, TurnEnvelope } from '@murder-loop-ai/ai-contracts';
 import {
   InMemoryAtomicTurnStore,
+  createInitialWorldState,
   createInitialGameState,
   type ShadowCandidateWave,
 } from '@murder-loop-ai/game-core';
@@ -170,4 +171,56 @@ discardedService.discard(envelope.turnId);
 await assert.rejects(
   () => discardedService.commit(envelope.turnId, state),
   /No prepared low-risk takeover/,
+);
+
+const phaseFourService = createLowRiskTakeoverService({ knowledgeClueTakeoverEnabled: true });
+const inspectBrief = brief('inspect', ['package']);
+inspectBrief.orderedActions[0].scope = 'exterior.label';
+const phaseFourPrepared = await phaseFourService.prepare(session(wave(inspectBrief)), state);
+assert.equal(phaseFourPrepared.status, 'prepared');
+if (phaseFourPrepared.status !== 'prepared') throw new Error('expected phase-four preparation');
+const phaseFourCandidateState = structuredClone(phaseFourPrepared.prepared.playerResult.state);
+phaseFourCandidateState.world = createInitialWorldState();
+phaseFourCandidateState.clues.push({
+  id: 'narrator_invented_note',
+  title: 'Narrator invented note',
+  detail: 'This has no Observation source.',
+  source: 'ai_generated',
+  weight: 99,
+  discoveredAt: { run: state.run, minute: state.minute },
+  isPersistent: true,
+});
+const phaseFourCommitted = await phaseFourService.commit(envelope.turnId, phaseFourCandidateState);
+assert.equal(phaseFourCommitted.outcome.result.commitStatus, 'committed');
+assert.equal(phaseFourCommitted.state?.clues.some((clue) => clue.id === 'narrator_invented_note'), false);
+const phaseFourClue = phaseFourCommitted.state?.clues.find((clue) => clue.id === 'wrong_package');
+assert.deepEqual(phaseFourClue?.basedOnObservationIds, [
+  `observation.event.low-risk.${envelope.turnId}.action-low-risk.exterior-label`,
+]);
+assert.deepEqual(phaseFourClue?.sourceEventIds, [
+  `event.low-risk.${envelope.turnId}.action-low-risk`,
+]);
+assert.equal(
+  phaseFourCommitted.state?.world?.knowledge.player.facts.package_exterior_label_ambiguous.sourceEventId,
+  `event.low-risk.${envelope.turnId}.action-low-risk`,
+);
+assert.equal(phaseFourCommitted.knowledgeClueProjection?.addedClueIds.includes('wrong_package'), true);
+
+const offlineState = createInitialGameState();
+offlineState.phoneFunctional = false;
+offlineState.world = createInitialWorldState();
+const failedMessageService = createLowRiskTakeoverService({ knowledgeClueTakeoverEnabled: true });
+const messageBrief = brief('communicate', ['lin_yue']);
+const failedMessagePrepared = await failedMessageService.prepare(session(wave(messageBrief)), offlineState);
+assert.equal(failedMessagePrepared.status, 'prepared');
+if (failedMessagePrepared.status !== 'prepared') throw new Error('expected failed-message preparation');
+const failedMessageCommitted = await failedMessageService.commit(
+  envelope.turnId,
+  failedMessagePrepared.prepared.playerResult.state,
+);
+assert.equal(failedMessageCommitted.outcome.result.commitStatus, 'committed');
+assert.deepEqual(
+  failedMessageCommitted.state?.world?.knowledge,
+  offlineState.world.knowledge,
+  'undelivered messages must not update official Knowledge',
 );

@@ -22,6 +22,7 @@ export function createInitialGameState(): GameState {
     playerHolding: null,
     combatTriggered: false,
     clues: [],
+    observations: [],
     room: structuredClone(initialRoomObjects),
     killerKnowledge: {
       knowsPackageAt503: true,

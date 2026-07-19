@@ -2,6 +2,7 @@ import type { Proposal, SpecialistCandidate } from '@murder-loop-ai/ai-contracts
 import {
   InMemoryAtomicTurnStore,
   commitPreparedLowRiskTurn,
+  projectConfirmedKnowledgeAndClues,
   prepareLowRiskTurn,
   type AtomicTurnStore,
   type LowRiskTakeoverPreparation,
@@ -31,9 +32,19 @@ export type LowRiskTakeoverPrepareResult = {
 
 export type LowRiskTakeoverCommitResult = Awaited<ReturnType<typeof commitPreparedLowRiskTurn>>;
 
+export interface KnowledgeClueProjectionSummary {
+  addedObservationIds: string[];
+  addedKnowledgeFactIds: string[];
+  addedClueIds: string[];
+}
+
+export type LowRiskTakeoverServiceCommitResult = LowRiskTakeoverCommitResult & {
+  knowledgeClueProjection?: KnowledgeClueProjectionSummary;
+};
+
 export interface LowRiskTakeoverService {
   prepare(session: ShadowRunSession, state: GameState): Promise<LowRiskTakeoverPrepareResult>;
-  commit(turnId: string, finalState: GameState): Promise<LowRiskTakeoverCommitResult>;
+  commit(turnId: string, finalState: GameState): Promise<LowRiskTakeoverServiceCommitResult>;
   discard(turnId: string): void;
 }
 
@@ -44,6 +55,7 @@ export interface LowRiskTakeoverServiceOptions {
     state: GameState;
   }) => AtomicTurnStore<GameState>;
   now?: () => Date;
+  knowledgeClueTakeoverEnabled?: boolean;
 }
 
 export function createLowRiskTakeoverService(
@@ -51,9 +63,11 @@ export function createLowRiskTakeoverService(
 ): LowRiskTakeoverService {
   const createStore = options.createStore ?? ((initial) => new InMemoryAtomicTurnStore(initial));
   const now = options.now ?? (() => new Date());
+  const knowledgeClueTakeoverEnabled = options.knowledgeClueTakeoverEnabled ?? false;
   const pending = new Map<string, {
     prepared: PreparedLowRiskTurn;
     store: AtomicTurnStore<GameState>;
+    baselineState: GameState;
   }>();
 
   return {
@@ -83,6 +97,7 @@ export function createLowRiskTakeoverService(
           stateVersion: preparation.envelope.inputStateVersion,
           state,
         }),
+        baselineState: structuredClone(state) as GameState,
       });
       return { status: 'prepared', prepared: preparation };
     },
@@ -91,12 +106,35 @@ export function createLowRiskTakeoverService(
       const entry = pending.get(turnId);
       if (!entry) throw new Error(`No prepared low-risk takeover exists for turn "${turnId}".`);
       pending.delete(turnId);
-      return commitPreparedLowRiskTurn({
+      let candidateState = finalState;
+      let knowledgeClueProjection: KnowledgeClueProjectionSummary | undefined;
+      if (knowledgeClueTakeoverEnabled) {
+        const projection = projectConfirmedKnowledgeAndClues({
+          baselineState: entry.baselineState,
+          candidateState: finalState,
+          eventCandidates: entry.prepared.eventCandidates,
+          candidates: entry.prepared.knowledgeClueCandidates,
+        });
+        if (projection.status === 'rejected') {
+          throw new Error(`Knowledge/Clue projection rejected: ${projection.reason}`);
+        }
+        candidateState = projection.state;
+        knowledgeClueProjection = {
+          addedObservationIds: projection.addedObservationIds,
+          addedKnowledgeFactIds: projection.addedKnowledgeFactIds,
+          addedClueIds: projection.addedClueIds,
+        };
+      }
+
+      const committed = await commitPreparedLowRiskTurn({
         prepared: entry.prepared,
-        finalState,
+        finalState: candidateState,
         store: entry.store,
         now: now(),
       });
+      return committed.outcome.result.commitStatus === 'committed'
+        ? { ...committed, knowledgeClueProjection }
+        : committed;
     },
 
     discard(turnId) {
