@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
+    "test": "vitest run src/world-model-contracts.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
