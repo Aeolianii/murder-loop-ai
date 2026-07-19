@@ -386,6 +386,8 @@ async function testLowRiskTakeoverCommitsBeforePublishingResponse() {
   assert.equal(body.coreState.ending, null);
   assert.equal(body.coordination.lowRiskTakeover.status, 'committed');
   assert.equal(body.coordination.lowRiskTakeover.outputStateVersion, baseState.log.length + 1);
+  assert.equal(typeof body.coordination.lowRiskTakeover.durationMs, 'number');
+  assert(body.coordination.lowRiskTakeover.durationMs >= 0);
   await app.close();
 }
 

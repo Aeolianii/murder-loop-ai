@@ -377,6 +377,8 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const recap = generateRecap(state);
 
     const beforeLen = state.log.length;
+    const lowRiskTakeoverStartedAt = performance.now();
+    const lowRiskTakeoverDuration = () => Math.round(performance.now() - lowRiskTakeoverStartedAt);
     let lowRiskTakeoverCoordination: Record<string, unknown> | undefined;
     let resolution: TurnResolution | undefined;
     if (lowRiskTakeoverService && shadowSession) {
@@ -403,7 +405,11 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               error: 'low_risk_takeover_failed',
               coordination: {
                 warnings: routeWarnings,
-                lowRiskTakeover: { status: 'failed', reason: 'commit_exception' },
+                lowRiskTakeover: {
+                  status: 'failed',
+                  reason: 'commit_exception',
+                  durationMs: lowRiskTakeoverDuration(),
+                },
                 shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' },
               },
             });
@@ -420,6 +426,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
                   status: committed.outcome.result.commitStatus,
                   reason: committed.outcome.discardReason,
                   turnId: shadowSession.envelope.turnId,
+                  durationMs: lowRiskTakeoverDuration(),
                 },
                 shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' },
               },
@@ -433,16 +440,29 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
             sourceProposalId: preparation.prepared.sourceProposalId,
             outputStateVersion: committed.outcome.result.outputStateVersion,
             confirmedEventCount: committed.outcome.confirmedEvents.length,
+            durationMs: lowRiskTakeoverDuration(),
           };
         } else {
-          lowRiskTakeoverCoordination = { status: 'bypassed', reason: preparation.reason };
+          lowRiskTakeoverCoordination = {
+            status: 'bypassed',
+            reason: preparation.reason,
+            durationMs: lowRiskTakeoverDuration(),
+          };
         }
       } catch (error) {
         routeWarnings.push(`Low-risk takeover preparation failed: ${error instanceof Error ? error.message : String(error)}`);
-        lowRiskTakeoverCoordination = { status: 'bypassed', reason: 'preparation_failed' };
+        lowRiskTakeoverCoordination = {
+          status: 'bypassed',
+          reason: 'preparation_failed',
+          durationMs: lowRiskTakeoverDuration(),
+        };
       }
     } else if (lowRiskTakeoverService) {
-      lowRiskTakeoverCoordination = { status: 'bypassed', reason: 'shadow_unavailable' };
+      lowRiskTakeoverCoordination = {
+        status: 'bypassed',
+        reason: 'shadow_unavailable',
+        durationMs: lowRiskTakeoverDuration(),
+      };
     }
 
     resolution ??= await resolveTurnHarness(state, input, harness);
