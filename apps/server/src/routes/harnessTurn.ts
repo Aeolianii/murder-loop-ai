@@ -12,6 +12,7 @@ import {
 import { completeRoleJson } from '../ai/openaiClient';
 import { selectPrimaryActionAudioCue } from '../ai/audioCueSelector';
 import { createAiHarness } from '../ai/harnessAiAdapters';
+import { env } from '../env';
 import {
   buildSidebarPayload,
   toFrontendClues,
@@ -19,8 +20,13 @@ import {
   type FrontendStoryNode,
 } from '../presenters/frontendTurnPresenter';
 import { coerceGameState, normalizeDynamicClueId } from '../state/coerceGameState';
+import {
+  createShadowRunCoordinator,
+  type ShadowRunCoordinator,
+  type ShadowRunSession,
+} from '../shadow/shadowCoordinator';
 
-interface HarnessTurnRouteOptions {
+export interface HarnessTurnRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
     aiAdapters: AiAdapters;
     coordination?: {
@@ -34,6 +40,7 @@ interface HarnessTurnRouteOptions {
     state: GameState;
     playerResult: RuleResult;
   }) => Promise<ActionAudioCue | null>;
+  shadowCoordinator?: ShadowRunCoordinator | null;
 }
 
 interface HarnessResponseTraceEntry {
@@ -300,6 +307,15 @@ function attachRecommendedActions(
 // ============================================================================
 
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
+  const shadowCoordinator = options.shadowCoordinator === undefined
+    ? env.aiShadowRunEnabled
+      ? createShadowRunCoordinator({
+          deadlineMs: env.aiShadowDeadlineMs,
+          compilerTimeoutMs: env.aiShadowCompilerTimeoutMs,
+        })
+      : null
+    : options.shadowCoordinator;
+
   app.post('/api/harness/turn', async (request) => {
     const body = request.body as { input?: string; state?: GameState };
     const input = body.input?.trim() ?? '';
@@ -339,10 +355,22 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const routeWarnings = [...(adapterBundle?.coordination?.warnings ?? [])];
     const routeJudgements = adapterBundle?.coordination?.judgements ?? {};
 
+    let shadowSession: ShadowRunSession | undefined;
+    if (shadowCoordinator) {
+      try {
+        shadowSession = shadowCoordinator.start({ rawInput: input, state });
+      } catch (error) {
+        routeWarnings.push(`Shadow Run start failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     const recap = generateRecap(state);
 
     const beforeLen = state.log.length;
     const resolution = await resolveTurnHarness(state, input, harness);
+    if (shadowSession && shadowCoordinator) {
+      void shadowCoordinator.complete(shadowSession, resolution);
+    }
 
     routeWarnings.push(...applyNarrationOutcomeHints(
       resolution.finalState,
@@ -404,7 +432,15 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         npcReply: resolution.npcReply ?? null,
       },
       agentTrace,
-      coordination: { warnings: [...routeWarnings, ...trace.flatMap(t => t.warnings)], trace, agentTiming, judgements: routeJudgements },
+      coordination: {
+        warnings: [...routeWarnings, ...trace.flatMap(t => t.warnings)],
+        trace,
+        agentTiming,
+        judgements: routeJudgements,
+        ...(shadowSession ? {
+          shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' as const },
+        } : {}),
+      },
       sidebar,
     };
   });

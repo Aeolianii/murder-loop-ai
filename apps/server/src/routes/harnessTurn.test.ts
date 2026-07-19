@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { createInitialGameState, createInitialWorldState } from '@murder-loop-ai/game-core';
 import type { ActionAudioCue, ActionPlan, GameState, KillerStrategy, Narration, TurnResolution } from '@murder-loop-ai/shared';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy } from '../ai/turnCoordinator';
+import type { ShadowRunCoordinator } from '../shadow/shadowCoordinator';
 import { harnessTurnRoute } from './harnessTurn';
 
 function registerTestHarnessRoute(
@@ -206,6 +207,58 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
   assert.equal(body.audioCue.soundId, 'phone_msg');
   assert.equal(body.audioCue.confidence, 0.91);
 
+  await app.close();
+}
+
+async function testHarnessTurnDoesNotWaitForShadowCompletion() {
+  const app = Fastify({ logger: false });
+  let completeCalled = false;
+  const neverCompletes = new Promise<void>(() => undefined);
+  const shadowCoordinator: ShadowRunCoordinator = {
+    start: ({ state }) => ({
+      envelope: {
+        loopId: `legacy-run-${state.run}`,
+        turnId: 'shadow-nonblocking',
+        inputStateVersion: 0,
+        deadlineAt: new Date(Date.now() + 5_000).toISOString(),
+      },
+      wave: Promise.resolve({} as never),
+    }),
+    complete: () => {
+      completeCalled = true;
+      return neverCompletes;
+    },
+  };
+
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator,
+    createAiAdapters: () => ({
+      aiAdapters: {
+        parseAction: async () => resolution.plan,
+        chooseKillerStrategy: async () => resolution.killerStrategy,
+        narrateAction: async () => resolution.narration,
+        narrateAmbient: async () => resolution.narration,
+      },
+    }),
+  });
+
+  const response = await Promise.race([
+    app.inject({
+      method: 'POST',
+      url: '/api/harness/turn',
+      payload: { input: 'wait', state: baseState },
+    }),
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error('formal route waited for Shadow completion')), 250);
+    }),
+  ]);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(completeCalled, true);
+  assert.deepEqual(response.json().coordination.shadowRun, {
+    turnId: 'shadow-nonblocking',
+    status: 'scheduled',
+  });
   await app.close();
 }
 
@@ -980,6 +1033,7 @@ function testKillerStrategyVerifierDoesNotDowngradeAiOutput() {
   assert.ok(blackboard.warnings.some((warning) => warning.includes('did not rewrite')));
 }
 await testHarnessTurnRouteReturnsFrontendPackage();
+await testHarnessTurnDoesNotWaitForShadowCompletion();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
 await testWorldTickRunsAsProductCapabilityForRoute();
