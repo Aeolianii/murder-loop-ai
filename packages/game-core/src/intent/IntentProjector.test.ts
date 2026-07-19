@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { Fact, TurnBrief } from '@murder-loop-ai/ai-contracts';
 import { FactLedger } from '../facts/FactLedger';
 import { buildKnowledgeProjections } from '../facts/knowledgeProjection';
-import { projectTurnIntent } from './IntentProjector';
+import { projectTurnIntent, type ConditionalIntentSignal } from './IntentProjector';
 
 const facts: Fact[] = [
   {
@@ -88,31 +88,37 @@ const brief: TurnBrief = {
 };
 
 const knowledge = buildKnowledgeProjections(new FactLedger(facts), ['lin_yue', 'police_dispatch']);
+const killerSignal = {
+  id: 'signal-door-noise',
+  domain: 'killer',
+  visibleTo: ['killer'],
+  prerequisiteEventIds: ['event.player.made_door_noise'],
+  signalType: 'audible_door_noise',
+  subjectId: 'front_door',
+  rawInput: 'SECRET PLAYER INTENT',
+} as ConditionalIntentSignal & { rawInput: string };
 const projections = projectTurnIntent({
   brief,
   knowledge,
   canonicalConstraints: ['package_interior_requires_open_event'],
   conditionalSignals: [
-    {
-      id: 'signal-door-noise',
-      domain: 'killer',
-      visibleTo: ['killer'],
-      prerequisiteEventIds: ['event.player.made_door_noise'],
-      payload: { kind: 'audible_door_noise' },
-    },
+    killerSignal,
     {
       id: 'signal-exterior-observation',
       domain: 'clue',
       visibleTo: ['clue'],
       prerequisiteEventIds: ['observation.package.exterior'],
-      payload: { observationScope: 'exterior' },
+      signalType: 'observation_available',
+      subjectId: 'package',
+      scope: 'exterior',
     },
     {
       id: 'signal-visible-recommendation',
       domain: 'recommendation',
       visibleTo: ['recommendation'],
       prerequisiteEventIds: ['event.photo.confirmed'],
-      payload: { kind: 'photo_follow_up' },
+      signalType: 'confirmed_event_available',
+      subjectId: 'package_photo',
     },
   ],
 });
@@ -126,6 +132,7 @@ const killerJson = JSON.stringify(projections.killerSpecialist);
 assert.equal('turnBrief' in projections.killerSpecialist, false);
 assert(!killerJson.includes('只拍外包装'));
 assert(!killerJson.includes('不要打开'));
+assert(!killerJson.includes('SECRET PLAYER INTENT'));
 assert.deepEqual(projections.killerSpecialist.factIds.sort(), ['fact.killer.in_corridor', 'fact.weather.rain'].sort());
 assert.deepEqual(projections.killerSpecialist.conditionalSignals.map((signal) => signal.id), ['signal-door-noise']);
 

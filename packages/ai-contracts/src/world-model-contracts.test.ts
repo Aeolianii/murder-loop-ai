@@ -210,6 +210,10 @@ describe('AI-first phase-one contracts', () => {
       reasonCodes: ['causal_chain_complete', 'deterministic_evidence_present'],
     };
     expect(HighRiskDecisionSchema.parse(highRiskDecision)).toEqual(highRiskDecision);
+    expect(HighRiskDecisionSchema.safeParse({
+      ...highRiskDecision,
+      evidenceRefs: [],
+    }).success).toBe(false);
 
     const commit = {
       loopId: 'loop-1',
@@ -241,5 +245,9 @@ describe('AI-first phase-one contracts', () => {
       confirmedAt: '2026-07-20T12:00:00.500Z',
     };
     expect(ConfirmedEventSchema.parse(confirmedEvent)).toEqual(confirmedEvent);
+    expect(ConfirmedEventSchema.safeParse({
+      ...confirmedEvent,
+      outputStateVersion: confirmedEvent.inputStateVersion,
+    }).success).toBe(false);
   });
 });

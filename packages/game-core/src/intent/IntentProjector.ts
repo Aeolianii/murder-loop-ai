@@ -6,7 +6,10 @@ export interface ConditionalIntentSignal {
   domain: ProposalDomain;
   visibleTo: string[];
   prerequisiteEventIds: string[];
-  payload: Record<string, unknown>;
+  signalType: string;
+  subjectId: string;
+  scope?: string;
+  candidateHandleIds?: string[];
 }
 
 export interface IntentProjectionInput {
@@ -152,9 +155,20 @@ function signalsFor(
   domain: ProposalDomain,
   viewerId: string,
 ): ConditionalIntentSignal[] {
-  return signals.filter((signal) => (
-    signal.domain === domain
-    && (signal.visibleTo.includes(viewerId) || signal.visibleTo.includes('public'))
-    && signal.prerequisiteEventIds.length > 0
-  ));
+  return signals
+    .filter((signal) => (
+      signal.domain === domain
+      && (signal.visibleTo.includes(viewerId) || signal.visibleTo.includes('public'))
+      && signal.prerequisiteEventIds.length > 0
+    ))
+    .map((signal) => ({
+      id: signal.id,
+      domain: signal.domain,
+      visibleTo: [...signal.visibleTo],
+      prerequisiteEventIds: [...signal.prerequisiteEventIds],
+      signalType: signal.signalType,
+      subjectId: signal.subjectId,
+      scope: signal.scope,
+      candidateHandleIds: signal.candidateHandleIds ? [...signal.candidateHandleIds] : undefined,
+    }));
 }

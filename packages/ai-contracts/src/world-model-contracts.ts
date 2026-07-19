@@ -291,7 +291,19 @@ export const HighRiskDecisionSchema = z.object({
   evidenceRefs: z.array(IdSchema),
   decision: z.enum(['pass', 'defer', 'reject']),
   reasonCodes: z.array(IdSchema),
-}).strict();
+}).strict().superRefine((result, context) => {
+  if (
+    result.decision === 'pass'
+    && result.riskClass !== 'reversible'
+    && result.evidenceRefs.length === 0
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['evidenceRefs'],
+      message: 'A passed high-risk event requires independent deterministic evidence.',
+    });
+  }
+});
 
 export const TurnCommitResultSchema = z.object({
   loopId: IdSchema,
@@ -342,7 +354,15 @@ export const ConfirmedEventSchema = ProposedEventSchema.extend({
   outputStateVersion: StateVersionSchema,
   sourceProposalId: IdSchema,
   confirmedAt: z.string().datetime({ offset: true }),
-}).strict();
+}).strict().superRefine((event, context) => {
+  if (event.outputStateVersion <= event.inputStateVersion) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['outputStateVersion'],
+      message: 'A confirmed event must advance the state version.',
+    });
+  }
+});
 
 export type TurnEnvelope = z.infer<typeof TurnEnvelopeSchema>;
 export type Fact = z.infer<typeof FactSchema>;
