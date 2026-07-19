@@ -9,6 +9,7 @@ import { parseActionRoute } from './routes/parseAction';
 import { scoreRunRoute } from './routes/scoreRun';
 import { frontendAdapterRoute } from './routes/frontendAdapter';
 import { harnessTurnRoute } from './routes/harnessTurn';
+import { shadowReportsRoute } from './routes/shadowReports';
 
 const app = Fastify({ logger: true });
 
@@ -38,6 +39,7 @@ async function registerDebugRoutes(app: FastifyInstance) {
   await app.register(narrateRoute);
   await app.register(npcReplyRoute);
   await app.register(scoreRunRoute);
+  await app.register(shadowReportsRoute);
 }
 
 async function registerLegacyRoutes(app: FastifyInstance) {

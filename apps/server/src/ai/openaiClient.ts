@@ -4,9 +4,11 @@ import { createKeyPicker } from './apiKeyPool';
 import { configForRole, type AiProvider, type AiRole } from './roleConfig';
 import { extractJson } from './unwrapJsonObject';
 
-interface CompletionOptions {
+export interface CompletionOptions {
   modelOverride?: string;
   temperature?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
 }
 
 const pickApiKey = createKeyPicker(env.deepseekApiKeys);
@@ -39,7 +41,8 @@ export async function completeJson<T>(provider: AiProvider, system: string, user
     ],
     response_format: { type: 'json_object' },
     temperature: options.temperature ?? defaultTemperature(provider),
-  });
+    max_tokens: options.maxTokens,
+  }, options.signal ? { signal: options.signal } : undefined);
 
   const content = completion.choices[0]?.message?.content;
   if (!content) return null;

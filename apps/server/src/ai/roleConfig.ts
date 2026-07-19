@@ -3,7 +3,24 @@ import { env } from '../env';
 export const providers = ['openai', 'deepseek', 'deepseek_killer', 'deepseek_narrator', 'deepseek_npc', 'deepseek_recap', 'duckingmind'] as const;
 export type AiProvider = (typeof providers)[number];
 
-export type AiRole = 'parse' | 'killer' | 'narrator' | 'director' | 'recommendation' | 'npc' | 'recap' | 'npc_intent' | 'npc_task';
+export type AiRole =
+  | 'parse'
+  | 'killer'
+  | 'narrator'
+  | 'director'
+  | 'recommendation'
+  | 'npc'
+  | 'recap'
+  | 'npc_intent'
+  | 'npc_task'
+  | 'semantic_compiler'
+  | 'world_model'
+  | 'player_specialist'
+  | 'killer_specialist'
+  | 'npc_specialist'
+  | 'environment_specialist'
+  | 'clue_specialist'
+  | 'recommendation_specialist';
 
 export interface RoleConfig {
   role: AiRole;
@@ -60,6 +77,46 @@ const roleConfigs: Record<AiRole, RoleConfig> = {
     role: 'npc_task',
     provider: toProvider(env.aiNpcProvider, 'deepseek_npc'),
     modelOverride: env.aiNpcModel || undefined,
+  },
+  semantic_compiler: {
+    role: 'semantic_compiler',
+    provider: toProvider(env.aiParseProvider, 'deepseek'),
+    modelOverride: env.aiParseModel || undefined,
+  },
+  world_model: {
+    role: 'world_model',
+    provider: toProvider(env.aiDirectorProvider, 'deepseek_recap'),
+    modelOverride: env.aiDirectorModel || undefined,
+  },
+  player_specialist: {
+    role: 'player_specialist',
+    provider: toProvider(env.aiParseProvider, 'deepseek'),
+    modelOverride: env.aiParseModel || undefined,
+  },
+  killer_specialist: {
+    role: 'killer_specialist',
+    provider: toProvider(env.aiKillerProvider, 'openai'),
+    modelOverride: env.aiKillerModel || undefined,
+  },
+  npc_specialist: {
+    role: 'npc_specialist',
+    provider: toProvider(env.aiNpcProvider, 'deepseek_npc'),
+    modelOverride: env.aiNpcModel || undefined,
+  },
+  environment_specialist: {
+    role: 'environment_specialist',
+    provider: toProvider(env.aiDirectorProvider, 'deepseek_recap'),
+    modelOverride: env.aiDirectorModel || undefined,
+  },
+  clue_specialist: {
+    role: 'clue_specialist',
+    provider: toProvider(env.aiDirectorProvider, 'deepseek_recap'),
+    modelOverride: env.aiDirectorModel || undefined,
+  },
+  recommendation_specialist: {
+    role: 'recommendation_specialist',
+    provider: toProvider(env.aiDirectorProvider, 'deepseek_recap'),
+    modelOverride: env.aiDirectorModel || undefined,
   },
 };
 
