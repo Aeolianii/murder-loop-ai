@@ -33,6 +33,7 @@ export * from './facts/knowledgeProjection';
 export * from './intent/IntentProjector';
 export * from './commit/atomicTurnCommit';
 export * from './commit/loopResetPolicy';
+export * from './shadow/shadowArbiter';
 
 // Harness 架构新增导出
 export { GameEventBus } from './events/EventBus';

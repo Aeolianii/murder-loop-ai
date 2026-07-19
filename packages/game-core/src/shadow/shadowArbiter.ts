@@ -1,0 +1,419 @@
+import {
+  ProposalSchema,
+  SpecialistCandidateSchema,
+  StateTransitionResultSchema,
+  type HighRiskDecision,
+  type Proposal,
+  type ProposalDomain,
+  type ProposedEvent,
+  type SpecialistCandidate,
+  type StateTransitionResult,
+  type TurnCommitResult,
+  type TurnEnvelope,
+} from '@murder-loop-ai/ai-contracts';
+import { evaluateTurnWorkFreshness, type TurnDiscardReason, type TurnFreshnessSnapshot } from '../commit/atomicTurnCommit';
+
+export interface ShadowSourcePolicy {
+  allowedDomains: ProposalDomain[];
+  authorizedFactIds: string[];
+}
+
+export interface ShadowArbiterInput {
+  envelope: TurnEnvelope;
+  compilerVersion: string;
+  schemaVersion: string;
+  mainProposals: Proposal[];
+  specialistCandidates: SpecialistCandidate[];
+  requiredDomains: ProposalDomain[];
+  sourcePolicies: Record<string, ShadowSourcePolicy>;
+  availableEvidenceRefs: string[];
+  availableObservationIds: string[];
+  visibleConfirmedEventIds: string[];
+}
+
+export interface RejectedShadowProposal {
+  proposalId: string;
+  sourceAgent: string;
+  domain: ProposalDomain;
+  reasonCodes: string[];
+}
+
+export interface ShadowArbiterReport {
+  transition: StateTransitionResult;
+  selectedProposalIds: string[];
+  rejectedProposals: RejectedShadowProposal[];
+  highRiskDecisions: HighRiskDecision[];
+}
+
+export interface SimulateShadowCommitInput {
+  envelope: TurnEnvelope;
+  transition: StateTransitionResult;
+  highRiskDecisions: HighRiskDecision[];
+  current: TurnFreshnessSnapshot;
+  completedAt: Date;
+}
+
+export interface SimulatedShadowCommit {
+  simulated: true;
+  result: TurnCommitResult;
+  discardReason?: TurnDiscardReason;
+}
+
+export interface LegacyEventSnapshot {
+  id: string;
+  eventType: string;
+  subject: string;
+  facts: string[];
+}
+
+export interface ShadowDifferenceItem {
+  kind: 'shadow_only' | 'legacy_only';
+  eventKey: string;
+  sourceId: string;
+  explanation: string;
+}
+
+export interface ShadowDifferenceReport {
+  items: ShadowDifferenceItem[];
+  unexplainedCount: number;
+}
+
+export interface ShadowArbitrationMetrics {
+  schemaSuccessRate: number;
+  permissionLeakCount: number;
+  specialistReplacementRate: number;
+  fallbackRate: number;
+  highRiskDecisions: Record<'pass' | 'defer' | 'reject', number>;
+}
+
+export function runShadowArbiter(input: ShadowArbiterInput): ShadowArbiterReport {
+  const selected: Proposal[] = [];
+  const rejectedProposals: RejectedShadowProposal[] = [];
+  const specialistCandidatesTried: string[] = [];
+  const fallbackDomains: ProposalDomain[] = [];
+  const selectedSourceByDomain: Record<string, string> = {};
+
+  for (const domain of input.requiredDomains) {
+    const mainCandidates = input.mainProposals
+      .filter((proposal) => proposal.domain === domain)
+      .sort(byCandidateRank);
+    const selectedMain = firstValid(mainCandidates, input, rejectedProposals);
+    if (selectedMain) {
+      selected.push(selectedMain);
+      selectedSourceByDomain[domain] = selectedMain.sourceAgent;
+      continue;
+    }
+
+    const specialists = input.specialistCandidates
+      .filter((candidate) => candidate.domain === domain)
+      .sort(byCandidateRank);
+    let selectedSpecialist: SpecialistCandidate | undefined;
+    for (const candidate of specialists) {
+      specialistCandidatesTried.push(candidate.id);
+      const reasons = validateProposal(candidate, input, true);
+      if (reasons.length === 0) {
+        selectedSpecialist = candidate;
+        break;
+      }
+      rejectedProposals.push(rejected(candidate, reasons));
+    }
+
+    if (selectedSpecialist) {
+      selected.push(selectedSpecialist);
+      selectedSourceByDomain[domain] = selectedSpecialist.sourceAgent;
+    } else {
+      fallbackDomains.push(domain);
+    }
+  }
+
+  const acceptedEvents = selected.flatMap((proposal) => proposal.proposedEvents);
+  const transition = StateTransitionResultSchema.parse({
+    ...input.envelope,
+    acceptedEvents,
+    correctedEvents: [],
+    rejectedEffects: rejectedProposals.flatMap((item) => {
+      const proposal = [...input.mainProposals, ...input.specialistCandidates]
+        .find((candidate) => candidate.id === item.proposalId);
+      return (proposal?.proposedEffects ?? []).map((effect) => ({
+        effectId: effect.id,
+        proposalId: item.proposalId,
+        reasonCodes: item.reasonCodes,
+      }));
+    }),
+    violations: rejectedProposals.flatMap((item) => item.reasonCodes.map((code) => ({
+      code,
+      subjectId: item.proposalId,
+      detail: `Shadow proposal ${item.proposalId} was rejected: ${code}.`,
+    }))),
+    selectedSourceByDomain,
+    specialistCandidatesTried,
+    fallbackDomains,
+    requiresRepair: false,
+    requiresPlayerClarification: false,
+    expectedOutputStateVersion: input.envelope.inputStateVersion + 1,
+  });
+
+  return {
+    transition,
+    selectedProposalIds: selected.map((proposal) => proposal.id),
+    rejectedProposals,
+    highRiskDecisions: evaluateShadowHighRiskGate(
+      acceptedEvents,
+      new Set(input.availableEvidenceRefs),
+    ),
+  };
+}
+
+export function evaluateShadowHighRiskGate(
+  events: ProposedEvent[],
+  availableEvidenceRefs: Set<string>,
+): HighRiskDecision[] {
+  const acceptedEventIds = new Set(events.map((event) => event.id));
+  return events.map((event) => {
+    if (event.riskClass === 'reversible') {
+      return {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: event.evidenceRefs,
+        decision: 'pass',
+        reasonCodes: ['reversible_event'],
+      };
+    }
+
+    const missingParents = event.causalParentIds.filter((id) => !acceptedEventIds.has(id));
+    if (missingParents.length > 0) {
+      return {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: event.evidenceRefs,
+        decision: 'reject',
+        reasonCodes: ['causal_chain_incomplete'],
+      };
+    }
+
+    if (event.evidenceRefs.length === 0) {
+      return {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: [],
+        decision: 'defer',
+        reasonCodes: ['deterministic_evidence_missing'],
+      };
+    }
+
+    const invalidEvidence = event.evidenceRefs.filter((ref) => (
+      !availableEvidenceRefs.has(ref) && !acceptedEventIds.has(ref)
+    ));
+    if (invalidEvidence.length > 0) {
+      return {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: event.evidenceRefs,
+        decision: 'reject',
+        reasonCodes: ['evidence_reference_invalid'],
+      };
+    }
+
+    return {
+      eventId: event.id,
+      riskClass: event.riskClass,
+      evidenceRefs: event.evidenceRefs,
+      decision: 'pass',
+      reasonCodes: ['causal_chain_complete', 'deterministic_evidence_present'],
+    };
+  });
+}
+
+export function simulateShadowCommit(input: SimulateShadowCommitInput): SimulatedShadowCommit {
+  const freshness = evaluateTurnWorkFreshness(input.envelope, input.current, input.completedAt);
+  if (!freshness.accept) {
+    const commitStatus = freshness.reason === 'deadline_expired' ? 'failed' : 'conflict';
+    return {
+      simulated: true,
+      result: {
+        loopId: input.envelope.loopId,
+        turnId: input.envelope.turnId,
+        inputStateVersion: input.envelope.inputStateVersion,
+        outputStateVersion: null,
+        commitStatus,
+        confirmedEventIds: [],
+      },
+      discardReason: freshness.reason,
+    };
+  }
+
+  const confirmedEventIds = input.transition.acceptedEvents
+    .filter((event) => event.riskClass === 'reversible' || input.highRiskDecisions.some((decision) => (
+      decision.eventId === event.id && decision.decision === 'pass'
+    )))
+    .map((event) => event.id);
+
+  return {
+    simulated: true,
+    result: {
+      loopId: input.envelope.loopId,
+      turnId: input.envelope.turnId,
+      inputStateVersion: input.envelope.inputStateVersion,
+      outputStateVersion: input.transition.expectedOutputStateVersion,
+      commitStatus: 'committed',
+      confirmedEventIds,
+    },
+  };
+}
+
+export function compareShadowWithLegacy(
+  report: ShadowArbiterReport,
+  legacyEvents: LegacyEventSnapshot[],
+): ShadowDifferenceReport {
+  const shadowEvents = report.transition.acceptedEvents;
+  const shadowKeys = new Map(shadowEvents.map((event) => [eventKey(event), event]));
+  const legacyKeys = new Map(legacyEvents.map((event) => [eventKey(event), event]));
+  const items: ShadowDifferenceItem[] = [];
+
+  for (const [key, event] of shadowKeys) {
+    if (legacyKeys.has(key)) continue;
+    items.push({
+      kind: 'shadow_only',
+      eventKey: key,
+      sourceId: event.id,
+      explanation: 'The selected Shadow proposal produced this event, while the legacy rule result did not.',
+    });
+  }
+  for (const [key, event] of legacyKeys) {
+    if (shadowKeys.has(key)) continue;
+    items.push({
+      kind: 'legacy_only',
+      eventKey: key,
+      sourceId: event.id,
+      explanation: 'The legacy rule path confirmed this event, while no accepted Shadow proposal produced an equivalent event.',
+    });
+  }
+
+  return {
+    items,
+    unexplainedCount: items.filter((item) => item.explanation.trim().length === 0).length,
+  };
+}
+
+export function buildShadowArbitrationMetrics(
+  report: ShadowArbiterReport,
+  schemaAttempts: number,
+  schemaSuccesses: number,
+): ShadowArbitrationMetrics {
+  const selectedSources = Object.values(report.transition.selectedSourceByDomain);
+  const domainCount = selectedSources.length + report.transition.fallbackDomains.length;
+  const specialistSelections = selectedSources.filter((source) => source !== 'main-world-model').length;
+  return {
+    schemaSuccessRate: schemaAttempts > 0 ? schemaSuccesses / schemaAttempts : 1,
+    permissionLeakCount: report.rejectedProposals.filter((proposal) => (
+      proposal.reasonCodes.includes('unauthorized_fact_reference')
+      || proposal.reasonCodes.includes('precondition_unauthorized')
+      || proposal.reasonCodes.includes('source_domain_unauthorized')
+    )).length,
+    specialistReplacementRate: domainCount > 0 ? specialistSelections / domainCount : 0,
+    fallbackRate: domainCount > 0 ? report.transition.fallbackDomains.length / domainCount : 0,
+    highRiskDecisions: {
+      pass: report.highRiskDecisions.filter((decision) => decision.decision === 'pass').length,
+      defer: report.highRiskDecisions.filter((decision) => decision.decision === 'defer').length,
+      reject: report.highRiskDecisions.filter((decision) => decision.decision === 'reject').length,
+    },
+  };
+}
+
+function firstValid(
+  candidates: Proposal[],
+  input: ShadowArbiterInput,
+  rejectedProposals: RejectedShadowProposal[],
+): Proposal | undefined {
+  for (const candidate of candidates) {
+    const reasons = validateProposal(candidate, input, false);
+    if (reasons.length === 0) return candidate;
+    rejectedProposals.push(rejected(candidate, reasons));
+  }
+  return undefined;
+}
+
+function validateProposal(
+  proposal: Proposal | SpecialistCandidate,
+  input: ShadowArbiterInput,
+  specialist: boolean,
+): string[] {
+  const reasons = new Set<string>();
+  const schema = specialist ? SpecialistCandidateSchema : ProposalSchema;
+  if (!schema.safeParse(proposal).success) reasons.add('schema_invalid');
+  if (
+    proposal.loopId !== input.envelope.loopId
+    || proposal.turnId !== input.envelope.turnId
+    || proposal.inputStateVersion !== input.envelope.inputStateVersion
+    || proposal.deadlineAt !== input.envelope.deadlineAt
+  ) {
+    reasons.add('turn_envelope_mismatch');
+  }
+  if (
+    proposal.compilerVersion !== input.compilerVersion
+    || proposal.schemaVersion !== input.schemaVersion
+  ) {
+    reasons.add('contract_version_mismatch');
+  }
+
+  const policy = input.sourcePolicies[proposal.sourceAgent];
+  if (!policy || !policy.allowedDomains.includes(proposal.domain)) {
+    reasons.add('source_domain_unauthorized');
+  }
+  const authorizedFacts = new Set(policy?.authorizedFactIds ?? []);
+  if (proposal.basedOnFactIds.some((factId) => !authorizedFacts.has(factId))) {
+    reasons.add('unauthorized_fact_reference');
+  }
+  if (proposal.preconditions.some((condition) => (
+    condition.kind === 'fact' && !authorizedFacts.has(condition.ref)
+  ))) {
+    reasons.add('precondition_unauthorized');
+  }
+
+  const observationIds = new Set([
+    ...input.availableObservationIds,
+    ...proposal.observations.map((observation) => observation.id),
+  ]);
+  if (proposal.clueCandidates.some((clue) => (
+    clue.basedOnObservationIds.some((id) => !observationIds.has(id))
+  ))) {
+    reasons.add('observation_source_missing');
+  }
+
+  const proposedEventIds = new Set(proposal.proposedEvents.map((event) => event.id));
+  if (proposal.recommendations.some((recommendation) => (
+    recommendation.basedOnEventIds.some((id) => (
+      !input.visibleConfirmedEventIds.includes(id) && !proposedEventIds.has(id)
+    ))
+  ))) {
+    reasons.add('recommendation_source_missing');
+  }
+  if (proposal.displayFragments.some((fragment) => (
+    fragment.eventRefs.length === 0
+    || fragment.eventRefs.some((id) => !proposedEventIds.has(id))
+  ))) {
+    reasons.add('display_event_reference_invalid');
+  }
+
+  return [...reasons];
+}
+
+function rejected(
+  proposal: Proposal | SpecialistCandidate,
+  reasonCodes: string[],
+): RejectedShadowProposal {
+  return {
+    proposalId: proposal.id,
+    sourceAgent: proposal.sourceAgent,
+    domain: proposal.domain,
+    reasonCodes,
+  };
+}
+
+function byCandidateRank(left: Proposal, right: Proposal): number {
+  return left.candidateRank - right.candidateRank;
+}
+
+function eventKey(event: { eventType: string; subject: string }): string {
+  return `${event.eventType}:${event.subject}`;
+}
