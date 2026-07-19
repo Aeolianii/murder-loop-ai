@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
-import { createInitialGameState, createInitialWorldState } from '@murder-loop-ai/game-core';
+import {
+  createInitialGameState,
+  createInitialWorldState,
+  prepareLowRiskTurn,
+} from '@murder-loop-ai/game-core';
+import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
 import type { ActionAudioCue, ActionPlan, GameState, KillerStrategy, Narration, TurnResolution } from '@murder-loop-ai/shared';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy } from '../ai/turnCoordinator';
 import type { ShadowRunCoordinator } from '../shadow/shadowCoordinator';
+import type { LowRiskTakeoverService } from '../takeover/lowRiskTakeoverService';
 import { harnessTurnRoute } from './harnessTurn';
 
 function registerTestHarnessRoute(
@@ -259,6 +265,175 @@ async function testHarnessTurnDoesNotWaitForShadowCompletion() {
     turnId: 'shadow-nonblocking',
     status: 'scheduled',
   });
+  await app.close();
+}
+
+function takeoverBrief(): TurnBrief {
+  return {
+    loopId: 'legacy-run-1',
+    turnId: 'takeover-route-turn',
+    inputStateVersion: baseState.log.length,
+    deadlineAt: new Date(Date.now() + 10_000).toISOString(),
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    utteranceMode: 'command',
+    resolvedReferences: [],
+    orderedActions: [{
+      actionId: 'secure-door',
+      actorId: 'player',
+      operation: 'secure_entry',
+      targetIds: ['front_door', 'chair'],
+      dependsOnActionIds: [],
+      inputHandleIds: [],
+      outputHandleIds: [],
+      originalSpan: { start: 0, end: 11, text: 'secure door' },
+    }],
+    globalConstraints: [],
+    scopedConstraints: [],
+    communications: [],
+    candidateHandles: [],
+    ambiguities: [],
+  };
+}
+
+function takeoverFixture(commitStatus: 'committed' | 'conflict' | 'failed' = 'committed') {
+  const prepared = prepareLowRiskTurn({
+    state: baseState,
+    brief: takeoverBrief(),
+    sourceProposalId: 'proposal.player.route',
+  });
+  if (prepared.status !== 'prepared') throw new Error('expected route takeover fixture');
+  let parserCalls = 0;
+  let completeCalls = 0;
+  let committedFinalState: GameState | undefined;
+  const shadowCoordinator: ShadowRunCoordinator = {
+    start: () => ({ envelope: prepared.envelope, wave: Promise.resolve({} as never) }),
+    complete: async () => { completeCalls += 1; },
+  };
+  const lowRiskTakeoverService: LowRiskTakeoverService = {
+    prepare: async () => ({ status: 'prepared', prepared }),
+    commit: async (_turnId, candidateState) => {
+      committedFinalState = candidateState;
+      return {
+        outcome: {
+          result: {
+            loopId: prepared.envelope.loopId,
+            turnId: prepared.envelope.turnId,
+            inputStateVersion: prepared.envelope.inputStateVersion,
+            outputStateVersion: commitStatus === 'committed' ? prepared.envelope.inputStateVersion + 1 : null,
+            commitStatus,
+            confirmedEventIds: commitStatus === 'committed'
+              ? prepared.eventCandidates.map((candidate) => candidate.event.id)
+              : [],
+          },
+          confirmedEvents: [],
+          displayFragments: commitStatus === 'committed' ? prepared.displayFragments : [],
+          ...(commitStatus === 'conflict'
+            ? { discardReason: 'state_version_conflict' as const }
+            : commitStatus === 'failed'
+              ? { discardReason: 'persistence_failed' as const }
+              : {}),
+        },
+        state: commitStatus === 'committed' ? candidateState : undefined,
+      };
+    },
+  };
+  return {
+    prepared,
+    shadowCoordinator,
+    lowRiskTakeoverService,
+    aiAdapters: {
+      parseAction: async () => {
+        parserCalls += 1;
+        return resolution.plan;
+      },
+      chooseKillerStrategy: async () => ({
+        id: 'killer-spare-key-takeover-route',
+        type: 'spare_key_entry',
+        title: 'Spare key attempt',
+        rationale: 'Verify that route continuation uses the prepared door state.',
+        visibleToPlayer: true,
+        risk: 'high',
+      } as const),
+      narrateAction: async () => ({ title: 'Door secured', text: 'The door is locked, chained, and blocked.' }),
+      narrateAmbient: async () => ({ title: 'Key stopped', text: 'The spare key cannot open the barricaded door.' }),
+    },
+    calls: () => ({ parserCalls, completeCalls, committedFinalState }),
+  };
+}
+
+async function testLowRiskTakeoverCommitsBeforePublishingResponse() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture();
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(fixture.calls().parserCalls, 0, 'legacy player parser/rule path must be skipped');
+  assert.equal(fixture.calls().completeCalls, 1);
+  assert.equal(fixture.calls().committedFinalState?.room.front_door.state.barricaded, true);
+  assert.equal(body.coreState.room.front_door.state.barricaded, true);
+  assert.equal(body.coreState.ending, null);
+  assert.equal(body.coordination.lowRiskTakeover.status, 'committed');
+  assert.equal(body.coordination.lowRiskTakeover.outputStateVersion, baseState.log.length + 1);
+  await app.close();
+}
+
+async function testLowRiskTakeoverConflictPublishesNoStateOrStory() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('conflict');
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 409);
+  const body = response.json();
+  assert.equal(body.error, 'low_risk_takeover_conflict');
+  assert.equal('coreState' in body, false);
+  assert.equal('storyLog' in body, false);
+  assert.equal(body.coordination.lowRiskTakeover.status, 'conflict');
+  await app.close();
+}
+
+async function testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('failed');
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 503);
+  const body = response.json();
+  assert.equal(body.error, 'low_risk_takeover_failed');
+  assert.equal('coreState' in body, false);
+  assert.equal('storyLog' in body, false);
+  assert.equal(body.coordination.lowRiskTakeover.status, 'failed');
   await app.close();
 }
 
@@ -1034,6 +1209,9 @@ function testKillerStrategyVerifierDoesNotDowngradeAiOutput() {
 }
 await testHarnessTurnRouteReturnsFrontendPackage();
 await testHarnessTurnDoesNotWaitForShadowCompletion();
+await testLowRiskTakeoverCommitsBeforePublishingResponse();
+await testLowRiskTakeoverConflictPublishesNoStateOrStory();
+await testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
 await testWorldTickRunsAsProductCapabilityForRoute();

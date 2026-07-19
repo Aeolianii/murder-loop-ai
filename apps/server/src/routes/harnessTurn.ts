@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
-  createHarness, normalizeLoopMemory, resolveTurnHarness,
+  createHarness, normalizeLoopMemory, resolveTurnHarness, resolveTurnHarnessFromPreparedPlayerTurn,
   type AiAdapters,
   type HarnessOptions,
 } from '@murder-loop-ai/game-core';
@@ -25,6 +25,10 @@ import {
   type ShadowRunCoordinator,
   type ShadowRunSession,
 } from '../shadow/shadowCoordinator';
+import {
+  createLowRiskTakeoverService,
+  type LowRiskTakeoverService,
+} from '../takeover/lowRiskTakeoverService';
 
 export interface HarnessTurnRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -41,6 +45,7 @@ export interface HarnessTurnRouteOptions {
     playerResult: RuleResult;
   }) => Promise<ActionAudioCue | null>;
   shadowCoordinator?: ShadowRunCoordinator | null;
+  lowRiskTakeoverService?: LowRiskTakeoverService | null;
 }
 
 interface HarnessResponseTraceEntry {
@@ -307,8 +312,13 @@ function attachRecommendedActions(
 // ============================================================================
 
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
+  const lowRiskTakeoverService = options.lowRiskTakeoverService === undefined
+    ? env.aiLowRiskTakeoverEnabled
+      ? createLowRiskTakeoverService()
+      : null
+    : options.lowRiskTakeoverService;
   const shadowCoordinator = options.shadowCoordinator === undefined
-    ? env.aiShadowRunEnabled
+    ? env.aiShadowRunEnabled || env.aiLowRiskTakeoverEnabled
       ? createShadowRunCoordinator({
           deadlineMs: env.aiShadowDeadlineMs,
           compilerTimeoutMs: env.aiShadowCompilerTimeoutMs,
@@ -316,7 +326,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       : null
     : options.shadowCoordinator;
 
-  app.post('/api/harness/turn', async (request) => {
+  app.post('/api/harness/turn', async (request, reply) => {
     const body = request.body as { input?: string; state?: GameState };
     const input = body.input?.trim() ?? '';
     const rawState = coerceGameState(body.state);
@@ -367,7 +377,75 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const recap = generateRecap(state);
 
     const beforeLen = state.log.length;
-    const resolution = await resolveTurnHarness(state, input, harness);
+    let lowRiskTakeoverCoordination: Record<string, unknown> | undefined;
+    let resolution: TurnResolution | undefined;
+    if (lowRiskTakeoverService && shadowSession) {
+      try {
+        const preparation = await lowRiskTakeoverService.prepare(shadowSession, state);
+        if (preparation.status === 'prepared') {
+          resolution = await resolveTurnHarnessFromPreparedPlayerTurn({
+            state,
+            input,
+            plan: preparation.prepared.plan,
+            playerResult: preparation.prepared.playerResult,
+          }, harness);
+
+          let committed: Awaited<ReturnType<LowRiskTakeoverService['commit']>>;
+          try {
+            committed = await lowRiskTakeoverService.commit(
+              shadowSession.envelope.turnId,
+              resolution.finalState,
+            );
+          } catch (error) {
+            routeWarnings.push(`Low-risk takeover commit failed: ${error instanceof Error ? error.message : String(error)}`);
+            if (shadowCoordinator) void shadowCoordinator.complete(shadowSession, resolution);
+            return reply.code(503).send({
+              error: 'low_risk_takeover_failed',
+              coordination: {
+                warnings: routeWarnings,
+                lowRiskTakeover: { status: 'failed', reason: 'commit_exception' },
+                shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' },
+              },
+            });
+          }
+
+          if (committed.outcome.result.commitStatus !== 'committed' || !committed.state) {
+            if (shadowCoordinator) void shadowCoordinator.complete(shadowSession, resolution);
+            const conflict = committed.outcome.result.commitStatus === 'conflict';
+            return reply.code(conflict ? 409 : 503).send({
+              error: conflict ? 'low_risk_takeover_conflict' : 'low_risk_takeover_failed',
+              coordination: {
+                warnings: routeWarnings,
+                lowRiskTakeover: {
+                  status: committed.outcome.result.commitStatus,
+                  reason: committed.outcome.discardReason,
+                  turnId: shadowSession.envelope.turnId,
+                },
+                shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' },
+              },
+            });
+          }
+
+          resolution = { ...resolution, finalState: committed.state };
+          lowRiskTakeoverCoordination = {
+            status: 'committed',
+            turnId: shadowSession.envelope.turnId,
+            sourceProposalId: preparation.prepared.sourceProposalId,
+            outputStateVersion: committed.outcome.result.outputStateVersion,
+            confirmedEventCount: committed.outcome.confirmedEvents.length,
+          };
+        } else {
+          lowRiskTakeoverCoordination = { status: 'bypassed', reason: preparation.reason };
+        }
+      } catch (error) {
+        routeWarnings.push(`Low-risk takeover preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+        lowRiskTakeoverCoordination = { status: 'bypassed', reason: 'preparation_failed' };
+      }
+    } else if (lowRiskTakeoverService) {
+      lowRiskTakeoverCoordination = { status: 'bypassed', reason: 'shadow_unavailable' };
+    }
+
+    resolution ??= await resolveTurnHarness(state, input, harness);
     if (shadowSession && shadowCoordinator) {
       void shadowCoordinator.complete(shadowSession, resolution);
     }
@@ -380,7 +458,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     ));
 
     const visibleEntries = resolution.finalState.log.slice(beforeLen);
-    addTurnDynamicClues(resolution, visibleEntries);
+    if (lowRiskTakeoverCoordination?.status !== 'committed') {
+      addTurnDynamicClues(resolution, visibleEntries);
+    }
 
     // 并发启动回合后的非权威展示工作：audioCue 和 sidebar。
 
@@ -440,6 +520,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         ...(shadowSession ? {
           shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' as const },
         } : {}),
+        ...(lowRiskTakeoverCoordination ? { lowRiskTakeover: lowRiskTakeoverCoordination } : {}),
       },
       sidebar,
     };
