@@ -9,7 +9,35 @@
 但规则系统拥有最终解释权。
 ```
 
-当前版本：`v1.8`
+当前版本：`v1.9`
+
+## v1.9 更新摘要
+
+本版本完成 **AI-first 回合接管、跨请求状态持久化与正式循环重置**。AI 可以提出行动理解、世界事件、线索、NPC 回复和叙事，但所有结果必须经过证据校验、风险分级、确定性 reducer 与原子提交后，才能进入正式 `GameState` 和玩家界面。
+
+正式回合链路升级为：
+
+```txt
+玩家输入 + authoritative session snapshot
+  -> TurnBrief 规范化行动
+  -> World / Player / Killer / NPC / Clue / Recommendation Specialists 并行提案
+  -> Arbiter 校验证据、因果链、目标与风险等级
+  -> low-risk / knowledge-clue / high-risk reducers 写入候选状态
+  -> Atomic Commit 校验 loopId + stateVersion 并提交
+  -> confirmed state 驱动 Narration、NPC Reply、Sidebar 和 Recommendations
+  -> 死亡 CG -> 玩家显式重启 -> Loop Reset Policy -> Atomic Loop Reset
+```
+
+核心变化：
+
+- 引入非阻塞 Shadow Run 和分阶段 AI-first takeover；未通过 Arbiter 的提案只能作为审查材料，不能改变正式状态。
+- 建立跨 HTTP 请求的权威游戏 Session，以 `loopId + stateVersion` 保护提交，拒绝过期、冲突或已放弃回合的结果。
+- Atomic Commit 与高风险 Reducer 接入完整证据链；死亡、伤害、结局等高影响事件必须具备独立确定性证据。
+- Clue Specialist 的输出经过可见事实和 provenance 校验后进入正式线索投影，Sidebar 在提交完成后读取最终状态刷新。
+- 叙事和 NPC 回复改为 post-commit 只读渲染；照片附件、消息发送、推荐行动等展示内容以已确认事实为准。
+- 正式接入 Loop Reset Policy：死亡状态不会自动复活；死亡 CG 结束后由玩家点击“重启循环”，原子恢复房间、时间、NPC、资源和威胁状态。
+- 循环重启会清空本轮对话与临时状态，只保留玩家跨循环记忆、持久线索及其证据来源；旧线索在新循环中标记为“已知”。
+- 前端推荐按钮可以直接提交已接受行动，死亡重启按钮具备等待态和重复提交保护。
 
 ## v1.8 更新摘要
 
@@ -305,7 +333,10 @@ packages/content/src/worldInfo.ts
 - 叙事 AI 小说化输出；
 - World Info Lite；
 - Agent Trace；
+- AI-first Shadow Run、Arbiter 与分阶段 takeover；
+- 跨请求权威 Session 和原子状态提交；
 - 结构化循环记忆；
+- 正式死亡 CG 与 Loop Reset Policy；
 - 前端暗色悬疑 UI；
 - 线索、侧边栏、音效和过场动画。
 
