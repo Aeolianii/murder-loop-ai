@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { Fact } from '@murder-loop-ai/ai-contracts';
 import { createInitialGameState } from '../state/createInitialState';
+import { createInitialWorldState } from '../world/worldSimulator';
 import { FactLedger } from './FactLedger';
 import { buildFactLedgerFromGameState, buildKnowledgeProjections } from './knowledgeProjection';
 
@@ -66,6 +67,7 @@ const killerFact: Fact = {
 
 {
   const state = createInitialGameState();
+  state.world = createInitialWorldState();
   state.killerKnowledge.knowsPlayerOpenedPackage = true;
   state.clues.push({
     id: 'clue-exterior-label',
@@ -87,5 +89,16 @@ const killerFact: Fact = {
   assert(projections.player.factIds.includes('fact.clue.clue-exterior-label.discovered'));
   assert(!projections.player.factIds.includes('fact.killer.knowledge.knowsPlayerOpenedPackage'));
   assert(projections.killer.factIds.includes('fact.killer.knowledge.knowsPlayerOpenedPackage'));
+  assert.equal(ledger.get('fact.game.police_phase')?.value, 'not_contacted');
+  assert.equal(ledger.get('fact.game.evidence_phase')?.value, 'package_unnoticed');
+  assert.equal(ledger.get('fact.game.killer_status')?.value, 'alive');
+  assert.equal(
+    ledger.get('fact.world.character.chen_huaimin.location')?.value,
+    'room_501',
+  );
+  assert.equal(
+    ledger.get('fact.world.character.chen_huaimin.status')?.value,
+    'active',
+  );
   assert(ledger.activeFacts().every((fact) => fact.sourceEventId.startsWith('legacy.snapshot.')));
 }

@@ -1,6 +1,7 @@
 import type { Fact } from '@murder-loop-ai/ai-contracts';
 import type { GameState } from '@murder-loop-ai/shared';
 import { FactLedger } from './FactLedger';
+import { createInitialWorldState } from '../world/worldSimulator';
 
 export interface FactProjection {
   viewerId: string;
@@ -63,6 +64,9 @@ export function buildFactLedgerFromGameState(
   add('fact.game.run', 'game', 'run', state.run, ['player', 'killer'], ['system']);
   add('fact.game.minute', 'game', 'minute', state.minute, ['player', 'killer'], ['system']);
   add('fact.game.phase', 'game', 'phase', state.phase, ['player'], ['player', 'system']);
+  add('fact.game.police_phase', 'game', 'police_phase', state.policePhase, ['system'], ['system']);
+  add('fact.game.evidence_phase', 'game', 'evidence_phase', state.evidencePhase, ['system'], ['system']);
+  add('fact.game.killer_status', 'game', 'killer_status', state.killerStatus, ['system'], ['system']);
   add('fact.player.injury', 'player', 'injury', state.player.injury, ['player'], ['player', 'system']);
   add('fact.player.phone_functional', 'player', 'phone_functional', state.phoneFunctional, ['player'], ['player', 'system']);
   add('fact.player.phone_battery', 'player', 'phone_battery', state.phoneBattery, ['player'], ['player', 'system']);
@@ -110,6 +114,79 @@ export function buildFactLedgerFromGameState(
       ['system'],
       ['killer', 'system'],
     );
+  }
+
+  const world = state.world ?? createInitialWorldState();
+  {
+    for (const character of Object.values(world.characters)) {
+      const viewerId = worldCharacterToViewer(character.id);
+      add(
+        `fact.world.character.${character.id}.location`,
+        character.id,
+        'location',
+        character.location,
+        ['system'],
+        [viewerId, 'system'],
+      );
+      add(
+        `fact.world.character.${character.id}.status`,
+        character.id,
+        'status',
+        character.status,
+        ['system'],
+        [viewerId, 'system'],
+      );
+    }
+    for (const object of Object.values(world.objects)) {
+      add(
+        `fact.world.object.${object.id}.location`,
+        object.id,
+        'location',
+        object.location,
+        ['system'],
+        ['system'],
+      );
+      for (const [key, value] of Object.entries(object.flags)) {
+        add(
+          `fact.world.object.${object.id}.${key}`,
+          object.id,
+          key,
+          value,
+          ['system'],
+          ['system'],
+        );
+      }
+    }
+
+    const killerCanAct = !['incapacitated', 'dead', 'arrested', 'fled'].includes(state.killerStatus);
+    if (killerCanAct) {
+      add(
+        'capability.killer.attack',
+        'chen_huaimin',
+        'attack_capable',
+        true,
+        ['system'],
+        ['killer', 'system'],
+      );
+      add(
+        'capability.killer.window_route',
+        'chen_huaimin',
+        'window_route_capable',
+        true,
+        ['system'],
+        ['killer', 'system'],
+      );
+      if (world.objects.keys.location === 'chen_huaimin') {
+        add(
+          'capability.killer.spare_key',
+          'chen_huaimin',
+          'has_spare_key',
+          true,
+          ['system'],
+          ['killer', 'system'],
+        );
+      }
+    }
   }
 
   for (const [characterId, knowledge] of Object.entries(state.world?.knowledge ?? {})) {

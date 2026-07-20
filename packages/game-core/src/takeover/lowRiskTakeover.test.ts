@@ -137,6 +137,18 @@ const deadlineBoundary = prepareLowRiskTurn({
 assert.equal(deadlineBoundary.status, 'not_eligible');
 if (deadlineBoundary.status === 'not_eligible') assert.equal(deadlineBoundary.reason, 'high_risk_boundary');
 
+const phaseFiveDeadlinePreparation = prepareLowRiskTurn({
+  state: deadlineState,
+  brief: brief([action('wait-at-deadline', 'wait', ['player'])]),
+  sourceProposalId: 'proposal.wait-at-deadline',
+  allowHighRiskContinuation: true,
+});
+assert.equal(
+  phaseFiveDeadlinePreparation.status,
+  'prepared',
+  'phase five must own the downstream deadline outcome instead of falling back to legacy rules',
+);
+
 const store = new InMemoryAtomicTurnStore({
   loopId: prepared.envelope.loopId,
   stateVersion: prepared.envelope.inputStateVersion,

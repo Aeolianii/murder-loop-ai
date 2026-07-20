@@ -134,6 +134,10 @@ assert(!killerJson.includes('只拍外包装'));
 assert(!killerJson.includes('不要打开'));
 assert(!killerJson.includes('SECRET PLAYER INTENT'));
 assert.deepEqual(projections.killerSpecialist.factIds.sort(), ['fact.killer.in_corridor', 'fact.weather.rain'].sort());
+assert.deepEqual(
+  projections.killerSpecialist.canonicalConstraints,
+  ['package_interior_requires_open_event'],
+);
 assert.deepEqual(projections.killerSpecialist.conditionalSignals.map((signal) => signal.id), ['signal-door-noise']);
 
 assert.equal(projections.npcSpecialists.lin_yue.communications.length, 1);

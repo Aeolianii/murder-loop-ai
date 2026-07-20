@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import type { Proposal, TurnBrief, TurnEnvelope } from '@murder-loop-ai/ai-contracts';
+import type {
+  Proposal,
+  ProposedEvent,
+  TurnBrief,
+  TurnEnvelope,
+} from '@murder-loop-ai/ai-contracts';
 import {
   InMemoryAtomicTurnStore,
   createInitialWorldState,
@@ -113,6 +118,61 @@ function wave(turnBrief = brief(), proposal = playerProposal()): ShadowCandidate
     },
     completedAt: new Date(),
   };
+}
+
+function killerProposal(events: ProposedEvent[]): Proposal {
+  return {
+    ...envelope,
+    id: 'proposal.killer.selected',
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    sourceAgent: 'main-world-model',
+    domain: 'killer',
+    candidateRank: 0,
+    turnBriefActionIds: [],
+    replacementFor: [],
+    actorId: 'chen_huaimin',
+    operation: 'spare_key_entry',
+    targetIds: ['front_door'],
+    basedOnFactIds: [],
+    preconditions: [],
+    forbiddenScopes: [],
+    proposedEffects: [],
+    observations: [],
+    visibility: ['player'],
+    confidence: 1,
+    riskClass: events.some((item) => item.riskClass === 'irreversible')
+      ? 'irreversible'
+      : 'high_impact',
+    evidenceRefs: [],
+    causalParentIds: [],
+    proposedEvents: events,
+    clueCandidates: [],
+    recommendations: [],
+    displayFragments: events.map((item) => ({
+      id: `display.untrusted.${item.id}`,
+      text: `Untrusted display for ${item.id}.`,
+      eventRefs: [item.id],
+      claimRefs: item.facts,
+    })),
+  };
+}
+
+function phaseFiveWave(
+  turnBrief: TurnBrief,
+  events: ProposedEvent[],
+): ShadowCandidateWave {
+  const player = playerProposal();
+  const killer = killerProposal(events);
+  const candidateWave = wave(turnBrief, player);
+  candidateWave.mainProposals = [killer];
+  candidateWave.arbitration!.selectedProposalIds = [player.id, killer.id];
+  candidateWave.arbitration!.transition.acceptedEvents = [
+    ...player.proposedEvents,
+    ...killer.proposedEvents,
+  ];
+  candidateWave.arbitration!.transition.selectedSourceByDomain.killer = killer.sourceAgent;
+  return candidateWave;
 }
 
 function session(candidateWave = wave()): ShadowRunSession {
@@ -245,3 +305,85 @@ const phaseFourConflict = await phaseFourConflictService.commit(
 assert.equal(phaseFourConflict.outcome.result.commitStatus, 'conflict');
 assert.equal(phaseFourConflict.state, undefined);
 assert.equal(phaseFourConflict.knowledgeClueProjection, undefined);
+
+{
+  const phaseFiveState = createInitialGameState();
+  phaseFiveState.world = createInitialWorldState();
+  phaseFiveState.world.characters.chen_huaimin.location = 'corridor_5f';
+  const attempted: ProposedEvent = {
+    id: 'event.phase5.entry-attempted',
+    eventType: 'entry_attempted',
+    subject: 'chen_huaimin',
+    summary: 'Untrusted entry attempt.',
+    facts: ['entry_route:front_door'],
+    visibility: ['player'],
+    riskClass: 'reversible',
+    evidenceRefs: [],
+    causalParentIds: [],
+  };
+  const entered: ProposedEvent = {
+    id: 'event.phase5.actor-entered',
+    eventType: 'actor_entered',
+    subject: 'chen_huaimin',
+    summary: 'Untrusted forced entry.',
+    facts: ['entry_route:front_door', 'location:room_503'],
+    visibility: ['player'],
+    riskClass: 'high_impact',
+    evidenceRefs: [
+      attempted.id,
+      'fact.object.front_door.chainLocked',
+      'fact.object.front_door.barricaded',
+      'capability.killer.spare_key',
+      'invariant.entry.requires_clear_barrier',
+    ],
+    causalParentIds: [attempted.id],
+  };
+  const phaseFiveService = createLowRiskTakeoverService({
+    highRiskTakeoverEnabled: true,
+  });
+  const phaseFivePrepared = await phaseFiveService.prepare(
+    session(phaseFiveWave(brief(), [attempted, entered])),
+    phaseFiveState,
+  );
+  assert.equal(phaseFivePrepared.status, 'prepared');
+  if (phaseFivePrepared.status !== 'prepared') throw new Error('expected phase-five preparation');
+
+  const untrustedLegacyState = structuredClone(phaseFivePrepared.prepared.playerResult.state);
+  untrustedLegacyState.ending = 'death';
+  untrustedLegacyState.endingReason = 'forced_entry';
+  untrustedLegacyState.phase = 'death';
+  untrustedLegacyState.player.injury = 'critical';
+  untrustedLegacyState.log.push({
+    id: 'legacy-untrusted-death',
+    run: untrustedLegacyState.run,
+    minute: untrustedLegacyState.minute,
+    title: 'Untrusted death',
+    text: 'This legacy death must not be committed.',
+    tone: 'death',
+  });
+
+  const phaseFiveCommitted = await phaseFiveService.commit(
+    envelope.turnId,
+    untrustedLegacyState,
+  );
+  assert.equal(phaseFiveCommitted.outcome.result.commitStatus, 'committed');
+  assert.equal(phaseFiveCommitted.state?.ending, null);
+  assert.equal(phaseFiveCommitted.state?.player.injury, 'none');
+  assert.equal(
+    phaseFiveCommitted.state?.log.some((entry) => entry.id === 'legacy-untrusted-death'),
+    false,
+  );
+  assert.equal(
+    phaseFiveCommitted.outcome.confirmedEvents.some((item) => item.id === entered.id),
+    false,
+  );
+  assert.equal(
+    phaseFiveCommitted.outcome.confirmedEvents.some((item) => item.id === `${entered.id}.blocked`),
+    true,
+  );
+  assert.equal(phaseFiveCommitted.highRiskProjection?.rejectedEventIds.includes(entered.id), true);
+  assert.equal(
+    phaseFiveCommitted.outcome.displayFragments.some((fragment) => fragment.text.includes('Untrusted')),
+    false,
+  );
+}

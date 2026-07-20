@@ -20,6 +20,15 @@ const CANONICAL_SHADOW_CONSTRAINTS = [
   'canonical.knowledge_projection_isolation',
   'canonical.narration_is_non_authoritative',
   'canonical.high_risk_requires_deterministic_evidence',
+  'invariant.arrest.requires_police_presence',
+  'invariant.attack.requires_same_location',
+  'invariant.death.requires_lethal_injury',
+  'invariant.ending.requires_terminal_cause',
+  'invariant.entry.requires_clear_barrier',
+  'invariant.evidence_destroy.requires_access',
+  'invariant.flight.requires_confirmed_route',
+  'invariant.incapacitation.requires_injury',
+  'invariant.injury.requires_landed_attack',
 ];
 
 export interface ShadowRunSession {

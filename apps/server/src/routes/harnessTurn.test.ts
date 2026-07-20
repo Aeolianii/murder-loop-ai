@@ -299,6 +299,7 @@ function takeoverBrief(): TurnBrief {
 function takeoverFixture(
   commitStatus: 'committed' | 'conflict' | 'failed' = 'committed',
   withKnowledgeClueProjection = false,
+  withHighRiskProjection = false,
 ) {
   const prepared = prepareLowRiskTurn({
     state: baseState,
@@ -317,6 +318,27 @@ function takeoverFixture(
     prepare: async () => ({ status: 'prepared', prepared }),
     commit: async (_turnId, candidateState) => {
       committedFinalState = candidateState;
+      const committedState = withHighRiskProjection
+        ? {
+            ...structuredClone(prepared.playerResult.state),
+            player: {
+              ...prepared.playerResult.state.player,
+              injury: 'critical' as const,
+            },
+            log: [
+              ...prepared.playerResult.state.log,
+              {
+                id: 'log-phase5-confirmed-injury',
+                run: prepared.playerResult.state.run,
+                minute: prepared.playerResult.state.minute,
+                title: 'Injury confirmed',
+                text: 'A critical injury was confirmed, but no death or ending was confirmed.',
+                tone: 'threat' as const,
+                channel: 'ambient' as const,
+              },
+            ],
+          }
+        : candidateState;
       return {
         outcome: {
           result: {
@@ -330,19 +352,44 @@ function takeoverFixture(
               : [],
           },
           confirmedEvents: [],
-          displayFragments: commitStatus === 'committed' ? prepared.displayFragments : [],
+          displayFragments: commitStatus === 'committed'
+            ? [
+                ...prepared.displayFragments,
+                ...(withHighRiskProjection ? [{
+                  id: 'display.phase5.confirmed-injury',
+                  text: 'A critical injury was confirmed, but no death or ending was confirmed.',
+                  eventRefs: ['event.phase5.confirmed-injury'],
+                  claimRefs: ['injury:critical'],
+                }] : []),
+              ]
+            : [],
           ...(commitStatus === 'conflict'
             ? { discardReason: 'state_version_conflict' as const }
             : commitStatus === 'failed'
               ? { discardReason: 'persistence_failed' as const }
               : {}),
         },
-        state: commitStatus === 'committed' ? candidateState : undefined,
+        state: commitStatus === 'committed' ? committedState : undefined,
         ...(commitStatus === 'committed' && withKnowledgeClueProjection ? {
           knowledgeClueProjection: {
             addedObservationIds: ['observation.route.package'],
             addedKnowledgeFactIds: ['player:package_exterior_label_ambiguous'],
             addedClueIds: ['wrong_package'],
+          },
+        } : {}),
+        ...(commitStatus === 'committed' && withHighRiskProjection ? {
+          highRiskProjection: {
+            acceptedEventIds: ['event.phase5.confirmed-injury'],
+            correctedEventIds: [],
+            deferredEventIds: ['event.phase5.unconfirmed-death'],
+            rejectedEventIds: [],
+            highRiskDecisions: [{
+              eventId: 'event.phase5.confirmed-injury',
+              riskClass: 'high_impact' as const,
+              evidenceRefs: ['invariant.injury.requires_landed_attack'],
+              decision: 'pass' as const,
+              reasonCodes: ['causal_chain_complete', 'deterministic_evidence_present'],
+            }],
           },
         } : {}),
       };
@@ -483,6 +530,46 @@ async function testKnowledgeClueTakeoverDisablesNarratorClueAuthority() {
   assert.equal(body.coordination.knowledgeClueTakeover.knowledgeUpdateCount, 1);
   assert.equal(body.coordination.knowledgeClueTakeover.clueCount, 1);
   assert.equal(body.coordination.knowledgeClueTakeover.narratorClueAuthority, 'disabled');
+  await app.close();
+}
+
+async function testHighRiskTakeoverPublishesOnlyConfirmedOutcome() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, true);
+  fixture.aiAdapters.narrateAmbient = async () => ({
+    title: 'Untrusted fatal narration',
+    text: 'Untrusted narration says the player died and the killer destroyed the package.',
+    ending: 'death',
+    isFatal: true,
+  });
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.coreState.player.injury, 'critical');
+  assert.equal(body.coreState.ending, null, 'Narrator must not promote an unconfirmed ending after commit');
+  assert.equal(body.coordination.highRiskTakeover.status, 'committed');
+  assert.equal(body.coordination.highRiskTakeover.acceptedEventCount, 1);
+  assert.equal(body.coordination.highRiskTakeover.deferredEventCount, 1);
+  assert.equal(body.coordination.highRiskTakeover.narratorHighRiskAuthority, 'disabled');
+  assert.equal(body.turn.killerStrategy.type, 'confirmed_shadow_result');
+  assert.equal(body.turn.ambientNarration.text.includes('Untrusted'), false);
+  assert.deepEqual(body.turn.npcReply, null);
+  assert.deepEqual(body.worldTickTrace, []);
+  assert.equal(
+    body.storyLog.some((node: { content?: string }) => node.content?.includes('Untrusted')),
+    false,
+  );
   await app.close();
 }
 
@@ -1262,6 +1349,7 @@ await testLowRiskTakeoverCommitsBeforePublishingResponse();
 await testLowRiskTakeoverConflictPublishesNoStateOrStory();
 await testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory();
 await testKnowledgeClueTakeoverDisablesNarratorClueAuthority();
+await testHighRiskTakeoverPublishesOnlyConfirmedOutcome();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
 await testWorldTickRunsAsProductCapabilityForRoute();

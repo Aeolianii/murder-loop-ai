@@ -1,10 +1,17 @@
-import type { Proposal, SpecialistCandidate } from '@murder-loop-ai/ai-contracts';
+import type {
+  DisplayFragment,
+  HighRiskDecision,
+  Proposal,
+  SpecialistCandidate,
+} from '@murder-loop-ai/ai-contracts';
 import {
   InMemoryAtomicTurnStore,
   commitPreparedLowRiskTurn,
   projectConfirmedKnowledgeAndClues,
+  projectConfirmedHighRiskResults,
   prepareLowRiskTurn,
   type AtomicTurnStore,
+  type CommitEventCandidate,
   type LowRiskTakeoverPreparation,
   type PreparedLowRiskTurn,
   type ShadowCandidateWave,
@@ -38,11 +45,21 @@ export interface KnowledgeClueProjectionSummary {
   addedClueIds: string[];
 }
 
+export interface HighRiskProjectionSummary {
+  acceptedEventIds: string[];
+  correctedEventIds: string[];
+  deferredEventIds: string[];
+  rejectedEventIds: string[];
+  highRiskDecisions: HighRiskDecision[];
+}
+
 export type LowRiskTakeoverServiceCommitResult = LowRiskTakeoverCommitResult & {
   knowledgeClueProjection?: KnowledgeClueProjectionSummary;
+  highRiskProjection?: HighRiskProjectionSummary;
 };
 
 export interface LowRiskTakeoverService {
+  readonly highRiskTakeoverEnabled?: boolean;
   prepare(session: ShadowRunSession, state: GameState): Promise<LowRiskTakeoverPrepareResult>;
   commit(turnId: string, finalState: GameState): Promise<LowRiskTakeoverServiceCommitResult>;
   discard(turnId: string): void;
@@ -56,6 +73,7 @@ export interface LowRiskTakeoverServiceOptions {
   }) => AtomicTurnStore<GameState>;
   now?: () => Date;
   knowledgeClueTakeoverEnabled?: boolean;
+  highRiskTakeoverEnabled?: boolean;
 }
 
 export function createLowRiskTakeoverService(
@@ -63,14 +81,18 @@ export function createLowRiskTakeoverService(
 ): LowRiskTakeoverService {
   const createStore = options.createStore ?? ((initial) => new InMemoryAtomicTurnStore(initial));
   const now = options.now ?? (() => new Date());
-  const knowledgeClueTakeoverEnabled = options.knowledgeClueTakeoverEnabled ?? false;
+  const highRiskTakeoverEnabled = options.highRiskTakeoverEnabled ?? false;
+  const knowledgeClueTakeoverEnabled = (options.knowledgeClueTakeoverEnabled ?? false)
+    || highRiskTakeoverEnabled;
   const pending = new Map<string, {
     prepared: PreparedLowRiskTurn;
     store: AtomicTurnStore<GameState>;
     baselineState: GameState;
+    highRiskEventCandidates: CommitEventCandidate[];
   }>();
 
   return {
+    highRiskTakeoverEnabled,
     async prepare(session, state) {
       let wave: ShadowCandidateWave;
       try {
@@ -85,6 +107,7 @@ export function createLowRiskTakeoverService(
         state,
         brief: wave.turnBrief!,
         sourceProposalId: gate.proposal.id,
+        allowHighRiskContinuation: highRiskTakeoverEnabled,
       });
       if (preparation.status === 'not_eligible') {
         return { status: 'bypassed', reason: preparation.reason };
@@ -98,6 +121,7 @@ export function createLowRiskTakeoverService(
           state,
         }),
         baselineState: structuredClone(state) as GameState,
+        highRiskEventCandidates: selectedDownstreamEventCandidates(wave),
       });
       return { status: 'prepared', prepared: preparation };
     },
@@ -108,11 +132,39 @@ export function createLowRiskTakeoverService(
       pending.delete(turnId);
       let candidateState = finalState;
       let knowledgeClueProjection: KnowledgeClueProjectionSummary | undefined;
+      let highRiskProjection: HighRiskProjectionSummary | undefined;
+      let additionalEventCandidates: CommitEventCandidate[] = [];
+      let additionalDisplayFragments: DisplayFragment[] = [];
+      let highRiskDecisions: HighRiskDecision[] = [];
+
+      if (highRiskTakeoverEnabled) {
+        const projection = projectConfirmedHighRiskResults({
+          baselineState: entry.prepared.playerResult.state,
+          candidateState: finalState,
+          eventCandidates: entry.highRiskEventCandidates,
+          reservedEventIds: entry.prepared.eventCandidates.map(({ event }) => event.id),
+        });
+        candidateState = projection.state;
+        additionalEventCandidates = projection.acceptedEventCandidates;
+        additionalDisplayFragments = projection.displayFragments;
+        highRiskDecisions = projection.highRiskDecisions;
+        highRiskProjection = {
+          acceptedEventIds: projection.acceptedEventIds,
+          correctedEventIds: projection.correctedEventIds,
+          deferredEventIds: projection.deferredEventIds,
+          rejectedEventIds: projection.rejectedEventIds,
+          highRiskDecisions: projection.highRiskDecisions,
+        };
+      }
+
       if (knowledgeClueTakeoverEnabled) {
         const projection = projectConfirmedKnowledgeAndClues({
           baselineState: entry.baselineState,
-          candidateState: finalState,
-          eventCandidates: entry.prepared.eventCandidates,
+          candidateState,
+          eventCandidates: [
+            ...entry.prepared.eventCandidates,
+            ...additionalEventCandidates,
+          ],
           candidates: entry.prepared.knowledgeClueCandidates,
         });
         if (projection.status === 'rejected') {
@@ -131,9 +183,12 @@ export function createLowRiskTakeoverService(
         finalState: candidateState,
         store: entry.store,
         now: now(),
+        additionalEventCandidates,
+        additionalDisplayFragments,
+        highRiskDecisions,
       });
       return committed.outcome.result.commitStatus === 'committed'
-        ? { ...committed, knowledgeClueProjection }
+        ? { ...committed, knowledgeClueProjection, highRiskProjection }
         : committed;
     },
 
@@ -141,6 +196,23 @@ export function createLowRiskTakeoverService(
       pending.delete(turnId);
     },
   };
+}
+
+function selectedDownstreamEventCandidates(wave: ShadowCandidateWave): CommitEventCandidate[] {
+  const selectedProposalIds = new Set(wave.arbitration?.selectedProposalIds ?? []);
+  const proposals: Array<Proposal | SpecialistCandidate> = [
+    ...wave.mainProposals,
+    ...wave.specialistCandidates,
+  ];
+  return proposals
+    .filter((proposal) => (
+      selectedProposalIds.has(proposal.id)
+      && ['killer', 'npc', 'environment', 'world'].includes(proposal.domain)
+    ))
+    .flatMap((proposal) => proposal.proposedEvents.map((event) => ({
+      event,
+      sourceProposalId: proposal.id,
+    })));
 }
 
 function validateShadowTakeoverGate(

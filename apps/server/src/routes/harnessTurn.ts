@@ -312,11 +312,15 @@ function attachRecommendedActions(
 // ============================================================================
 
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
-  const anyStateTakeoverEnabled = env.aiLowRiskTakeoverEnabled || env.aiKnowledgeClueTakeoverEnabled;
+  const anyStateTakeoverEnabled = env.aiLowRiskTakeoverEnabled
+    || env.aiKnowledgeClueTakeoverEnabled
+    || env.aiHighRiskTakeoverEnabled;
   const lowRiskTakeoverService = options.lowRiskTakeoverService === undefined
     ? anyStateTakeoverEnabled
       ? createLowRiskTakeoverService({
-          knowledgeClueTakeoverEnabled: env.aiKnowledgeClueTakeoverEnabled,
+          knowledgeClueTakeoverEnabled: env.aiKnowledgeClueTakeoverEnabled
+            || env.aiHighRiskTakeoverEnabled,
+          highRiskTakeoverEnabled: env.aiHighRiskTakeoverEnabled,
         })
       : null
     : options.lowRiskTakeoverService;
@@ -328,6 +332,8 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         })
       : null
     : options.shadowCoordinator;
+  const highRiskTakeoverActive = lowRiskTakeoverService?.highRiskTakeoverEnabled
+    ?? env.aiHighRiskTakeoverEnabled;
 
   app.post('/api/harness/turn', async (request, reply) => {
     const body = request.body as { input?: string; state?: GameState };
@@ -384,6 +390,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const lowRiskTakeoverDuration = () => Math.round(performance.now() - lowRiskTakeoverStartedAt);
     let lowRiskTakeoverCoordination: Record<string, unknown> | undefined;
     let knowledgeClueTakeoverCoordination: Record<string, unknown> | undefined;
+    let highRiskTakeoverCoordination: Record<string, unknown> | undefined;
     let resolution: TurnResolution | undefined;
     if (lowRiskTakeoverService && shadowSession) {
       try {
@@ -415,6 +422,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
                   reason: 'commit_exception',
                   durationMs: lowRiskTakeoverDuration(),
                 },
+                ...(highRiskTakeoverActive ? {
+                  highRiskTakeover: {
+                    status: 'failed',
+                    reason: 'commit_exception',
+                  },
+                } : {}),
                 shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' },
               },
             });
@@ -433,6 +446,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
                   turnId: shadowSession.envelope.turnId,
                   durationMs: lowRiskTakeoverDuration(),
                 },
+                ...(highRiskTakeoverActive ? {
+                  highRiskTakeover: {
+                    status: committed.outcome.result.commitStatus,
+                    reason: committed.outcome.discardReason,
+                  },
+                } : {}),
                 shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' },
               },
             });
@@ -456,12 +475,84 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               narratorClueAuthority: 'disabled',
             };
           }
+          if (committed.highRiskProjection) {
+            const publishedEventIds = new Set([
+              ...committed.highRiskProjection.acceptedEventIds,
+              ...committed.highRiskProjection.correctedEventIds,
+            ]);
+            const confirmedOutcomeText = committed.outcome.displayFragments
+              .filter((fragment) => fragment.eventRefs.some((eventId) => publishedEventIds.has(eventId)))
+              .map((fragment) => fragment.text)
+              .join(' ');
+            const actionNarration: Narration = {
+              title: preparation.prepared.playerResult.title,
+              text: preparation.prepared.playerResult.text,
+            };
+            const ambientNarration: Narration = {
+              title: confirmedOutcomeText ? 'Confirmed world outcome' : 'No high-risk outcome confirmed',
+              text: confirmedOutcomeText || 'No high-risk state change passed the deterministic gate.',
+            };
+            resolution = {
+              ...resolution,
+              finalState: committed.state,
+              killerStrategy: {
+                id: `phase5.${shadowSession.envelope.turnId}`,
+                type: 'confirmed_shadow_result',
+                title: ambientNarration.title,
+                rationale: 'Only events accepted by the phase-five deterministic reducer are authoritative.',
+                visibleToPlayer: confirmedOutcomeText.length > 0,
+                risk: committed.highRiskProjection.highRiskDecisions.some((decision) => (
+                  decision.decision === 'pass'
+                )) ? 'high' : 'low',
+              },
+              killerResult: {
+                title: ambientNarration.title,
+                text: ambientNarration.text,
+                tone: committed.state.ending === 'death'
+                  ? 'death'
+                  : confirmedOutcomeText
+                    ? 'threat'
+                    : 'neutral',
+                addedClues: [],
+                timePassed: 0,
+                threatDelta: 0,
+                events: [],
+                state: committed.state,
+              },
+              narration: actionNarration,
+              actionNarration,
+              ambientNarration,
+              npcReply: null,
+              recommendedActions: [],
+              worldTickTrace: [],
+            };
+            const decisions = committed.highRiskProjection.highRiskDecisions;
+            highRiskTakeoverCoordination = {
+              status: 'committed',
+              acceptedEventCount: committed.highRiskProjection.acceptedEventIds.length,
+              correctedEventCount: committed.highRiskProjection.correctedEventIds.length,
+              deferredEventCount: committed.highRiskProjection.deferredEventIds.length,
+              rejectedEventCount: committed.highRiskProjection.rejectedEventIds.length,
+              passDecisionCount: decisions.filter((decision) => decision.decision === 'pass').length,
+              deferDecisionCount: decisions.filter((decision) => decision.decision === 'defer').length,
+              rejectDecisionCount: decisions.filter((decision) => decision.decision === 'reject').length,
+              decisions,
+              narratorHighRiskAuthority: 'disabled',
+              legacyHighRiskAuthority: 'disabled',
+            };
+          }
         } else {
           lowRiskTakeoverCoordination = {
             status: 'bypassed',
             reason: preparation.reason,
             durationMs: lowRiskTakeoverDuration(),
           };
+          if (highRiskTakeoverActive) {
+            highRiskTakeoverCoordination = {
+              status: 'bypassed',
+              reason: preparation.reason,
+            };
+          }
         }
       } catch (error) {
         lowRiskTakeoverService.discard(shadowSession.envelope.turnId);
@@ -471,6 +562,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           reason: 'preparation_failed',
           durationMs: lowRiskTakeoverDuration(),
         };
+        if (highRiskTakeoverActive) {
+          highRiskTakeoverCoordination = {
+            status: 'bypassed',
+            reason: 'preparation_failed',
+          };
+        }
       }
     } else if (lowRiskTakeoverService) {
       lowRiskTakeoverCoordination = {
@@ -478,6 +575,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         reason: 'shadow_unavailable',
         durationMs: lowRiskTakeoverDuration(),
       };
+      if (highRiskTakeoverActive) {
+        highRiskTakeoverCoordination = {
+          status: 'bypassed',
+          reason: 'shadow_unavailable',
+        };
+      }
     }
 
     resolution ??= await resolveTurnHarness(state, input, harness);
@@ -485,12 +588,14 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       void shadowCoordinator.complete(shadowSession, resolution);
     }
 
-    routeWarnings.push(...applyNarrationOutcomeHints(
-      resolution.finalState,
-      resolution.plan,
-      resolution.actionNarration,
-      resolution.ambientNarration,
-    ));
+    if (highRiskTakeoverCoordination?.status !== 'committed') {
+      routeWarnings.push(...applyNarrationOutcomeHints(
+        resolution.finalState,
+        resolution.plan,
+        resolution.actionNarration,
+        resolution.ambientNarration,
+      ));
+    }
 
     const visibleEntries = resolution.finalState.log.slice(beforeLen);
     if (lowRiskTakeoverCoordination?.status !== 'committed') {
@@ -558,6 +663,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         ...(lowRiskTakeoverCoordination ? { lowRiskTakeover: lowRiskTakeoverCoordination } : {}),
         ...(knowledgeClueTakeoverCoordination ? {
           knowledgeClueTakeover: knowledgeClueTakeoverCoordination,
+        } : {}),
+        ...(highRiskTakeoverCoordination ? {
+          highRiskTakeover: highRiskTakeoverCoordination,
         } : {}),
       },
       sidebar,

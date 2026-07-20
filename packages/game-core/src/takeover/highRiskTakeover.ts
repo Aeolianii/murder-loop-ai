@@ -142,6 +142,7 @@ export function projectConfirmedHighRiskResults(input: {
   baselineState: GameState;
   candidateState?: GameState;
   eventCandidates: CommitEventCandidate[];
+  reservedEventIds?: string[];
 }): HighRiskTakeoverProjection {
   // Phase five deliberately starts from the already-confirmed phase-three state.
   // candidateState may contain legacy Killer/NPC/Narrator mutations and has no authority here.
@@ -158,6 +159,9 @@ export function projectConfirmedHighRiskResults(input: {
   const duplicateEventIds = new Set(events
     .filter((event, index) => events.findIndex((candidate) => candidate.id === event.id) !== index)
     .map((event) => event.id));
+  for (const reservedEventId of input.reservedEventIds ?? []) {
+    if (eventsById.has(reservedEventId)) duplicateEventIds.add(reservedEventId);
+  }
   const processedEventIds = new Set<string>();
   const acceptedEventCandidates: CommitEventCandidate[] = [];
   const displayFragments: DisplayFragment[] = [];

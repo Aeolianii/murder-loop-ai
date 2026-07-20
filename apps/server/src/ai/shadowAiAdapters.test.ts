@@ -37,9 +37,15 @@ const brief = {
 delete (brief as Record<string, unknown>).rawInput;
 delete (brief as Record<string, unknown>).playerContext;
 
-const calls: Array<{ role: string; user: unknown; signal?: AbortSignal; maxTokens?: number }> = [];
-const completion: ShadowCompletion = async (role, _system, user, options) => {
-  calls.push({ role, user, signal: options.signal, maxTokens: options.maxTokens });
+const calls: Array<{
+  role: string;
+  system: string;
+  user: unknown;
+  signal?: AbortSignal;
+  maxTokens?: number;
+}> = [];
+const completion: ShadowCompletion = async (role, system, user, options) => {
+  calls.push({ role, system, user, signal: options.signal, maxTokens: options.maxTokens });
   if (role === 'semantic_compiler') return { status: 'compiled', brief };
   if (role === 'world_model') return { proposals: [] };
   return { candidates: [] };
@@ -78,3 +84,8 @@ await killer?.generate({ facts: [], conditionalSignals: [] }, {
 });
 assert.equal(calls.at(-1)?.role, 'killer_specialist');
 assert.equal(JSON.stringify(calls.at(-1)?.user).includes(request.rawInput), false);
+assert(calls.at(-1)?.system.includes('actor_entered'));
+assert(calls.at(-1)?.system.includes('attack_landed'));
+assert(calls.at(-1)?.system.includes('character_killed'));
+assert(calls.at(-1)?.system.includes('ending_reached'));
+assert(calls.at(-1)?.system.includes('evidence_destroyed'));

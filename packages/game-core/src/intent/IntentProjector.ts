@@ -31,6 +31,7 @@ interface ProjectedTurnMetadata {
 interface SpecialistProjection extends ProjectedTurnMetadata {
   facts: Fact[];
   factIds: string[];
+  canonicalConstraints: string[];
   conditionalSignals: ConditionalIntentSignal[];
 }
 
@@ -82,6 +83,7 @@ export function projectTurnIntent(input: IntentProjectionInput): IntentProjectio
       metadata,
       input.knowledge.killer,
       signalsFor(input.conditionalSignals, 'killer', 'killer'),
+      input.canonicalConstraints,
     ),
     npcSpecialists: Object.fromEntries(
       Object.entries(input.knowledge.npcs).map(([npcId, projection]) => [
@@ -91,6 +93,7 @@ export function projectTurnIntent(input: IntentProjectionInput): IntentProjectio
             metadata,
             projection,
             signalsFor(input.conditionalSignals, 'npc', npcId),
+            input.canonicalConstraints,
           ),
           communications: input.brief.communications
             .filter((communication) => (
@@ -108,16 +111,19 @@ export function projectTurnIntent(input: IntentProjectionInput): IntentProjectio
       metadata,
       projectionFromFacts('environment', publicFacts),
       signalsFor(input.conditionalSignals, 'environment', 'environment'),
+      input.canonicalConstraints,
     ),
     clueSpecialist: specialistProjection(
       metadata,
       input.knowledge.player,
       signalsFor(input.conditionalSignals, 'clue', 'clue'),
+      input.canonicalConstraints,
     ),
     recommendationSpecialist: specialistProjection(
       metadata,
       input.knowledge.player,
       signalsFor(input.conditionalSignals, 'recommendation', 'recommendation'),
+      input.canonicalConstraints,
     ),
   };
 }
@@ -137,11 +143,13 @@ function specialistProjection(
   metadata: ProjectedTurnMetadata,
   projection: FactProjection,
   conditionalSignals: ConditionalIntentSignal[],
+  canonicalConstraints: string[],
 ): SpecialistProjection {
   return {
     ...metadata,
     facts: projection.facts,
     factIds: projection.factIds,
+    canonicalConstraints: [...canonicalConstraints],
     conditionalSignals,
   };
 }

@@ -1,5 +1,6 @@
 import type {
   DisplayFragment,
+  HighRiskDecision,
   ProposedEvent,
   TurnBrief,
   TurnEnvelope,
@@ -95,10 +96,14 @@ export function prepareLowRiskTurn(input: {
   state: GameState;
   brief: TurnBrief;
   sourceProposalId: string;
+  allowHighRiskContinuation?: boolean;
 }): LowRiskTakeoverPreparation {
   const eligibility = validateTurnEligibility(input.state, input.brief);
   if (eligibility) return { status: 'not_eligible', reason: eligibility };
-  if (crossesLegacyHighRiskBoundary(input.state, input.brief)) {
+  if (
+    !input.allowHighRiskContinuation
+    && crossesLegacyHighRiskBoundary(input.state, input.brief)
+  ) {
     return { status: 'not_eligible', reason: 'high_risk_boundary' };
   }
 
@@ -219,14 +224,23 @@ export async function commitPreparedLowRiskTurn(input: {
   finalState: GameState;
   store: AtomicTurnStore<GameState>;
   now?: Date;
+  additionalEventCandidates?: CommitEventCandidate[];
+  highRiskDecisions?: HighRiskDecision[];
+  additionalDisplayFragments?: DisplayFragment[];
 }): Promise<{ outcome: AtomicTurnCommitOutcome; state?: GameState }> {
   const outcome = await atomicTurnCommit({
     envelope: input.prepared.envelope,
     expectedOutputStateVersion: input.prepared.envelope.inputStateVersion + 1,
     candidateState: input.finalState,
-    events: input.prepared.eventCandidates,
-    highRiskDecisions: [],
-    displayFragments: input.prepared.displayFragments,
+    events: [
+      ...input.prepared.eventCandidates,
+      ...(input.additionalEventCandidates ?? []),
+    ],
+    highRiskDecisions: input.highRiskDecisions ?? [],
+    displayFragments: [
+      ...input.prepared.displayFragments,
+      ...(input.additionalDisplayFragments ?? []),
+    ],
   }, input.store, input.now);
 
   return {
