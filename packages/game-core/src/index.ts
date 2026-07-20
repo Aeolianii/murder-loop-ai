@@ -41,6 +41,7 @@ export * from './takeover/knowledgeClueTakeover';
 export * from './takeover/highRiskTakeover';
 export * from './takeover/minimumPlayableFallback';
 export * from './storyMaterial/canonicalStoryMaterial';
+export type { SidebarPayload } from './agents/SidebarAgent';
 
 // Harness 架构新增导出
 export { GameEventBus } from './events/EventBus';

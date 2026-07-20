@@ -1,5 +1,5 @@
 import { minuteLabel, type GameState, type RecommendedAction, type StoryLogEntry } from '@murder-loop-ai/shared';
-import type { createHarness } from '@murder-loop-ai/game-core';
+import type { createHarness, SidebarPayload } from '@murder-loop-ai/game-core';
 
 export interface FrontendStoryNode {
   id: string;
@@ -12,12 +12,12 @@ export interface FrontendStoryNode {
 export async function buildSidebarPayload(
   harness: ReturnType<typeof createHarness>,
   finalState: GameState,
-  runTurnCompleted = false,
-) {
-  if (runTurnCompleted) {
-    await harness.dispatcher.runCommand('TurnCompleted', { finalState });
-  }
-  return harness.dispatcher.getLatestArtifact('sidebar', 'TurnCompleted') ?? null;
+): Promise<SidebarPayload | null> {
+  const existing = harness.dispatcher.getLatestArtifact('sidebar', 'TurnCompleted');
+  if (existing !== undefined) return existing as SidebarPayload;
+  await harness.dispatcher.runCommand('TurnCompleted', { finalState });
+  const generated = harness.dispatcher.getLatestArtifact('sidebar', 'TurnCompleted');
+  return generated === undefined ? null : generated as SidebarPayload;
 }
 
 export function toFrontendClues(state: GameState) {

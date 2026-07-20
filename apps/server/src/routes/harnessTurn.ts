@@ -427,7 +427,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
 
     if (!input) {
-      const sidebar = await buildSidebarPayload(createAiHarness(harnessOptions), state, true);
+      const sidebar = await buildSidebarPayload(createAiHarness(harnessOptions), state);
       return {
         gameSessionId,
         inputStateVersion: sessionStateVersion,
@@ -502,8 +502,8 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
                 state,
                 input,
                 plan: preparation.prepared.plan,
-                playerResult: preparation.prepared.playerResult,
-              }, harness);
+              playerResult: preparation.prepared.playerResult,
+              }, harness, { deferTurnCompleted: true });
 
           let committed: Awaited<ReturnType<LowRiskTakeoverService['commit']>>;
           try {
@@ -850,12 +850,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const sidebarPromise = buildSidebarPayload(harness, resolution.finalState);
 
     const endingEntry = resolution.finalState.ending ? resolution.finalState.log[resolution.finalState.log.length - 1] : null;
+    const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
     const trace = harness.dispatcher.getTrace().map(e => ({
       taskId: e.eventType, agentId: e.agentId, source: e.source, warnings: e.warnings, durationMs: e.durationMs,
     }));
     const agentTiming = buildAgentTimingSummary(trace);
     const agentTrace = harness.dispatcher.getAgentTrace();
-    const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
 
     const materialNodes = visibleEntries.map(toFrontendNode);
     const presentedNodes = confirmedTurnNarration

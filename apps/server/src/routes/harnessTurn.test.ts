@@ -531,6 +531,19 @@ async function testLowRiskTakeoverCommitsBeforePublishingResponse() {
   assert.equal(fixture.calls().completeCalls, 1);
   assert.equal(fixture.calls().committedFinalState?.room.front_door.state.barricaded, true);
   assert.equal(body.coreState.room.front_door.state.barricaded, true);
+  assert.equal(
+    body.sidebar.roomStatus
+      .find((item: { item: string; state: string }) => item.item === baseState.room.front_door.name)
+      ?.state.includes('barricaded'),
+    true,
+  );
+  assert.equal(
+    body.coordination.trace.filter((entry: { taskId: string; agentId: string }) => (
+      entry.taskId === 'TurnCompleted' && entry.agentId === 'sidebar'
+    )).length,
+    1,
+    'a legacy-assisted turn must generate Sidebar once from the committed final state',
+  );
   assert.equal(body.coreState.ending, null);
   assert.equal(body.coordination.lowRiskTakeover.status, 'committed');
   assert.equal(
@@ -693,6 +706,21 @@ async function testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarra
   assert.equal(body.coordination.legacyMainPathExit.status, 'committed');
   assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'confirmed_facts_narrator');
   assert.equal(body.coordination.legacyMainPathExit.keywordFallbackAuthority, 'disabled');
+  assert.equal(body.sidebar.threat.level, body.coreState.threat);
+  assert.equal(
+    body.sidebar.roomStatus
+      .find((item: { item: string; state: string }) => item.item === baseState.room.front_door.name)
+      ?.state.includes('barricaded'),
+    true,
+    'AI-first Sidebar must be generated from the committed final state',
+  );
+  assert.equal(
+    body.coordination.trace.filter((entry: { taskId: string; agentId: string }) => (
+      entry.taskId === 'TurnCompleted' && entry.agentId === 'sidebar'
+    )).length,
+    1,
+    'AI-first must dispatch Sidebar generation exactly once',
+  );
   await app.close();
 }
 

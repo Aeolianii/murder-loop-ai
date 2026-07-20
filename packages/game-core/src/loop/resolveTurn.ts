@@ -762,6 +762,7 @@ function dispatchNarrationCritic(
 async function finalizeHarnessTurn(
   turn: NarratedHarnessTurn,
   harness: HarnessRuntime,
+  runTurnCompleted = true,
 ): Promise<TurnResolution> {
   const finalState = { ...turn.state };
   if (turn.startedWithReviveProtection) {
@@ -814,7 +815,9 @@ async function finalizeHarnessTurn(
     fallbackActions,
   });
 
-  await harness.dispatcher.runCommand('TurnCompleted', { finalState });
+  if (runTurnCompleted) {
+    await harness.dispatcher.runCommand('TurnCompleted', { finalState });
+  }
 
   return {
     plan: turn.plan,
@@ -877,6 +880,7 @@ export interface PreparedPlayerTurnInput {
 export async function resolveTurnHarnessFromPreparedPlayerTurn(
   input: PreparedPlayerTurnInput,
   harness: HarnessRuntime,
+  options: { deferTurnCompleted?: boolean } = {},
 ): Promise<TurnResolution> {
   const parsedTurn: ParsedHarnessTurn = {
     input: input.input,
@@ -889,7 +893,7 @@ export async function resolveTurnHarnessFromPreparedPlayerTurn(
   const resolvedTurn = await resolveRuleStages(parsedTurn, harness, preparedPlayerResult);
   const narratedTurn = await renderHarnessTurn(resolvedTurn, harness);
   dispatchNarrationCritic(narratedTurn, harness);
-  return finalizeHarnessTurn(narratedTurn, harness);
+  return finalizeHarnessTurn(narratedTurn, harness, !options.deferTurnCompleted);
 }
 
 export async function resolveAmbientTurn(
