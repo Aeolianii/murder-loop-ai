@@ -28,6 +28,7 @@ const envelope = {
 const proposedEvent = {
   id: 'event.photo.created',
   kind: 'action' as const,
+  sourceActionIds: ['action-1'],
   actorId: 'player',
   operation: 'photograph',
   targetIds: ['package'],
@@ -111,6 +112,7 @@ describe('AI-first phase-one contracts', () => {
     const event = {
       id: 'event.photo.created',
       kind: 'action',
+      sourceActionIds: ['action-1'],
       actorId: 'player',
       operation: 'photograph',
       targetIds: ['package'],
@@ -123,6 +125,8 @@ describe('AI-first phase-one contracts', () => {
       causalParentIds: [],
     };
     expect(ProposedEventSchema.parse(event)).toEqual(event);
+    const { sourceActionIds: _sourceActionIds, ...withoutSourceActions } = event;
+    expect(ProposedEventSchema.safeParse(withoutSourceActions).success).toBe(false);
     expect(ProposedEventSchema.safeParse({
       ...event,
       eventType: 'package_photographed',

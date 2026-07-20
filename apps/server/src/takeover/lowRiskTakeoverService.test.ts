@@ -75,6 +75,7 @@ function playerProposal(riskClass: Proposal['riskClass'] = 'reversible'): Propos
     proposedEvents: [{
       id: 'event.proposal.secure-door',
       kind: 'action',
+      sourceActionIds: ['action-low-risk'],
       actorId: 'player',
       operation: 'secure_entry',
       targetIds: ['front_door'],
@@ -408,6 +409,7 @@ assert.equal(phaseFourConflict.knowledgeClueProjection, undefined);
   const attempted: ProposedEvent = {
     id: 'event.phase5.entry-attempted',
     kind: 'action',
+    sourceActionIds: [],
     actorId: 'chen_huaimin',
     operation: 'enter',
     targetIds: ['room_503'],
@@ -428,6 +430,7 @@ assert.equal(phaseFourConflict.knowledgeClueProjection, undefined);
   const entered: ProposedEvent = {
     id: 'event.phase5.actor-entered',
     kind: 'action',
+    sourceActionIds: [],
     actorId: 'chen_huaimin',
     operation: 'enter',
     targetIds: ['room_503'],
@@ -513,6 +516,7 @@ assert.equal(phaseFourConflict.knowledgeClueProjection, undefined);
   const unauthorizedMove: ProposedEvent = {
     id: 'event.phase5.unauthorized-killer-move',
     kind: 'state_transition',
+    sourceActionIds: [],
     actorId: 'chen_huaimin',
     operation: 'move',
     targetIds: ['corridor_5f'],

@@ -284,6 +284,7 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     'Echo the envelope and contract versions exactly. riskClass is reversible, high_impact, or irreversible. High-risk events must include deterministic evidenceRefs and causalParentIds.',
     'Use only these mechanism-level event kinds: action, state_transition, information_transfer, observation, timer, ending. Story entities and outcomes belong in actorId, targetIds, operation, and structured assertions; never create a story-specific event kind.',
     'Every proposed event actorId must equal the proposal actorId. Describe attempted, completed, blocked, or failed outcomes with status. Use operation for the reusable mechanic, such as move, enter, attack, change_status, communicate, observe, destroy, advance_time, or resolve_ending.',
+    'Every proposed event must list the TurnBrief actions it resolves in sourceActionIds. sourceActionIds must be a subset of the candidate turnBriefActionIds. Autonomous specialist events use []. For a player candidate, every TurnBrief action must be covered by at least one completed, blocked, or failed event; attempted alone does not resolve an action.',
     'Never jump directly to a high-impact result. A resolved action cites its attempted causal parent when applicable; a state transition cites the action or prior transition that caused it; an ending cites a terminal parent. Every high-risk event must cite at least one causal ancestor and at least one independent fact, capability, or invariant from projection.facts or projection.canonicalConstraints.',
     'Every candidate object is strict. Every key in the following contract is required. Use [] for every array field that has no grounded items. Do not add keys that are not shown in the contract.',
     'Do not copy sample IDs or facts. Copy envelope values from user.envelope and compilerVersion/schemaVersion from user.projection. confidence must be between 0 and 1.',
@@ -320,7 +321,7 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
       displayFragments: [],
       ...specialistContract,
     }),
-    'Every field whose contract value is an array of IDs, references, scopes, or viewers must contain strings only, never objects. In particular, visibility must be an array of string IDs only, never an array of objects. assertions is the only structured claim array. The string-only rule applies to turnBriefActionIds, replacementFor, targetIds, basedOnFactIds, forbiddenScopes, evidenceRefs, causalParentIds, eventRefs, claimRefs, basedOnEffectIds, basedOnObservationIds, visibleAssertionIds, claimAssertionIds, and basedOnEventIds.',
+    'Every field whose contract value is an array of IDs, references, scopes, or viewers must contain strings only, never objects. In particular, visibility must be an array of string IDs only, never an array of objects. assertions is the only structured claim array. The string-only rule applies to turnBriefActionIds, sourceActionIds, replacementFor, targetIds, basedOnFactIds, forbiddenScopes, evidenceRefs, causalParentIds, eventRefs, claimRefs, basedOnEffectIds, basedOnObservationIds, visibleAssertionIds, claimAssertionIds, and basedOnEventIds.',
     'The labels before each colon below are documentation only. Never emit those labels as JSON keys.',
     `preconditions item: ${JSON.stringify({
       id: 'precondition-1',
@@ -350,6 +351,7 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     `proposedEvents item: ${JSON.stringify({
       id: 'event-1',
       kind: 'action',
+      sourceActionIds: ['action-id'],
       actorId: 'authorized-actor-id',
       operation: 'mechanic-operation',
       targetIds: ['entity-id'],

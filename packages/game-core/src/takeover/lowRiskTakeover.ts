@@ -470,6 +470,7 @@ function applyLowRiskAction(input: {
     eventId: input.eventId,
     eventType,
     kind: operation === 'communicate' ? 'information_transfer' : 'action',
+    sourceActionIds: [action.actionId],
     actorId: 'player',
     operation,
     targetIds: action.targetIds.length > 0 ? action.targetIds : [subject],
@@ -539,6 +540,7 @@ function makeAppliedEvent(input: {
   eventId: string;
   eventType: string;
   kind: ProposedEvent['kind'];
+  sourceActionIds?: string[];
   actorId: string;
   operation: string;
   targetIds: string[];
@@ -555,6 +557,7 @@ function makeAppliedEvent(input: {
     proposedEvent: {
       id: input.eventId,
       kind: input.kind,
+      sourceActionIds: input.sourceActionIds ?? [],
       actorId: input.actorId,
       operation: input.operation,
       targetIds: input.targetIds,

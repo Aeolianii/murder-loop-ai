@@ -208,6 +208,7 @@ export const ProposedAssertionSchema = z.object({
 export const ProposedEventSchema = z.object({
   id: IdSchema,
   kind: z.enum(EventKindValues),
+  sourceActionIds: z.array(IdSchema),
   actorId: IdSchema,
   operation: IdSchema,
   targetIds: z.array(IdSchema),

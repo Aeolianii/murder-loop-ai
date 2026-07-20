@@ -28,11 +28,13 @@ function proposedEvent(
   evidenceRefs: string[] = [],
   causalParentIds: string[] = [],
   actorId = 'player',
+  sourceActionIds = ['action-1'],
 ): ProposedEvent {
   const targetId = id.split('.').at(-1) ?? id;
   return {
     id,
     kind: operation === 'resolve_ending' ? 'ending' : 'action',
+    sourceActionIds,
     actorId,
     operation,
     targetIds: [targetId],
@@ -191,6 +193,52 @@ assert(report.rejectedProposals.some((item) => (
   item.proposalId === invalidClue.id && item.reasonCodes.includes('observation_source_missing')
 )));
 assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'event.shadow.photo'), true);
+
+{
+  const incompletePlayerProposal = proposal({
+    id: 'proposal.main.player.incomplete',
+    sourceAgent: 'main-world-model',
+    domain: 'player',
+    basedOnFactIds: ['fact.player.has_phone'],
+    events: [proposedEvent(
+      'event.shadow.only-photo',
+      'photograph',
+      'reversible',
+      ['fact.player.has_phone'],
+      [],
+      'player',
+      ['action-1'],
+    )],
+  });
+  incompletePlayerProposal.turnBriefActionIds = ['action-1', 'action-2'];
+
+  const incompleteReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [incompletePlayerProposal],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    requiredActionIdsByDomain: {
+      player: ['action-1', 'action-2'],
+    },
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: ['fact.player.has_phone'],
+      },
+    },
+    availableEvidenceRefs: ['fact.player.has_phone'],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+
+  assert.deepEqual(incompleteReport.transition.fallbackDomains, ['player']);
+  assert(incompleteReport.rejectedProposals.some((item) => (
+    item.proposalId === incompletePlayerProposal.id
+    && item.reasonCodes.includes('turn_action_unresolved')
+  )));
+}
 
 {
   const photoAssertionId = 'assertion.package.exterior.photo_captured';

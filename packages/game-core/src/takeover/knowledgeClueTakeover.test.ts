@@ -18,6 +18,7 @@ function event(
   return {
     id,
     kind: eventType.startsWith('message_') ? 'information_transfer' : 'action',
+    sourceActionIds: ['action-1'],
     actorId: 'player',
     operation: eventType.startsWith('message_') ? 'communicate' : 'inspect',
     targetIds: [subject],

@@ -842,6 +842,7 @@ function correctedBlockedEntry(event: ProposedEvent, blockedBy: string): Propose
   return {
     id: `${event.id}.blocked`,
     kind: 'action',
+    sourceActionIds: [...event.sourceActionIds],
     actorId: event.actorId,
     operation: 'enter',
     targetIds: [...event.targetIds],

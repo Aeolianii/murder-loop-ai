@@ -248,6 +248,9 @@ export async function runShadowCandidateWave(
     mainProposals,
     specialistCandidates,
     requiredDomains: REQUIRED_SHADOW_DOMAINS,
+    requiredActionIdsByDomain: {
+      player: turnBrief.orderedActions.map((action) => action.actionId),
+    },
     sourcePolicies,
     availableEvidenceRefs: [
       ...knowledge.worldModel.factIds,

@@ -74,6 +74,7 @@ function proposal(
     ? [{
         id: eventId,
         kind: domain === 'npc' ? 'state_transition' as const : 'action' as const,
+        sourceActionIds: domain === 'player' ? ['action-1'] : [],
         actorId,
         operation,
         targetIds: ['room_503'],
@@ -100,7 +101,7 @@ function proposal(
     sourceAgent,
     domain,
     candidateRank: rank,
-    turnBriefActionIds: ['action-1'],
+    turnBriefActionIds: domain === 'player' ? ['action-1'] : [],
     replacementFor: [],
     actorId,
     operation: event[0]?.operation ?? 'no_op',

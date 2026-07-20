@@ -9,6 +9,7 @@ import {
 const event: ProposedEvent = {
   id: 'event.turn-1.photo',
   kind: 'action',
+  sourceActionIds: ['action-1'],
   actorId: 'player',
   operation: 'photograph',
   targetIds: ['package'],

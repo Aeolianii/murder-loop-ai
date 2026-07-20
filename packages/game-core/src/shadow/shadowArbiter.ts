@@ -31,6 +31,7 @@ export interface ShadowArbiterInput {
   mainProposals: Proposal[];
   specialistCandidates: SpecialistCandidate[];
   requiredDomains: ProposalDomain[];
+  requiredActionIdsByDomain?: Partial<Record<ProposalDomain, string[]>>;
   sourcePolicies: Record<string, ShadowSourcePolicy>;
   availableEvidenceRefs: string[];
   availableObservationIds: string[];
@@ -453,6 +454,29 @@ function validateProposal(
     || proposal.schemaVersion !== input.schemaVersion
   ) {
     reasons.add('contract_version_mismatch');
+  }
+
+  const requiredActionIds = input.requiredActionIdsByDomain?.[proposal.domain] ?? [];
+  if (
+    requiredActionIds.length > 0
+    && (
+      proposal.turnBriefActionIds.length !== requiredActionIds.length
+      || proposal.turnBriefActionIds.some((id, index) => id !== requiredActionIds[index])
+    )
+  ) {
+    reasons.add('turn_action_coverage_mismatch');
+  }
+  const declaredActionIds = new Set(proposal.turnBriefActionIds);
+  if (proposal.proposedEvents.some((event) => (
+    event.sourceActionIds.some((id) => !declaredActionIds.has(id))
+  ))) {
+    reasons.add('event_action_reference_invalid');
+  }
+  const resolvedActionIds = new Set(proposal.proposedEvents.flatMap((event) => (
+    event.status === 'attempted' ? [] : event.sourceActionIds
+  )));
+  if (requiredActionIds.some((id) => !resolvedActionIds.has(id))) {
+    reasons.add('turn_action_unresolved');
   }
 
   const policy = input.sourcePolicies[proposal.sourceAgent];

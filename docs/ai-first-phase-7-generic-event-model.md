@@ -11,6 +11,7 @@ describes the reusable mechanic and puts story data in structured fields:
 ```json
 {
   "kind": "action",
+  "sourceActionIds": ["action-1"],
   "actorId": "actor-id",
   "operation": "photograph",
   "targetIds": ["object-id"],
@@ -40,6 +41,13 @@ These are mechanism categories, not a list of story outcomes. `operation` is a
 reusable mechanic such as `move`, `enter`, `attack`, `change_status`,
 `communicate`, or `resolve_ending`.
 
+`sourceActionIds` links a proposed event back to the Semantic Compiler's
+ordered actions. For the player domain, every compiled action must be resolved
+by at least one `completed`, `blocked`, or `failed` event. An `attempted` event
+alone is not complete. Autonomous specialist events use an empty list. This
+prevents a valid-looking proposal from silently executing only part of a
+compound instruction.
+
 ## Assertion provenance
 
 AI proposals no longer author canonical Fact IDs.
@@ -60,6 +68,7 @@ never foreign keys.
 The Shadow Arbiter checks:
 
 - strict v3 schema conformance;
+- exact player action coverage and valid action-to-event references;
 - unique event and assertion IDs;
 - proposal actor ownership (`event.actorId === proposal.actorId`);
 - event, effect, observation, assertion, clue, recommendation, and display
@@ -93,6 +102,8 @@ the scenario's initial world data when they enter the deterministic world layer.
 - AI contracts test legacy `eventType/facts` rejection.
 - Fact factory tests stable IDs and cross-event separation.
 - Arbiter tests assertion provenance and actor mismatch rejection.
+- Arbiter tests that a proposal missing one action from a compound instruction
+  is rejected with `turn_action_unresolved`.
 - Prompt tests reject story-specific tokens.
 - Game-core and server suites cover low-risk, knowledge/clue, high-risk, and
   atomic commit regressions.

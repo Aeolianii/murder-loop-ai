@@ -73,6 +73,7 @@ function event(input: {
   return {
     id: input.id,
     kind: semantics.kind,
+    sourceActionIds: [],
     actorId,
     operation: semantics.operation,
     targetIds: [targetId],
