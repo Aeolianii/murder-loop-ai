@@ -1,5 +1,6 @@
 import type { Fact, ProposalDomain, TurnBrief } from '@murder-loop-ai/ai-contracts';
 import type { FactProjection, KnowledgeProjections } from '../facts/knowledgeProjection';
+import type { CanonicalStoryMaterial } from '../storyMaterial/canonicalStoryMaterial';
 
 export interface ConditionalIntentSignal {
   id: string;
@@ -16,6 +17,7 @@ export interface IntentProjectionInput {
   brief: TurnBrief;
   knowledge: KnowledgeProjections;
   canonicalConstraints: string[];
+  canonicalStoryMaterial: CanonicalStoryMaterial[];
   conditionalSignals: ConditionalIntentSignal[];
 }
 
@@ -53,6 +55,7 @@ export interface IntentProjections {
     facts: Fact[];
     factIds: string[];
     canonicalConstraints: string[];
+    canonicalStoryMaterial: CanonicalStoryMaterial[];
   };
   playerSpecialist: ProjectedTurnMetadata & FactProjection & { turnBrief: TurnBrief };
   killerSpecialist: SpecialistProjection;
@@ -73,6 +76,12 @@ export function projectTurnIntent(input: IntentProjectionInput): IntentProjectio
       facts: input.knowledge.worldModel.facts,
       factIds: input.knowledge.worldModel.factIds,
       canonicalConstraints: [...input.canonicalConstraints],
+      canonicalStoryMaterial: input.canonicalStoryMaterial.map((material) => ({
+        ...material,
+        eligibilityRules: [...material.eligibilityRules],
+        allowedDomains: [...material.allowedDomains],
+        forbiddenClaims: [...material.forbiddenClaims],
+      })),
     },
     playerSpecialist: {
       ...metadata,

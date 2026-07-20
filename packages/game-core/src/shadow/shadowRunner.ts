@@ -14,6 +14,7 @@ import type { ActionPlan, GameState } from '@murder-loop-ai/shared';
 import type { TurnFreshnessSnapshot } from '../commit/atomicTurnCommit';
 import { buildFactLedgerFromGameState, buildKnowledgeProjections, type KnowledgeProjections } from '../facts/knowledgeProjection';
 import { projectTurnIntent, type ConditionalIntentSignal, type IntentProjections } from '../intent/IntentProjector';
+import { canonicalStoryMaterial } from '../storyMaterial/canonicalStoryMaterial';
 import { validateTurnBrief, type SemanticCompiler } from '../intent/turnBriefValidator';
 import {
   buildShadowArbitrationMetrics,
@@ -189,6 +190,7 @@ export async function runShadowCandidateWave(
     brief: turnBrief,
     knowledge,
     canonicalConstraints: input.canonicalConstraints,
+    canonicalStoryMaterial: canonicalStoryMaterial(),
     conditionalSignals: compilerFallback ? [] : buildConditionalSignals(turnBrief),
   });
   const controller = new AbortController();

@@ -38,6 +38,8 @@ export * from './shadow/shadowRunner';
 export * from './takeover/lowRiskTakeover';
 export * from './takeover/knowledgeClueTakeover';
 export * from './takeover/highRiskTakeover';
+export * from './takeover/minimumPlayableFallback';
+export * from './storyMaterial/canonicalStoryMaterial';
 
 // Harness 架构新增导出
 export { GameEventBus } from './events/EventBus';

@@ -101,6 +101,14 @@ const projections = projectTurnIntent({
   brief,
   knowledge,
   canonicalConstraints: ['package_interior_requires_open_event'],
+  canonicalStoryMaterial: [{
+    id: 'material.handoff_2347',
+    kind: 'phase_goal',
+    phaseGoal: 'After 23:47, expose that the failed handoff changes the opposition plan.',
+    eligibilityRules: ['world.minute >= 1427', 'ending == null'],
+    allowedDomains: ['world', 'killer'],
+    forbiddenClaims: ['Do not claim the dialogue was heard without a confirmed observation.'],
+  }],
   conditionalSignals: [
     killerSignal,
     {
@@ -125,6 +133,10 @@ const projections = projectTurnIntent({
 
 assert.equal(projections.mainWorldModel.turnBrief, brief);
 assert.equal(projections.mainWorldModel.facts.length, facts.length);
+assert.deepEqual(
+  projections.mainWorldModel.canonicalStoryMaterial.map((material) => material.id),
+  ['material.handoff_2347'],
+);
 assert.equal(projections.playerSpecialist.turnBrief, brief);
 assert.deepEqual(projections.playerSpecialist.factIds, ['fact.player.has_phone', 'fact.weather.rain']);
 
@@ -133,6 +145,7 @@ assert.equal('turnBrief' in projections.killerSpecialist, false);
 assert(!killerJson.includes('只拍外包装'));
 assert(!killerJson.includes('不要打开'));
 assert(!killerJson.includes('SECRET PLAYER INTENT'));
+assert(!killerJson.includes('material.handoff_2347'));
 assert.deepEqual(projections.killerSpecialist.factIds.sort(), ['fact.killer.in_corridor', 'fact.weather.rain'].sort());
 assert.deepEqual(
   projections.killerSpecialist.canonicalConstraints,
