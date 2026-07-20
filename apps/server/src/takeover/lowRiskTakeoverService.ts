@@ -25,12 +25,7 @@ import type { ShadowRunSession } from '../shadow/shadowCoordinator';
 export type LowRiskTakeoverBypassReason =
   | Exclude<LowRiskTakeoverPreparation, { status: 'prepared' }>['reason']
   | 'shadow_incomplete'
-  | 'envelope_mismatch'
-  | 'arbitration_unavailable'
-  | 'arbitration_not_clean'
-  | 'selected_player_proposal_missing'
-  | 'selected_proposal_not_reversible'
-  | 'selected_proposal_does_not_cover_turn';
+  | 'envelope_mismatch';
 
 export type LowRiskTakeoverPrepareResult = {
   status: 'prepared';
@@ -130,13 +125,12 @@ export function createLowRiskTakeoverService(
           fallbackMode: 'ai_unavailable',
         };
       }
-      const gate = validateShadowTakeoverGate(session, wave);
+      const gate = validateDeterministicTurnBriefGate(session, wave);
       if (gate.status === 'bypassed') return gate;
 
       const preparation = prepareLowRiskTurn({
         state,
-        brief: wave.turnBrief!,
-        sourceProposalId: gate.proposal.id,
+        brief: gate.brief,
         allowHighRiskContinuation: highRiskTakeoverEnabled,
       });
       if (preparation.status === 'not_eligible') {
@@ -147,8 +141,13 @@ export function createLowRiskTakeoverService(
         };
       }
 
-      const downstreamEvents = selectDownstreamEventCandidates(wave);
-      const recommendationSnapshots = selectAcceptedRecommendations(wave, state);
+      const publishAiDownstream = arbitrationCanPublishCreativeOutputs(wave);
+      const downstreamEvents = publishAiDownstream
+        ? selectDownstreamEventCandidates(wave)
+        : { eventCandidates: [], rejectedEventIds: [], rejectionDecisions: [] };
+      const recommendationSnapshots = publishAiDownstream
+        ? selectAcceptedRecommendations(wave, state)
+        : [];
       const recommendedActions = recommendationSnapshots.map(({ action }) => action);
       pending.set(session.envelope.turnId, {
         prepared: preparation,
@@ -401,10 +400,24 @@ function proposalCanAuthorEvent(
   );
 }
 
-function validateShadowTakeoverGate(
+function arbitrationCanPublishCreativeOutputs(wave: ShadowCandidateWave): boolean {
+  const arbitration = wave.arbitration;
+  if (!arbitration) return false;
+  const rejectedProposalIds = new Set(
+    arbitration.rejectedProposals.map((proposal) => proposal.proposalId),
+  );
+  const hasUnattributedTransitionViolation = arbitration.transition.violations.some(
+    (violation) => !rejectedProposalIds.has(violation.subjectId),
+  );
+  return !arbitration.transition.requiresRepair
+    && !arbitration.transition.requiresPlayerClarification
+    && !hasUnattributedTransitionViolation;
+}
+
+function validateDeterministicTurnBriefGate(
   session: ShadowRunSession,
   wave: ShadowCandidateWave,
-): { status: 'eligible'; proposal: Proposal | SpecialistCandidate } | {
+): { status: 'eligible'; brief: NonNullable<ShadowCandidateWave['turnBrief']> } | {
   status: 'bypassed';
   reason: LowRiskTakeoverBypassReason;
   fallbackMode: 'ai_unavailable' | 'clarification_required' | 'formal_rejection';
@@ -428,43 +441,7 @@ function validateShadowTakeoverGate(
   ) {
     return bypass('envelope_mismatch');
   }
-  const arbitration = wave.arbitration;
-  if (!arbitration) return bypass('arbitration_unavailable');
-  const rejectedProposalIds = new Set(
-    arbitration.rejectedProposals.map((proposal) => proposal.proposalId),
-  );
-  const hasUnattributedTransitionViolation = arbitration.transition.violations.some(
-    (violation) => !rejectedProposalIds.has(violation.subjectId),
-  );
-  if (
-    arbitration.transition.requiresRepair
-    || arbitration.transition.requiresPlayerClarification
-    || hasUnattributedTransitionViolation
-    || arbitration.transition.fallbackDomains.includes('player')
-  ) {
-    return bypass('arbitration_not_clean');
-  }
-
-  const proposals: Array<Proposal | SpecialistCandidate> = [
-    ...wave.mainProposals,
-    ...wave.specialistCandidates,
-  ];
-  const proposal = proposals.find((candidate) => (
-    candidate.domain === 'player'
-    && arbitration.selectedProposalIds.includes(candidate.id)
-  ));
-  if (!proposal) return bypass('selected_player_proposal_missing');
-  if (rejectedProposalIds.has(proposal.id)) return bypass('arbitration_not_clean');
-  if (
-    proposal.riskClass !== 'reversible'
-    || proposal.proposedEvents.some((event) => event.riskClass !== 'reversible')
-  ) {
-    return bypass('selected_proposal_not_reversible');
-  }
-  if (!wave.turnBrief.orderedActions.every((action) => proposal.turnBriefActionIds.includes(action.actionId))) {
-    return bypass('selected_proposal_does_not_cover_turn');
-  }
-  return { status: 'eligible', proposal };
+  return { status: 'eligible', brief: wave.turnBrief };
 }
 
 function bypass(reason: LowRiskTakeoverBypassReason): Extract<

@@ -61,11 +61,14 @@ const prepared = prepareLowRiskTurn({
     action('message-linyue', 'communicate', ['lin_yue']),
     action('pick-charger', 'pick_up', ['phone_charger']),
   ]),
-  sourceProposalId: 'proposal.player.selected',
 });
 
 assert.equal(prepared.status, 'prepared');
 if (prepared.status !== 'prepared') throw new Error('expected a prepared low-risk turn');
+assert.equal(
+  prepared.executionAuthorityId,
+  'deterministic.turn-brief-reducer.takeover-turn-1',
+);
 assert.equal(prepared.playerResult.state.room.package.inspected, true);
 assert.equal(prepared.playerResult.state.room.package.state.opened, false, 'exterior observation cannot open package');
 assert.equal(prepared.playerResult.state.room.package.state.photographed, true);
@@ -117,7 +120,6 @@ photoShareBrief.candidateHandles = [{
 const preparedPhotoShare = prepareLowRiskTurn({
   state,
   brief: photoShareBrief,
-  sourceProposalId: 'proposal.photo-share',
 });
 assert.equal(preparedPhotoShare.status, 'prepared');
 if (preparedPhotoShare.status !== 'prepared') throw new Error('expected photo sharing to be prepared');
@@ -146,7 +148,6 @@ assert(projectedPhotoShare.state.clues.some((clue) => clue.id === 'linyue_has_ph
 const unsupportedAttack = prepareLowRiskTurn({
   state,
   brief: brief([action('attack', 'attack', ['chen_huaimin'])]),
-  sourceProposalId: 'proposal.attack',
 });
 assert.equal(unsupportedAttack.status, 'not_eligible');
 if (unsupportedAttack.status === 'not_eligible') assert.equal(unsupportedAttack.reason, 'unsupported_operation');
@@ -154,7 +155,6 @@ if (unsupportedAttack.status === 'not_eligible') assert.equal(unsupportedAttack.
 const interiorObservation = prepareLowRiskTurn({
   state,
   brief: brief([action('inspect-inside', 'inspect', ['package'], { scope: 'interior.contents' })]),
-  sourceProposalId: 'proposal.interior',
 });
 assert.equal(interiorObservation.status, 'not_eligible');
 if (interiorObservation.status === 'not_eligible') assert.equal(interiorObservation.reason, 'observation_scope_not_low_risk');
@@ -162,7 +162,6 @@ if (interiorObservation.status === 'not_eligible') assert.equal(interiorObservat
 const inventedBarricade = prepareLowRiskTurn({
   state,
   brief: brief([action('invented-barricade', 'secure_entry', ['front_door', 'suitcase'])]),
-  sourceProposalId: 'proposal.invented-barricade',
 });
 assert.equal(inventedBarricade.status, 'not_eligible');
 if (inventedBarricade.status === 'not_eligible') assert.equal(inventedBarricade.reason, 'unsupported_target');
@@ -170,7 +169,6 @@ if (inventedBarricade.status === 'not_eligible') assert.equal(inventedBarricade.
 const ordinaryWait = prepareLowRiskTurn({
   state,
   brief: brief([action('wait-player', 'wait', ['player'])]),
-  sourceProposalId: 'proposal.wait-player',
 });
 assert.equal(ordinaryWait.status, 'prepared');
 
@@ -180,7 +178,6 @@ depletedBatteryState.room.phone.state.battery = 1;
 const batteryDeathBoundary = prepareLowRiskTurn({
   state: depletedBatteryState,
   brief: brief([action('wait-low-battery', 'wait', ['player'])]),
-  sourceProposalId: 'proposal.wait-low-battery',
 });
 assert.equal(batteryDeathBoundary.status, 'not_eligible');
 if (batteryDeathBoundary.status === 'not_eligible') assert.equal(batteryDeathBoundary.reason, 'high_risk_boundary');
@@ -190,7 +187,6 @@ deadlineState.minute = DEADLINE_MINUTE - 1;
 const deadlineBoundary = prepareLowRiskTurn({
   state: deadlineState,
   brief: brief([action('wait-at-deadline', 'wait', ['player'])]),
-  sourceProposalId: 'proposal.wait-at-deadline',
 });
 assert.equal(deadlineBoundary.status, 'not_eligible');
 if (deadlineBoundary.status === 'not_eligible') assert.equal(deadlineBoundary.reason, 'high_risk_boundary');
@@ -198,7 +194,6 @@ if (deadlineBoundary.status === 'not_eligible') assert.equal(deadlineBoundary.re
 const phaseFiveDeadlinePreparation = prepareLowRiskTurn({
   state: deadlineState,
   brief: brief([action('wait-at-deadline', 'wait', ['player'])]),
-  sourceProposalId: 'proposal.wait-at-deadline',
   allowHighRiskContinuation: true,
 });
 assert.equal(

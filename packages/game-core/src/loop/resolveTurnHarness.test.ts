@@ -51,7 +51,6 @@ async function testPreparedLowRiskPlayerStateContinuesIntoKillerStages() {
   const prepared = prepareLowRiskTurn({
     state,
     brief: lowRiskBrief('secure_entry', ['front_door', 'chair']),
-    sourceProposalId: 'proposal.player.secure-door',
   });
   assert.equal(prepared.status, 'prepared');
   if (prepared.status !== 'prepared') throw new Error('expected prepared turn');
@@ -91,7 +90,6 @@ async function testFailedPreparedCommunicationDoesNotTriggerNpcObserver() {
   const prepared = prepareLowRiskTurn({
     state,
     brief: lowRiskBrief('communicate', ['lin_yue']),
-    sourceProposalId: 'proposal.player.failed-message',
   });
   assert.equal(prepared.status, 'prepared');
   if (prepared.status !== 'prepared') throw new Error('expected prepared turn');

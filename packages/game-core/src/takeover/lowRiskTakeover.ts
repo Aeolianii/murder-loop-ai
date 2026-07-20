@@ -73,7 +73,7 @@ export interface PreparedLowRiskPlayerResult extends RuleResult {
 export interface PreparedLowRiskTurn {
   status: 'prepared';
   envelope: TurnEnvelope;
-  sourceProposalId: string;
+  executionAuthorityId: string;
   plan: ActionPlan;
   playerResult: PreparedLowRiskPlayerResult;
   eventCandidates: CommitEventCandidate[];
@@ -96,7 +96,6 @@ interface AppliedLowRiskAction {
 export function prepareLowRiskTurn(input: {
   state: GameState;
   brief: TurnBrief;
-  sourceProposalId: string;
   allowHighRiskContinuation?: boolean;
 }): LowRiskTakeoverPreparation {
   const eligibility = validateTurnEligibility(input.state, input.brief);
@@ -199,6 +198,7 @@ export function prepareLowRiskTurn(input: {
     { run: state.run, minute: state.minute },
   );
   const text = actionEvents.map((event) => event.summary).join(' ');
+  const executionAuthorityId = deterministicTurnBriefAuthorityId(input.brief.turnId);
   state.log.push({
     id: `log-low-risk-${input.brief.turnId}`,
     run: state.run,
@@ -212,7 +212,7 @@ export function prepareLowRiskTurn(input: {
   return {
     status: 'prepared',
     envelope: envelopeFromBrief(input.brief),
-    sourceProposalId: input.sourceProposalId,
+    executionAuthorityId,
     plan,
     playerResult: {
       title: 'Action confirmed',
@@ -227,7 +227,9 @@ export function prepareLowRiskTurn(input: {
     },
     eventCandidates: allEvents.map(({ proposedEvent }) => ({
       event: proposedEvent,
-      sourceProposalId: input.sourceProposalId,
+      // Atomic commit still uses the legacy sourceProposalId field for provenance.
+      // A deterministic authority id prevents these events being attributed to an AI proposal.
+      sourceProposalId: executionAuthorityId,
     })),
     displayFragments: allEvents.map(({ proposedEvent, summary }) => ({
       id: `display.${proposedEvent.id}`,
@@ -237,6 +239,10 @@ export function prepareLowRiskTurn(input: {
     })),
     knowledgeClueCandidates,
   };
+}
+
+export function deterministicTurnBriefAuthorityId(turnId: string): string {
+  return `deterministic.turn-brief-reducer.${turnId}`;
 }
 
 export async function commitPreparedLowRiskTurn(input: {

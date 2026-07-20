@@ -595,7 +595,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           lowRiskTakeoverCoordination = {
             status: 'committed',
             turnId: shadowSession.envelope.turnId,
-            sourceProposalId: preparation.prepared.sourceProposalId,
+            executionAuthorityId: preparation.prepared.executionAuthorityId,
             outputStateVersion: committed.outcome.result.outputStateVersion,
             confirmedEventCount: committed.outcome.confirmedEvents.length,
             durationMs: lowRiskTakeoverDuration(),

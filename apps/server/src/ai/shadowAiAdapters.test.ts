@@ -212,7 +212,6 @@ if (targetRepairedSemantic.status === 'compiled') {
   const preparation = prepareLowRiskTurn({
     state: createInitialGameState(),
     brief: targetRepairedSemantic.brief,
-    sourceProposalId: 'proposal.repaired-target-contract',
   });
   assert.equal(preparation.status, 'prepared');
   if (preparation.status === 'prepared') {

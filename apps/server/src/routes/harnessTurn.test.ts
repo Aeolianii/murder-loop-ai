@@ -351,7 +351,6 @@ function takeoverFixture(
   const prepared = prepareLowRiskTurn({
     state: baseState,
     brief,
-    sourceProposalId: 'proposal.player.route',
   });
   if (prepared.status !== 'prepared') throw new Error('expected route takeover fixture');
   let parserCalls = 0;
@@ -534,6 +533,10 @@ async function testLowRiskTakeoverCommitsBeforePublishingResponse() {
   assert.equal(body.coreState.room.front_door.state.barricaded, true);
   assert.equal(body.coreState.ending, null);
   assert.equal(body.coordination.lowRiskTakeover.status, 'committed');
+  assert.equal(
+    body.coordination.lowRiskTakeover.executionAuthorityId,
+    `deterministic.turn-brief-reducer.${fixture.prepared.envelope.turnId}`,
+  );
   assert.equal(body.coordination.lowRiskTakeover.outputStateVersion, baseState.log.length + 1);
   assert.equal(typeof body.coordination.lowRiskTakeover.durationMs, 'number');
   assert(body.coordination.lowRiskTakeover.durationMs >= 0);
@@ -961,7 +964,7 @@ async function testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallba
   const fixture = takeoverFixture('committed', false, true, true);
   fixture.lowRiskTakeoverService.prepare = async () => ({
     status: 'bypassed',
-    reason: 'arbitration_not_clean',
+    reason: 'unsupported_operation',
     fallbackMode: 'formal_rejection',
   });
   await registerTestHarnessRoute(app, {

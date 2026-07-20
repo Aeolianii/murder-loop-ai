@@ -237,8 +237,40 @@ const service = createLowRiskTakeoverService();
 const prepared = await service.prepare(session(), state);
 assert.equal(prepared.status, 'prepared');
 if (prepared.status !== 'prepared') throw new Error('expected takeover preparation');
-assert.equal(prepared.prepared.sourceProposalId, 'proposal.player.selected');
 assert.equal(prepared.prepared.playerResult.state.room.front_door.state.chainLocked, true);
+
+const deterministicOnlyWave = wave();
+deterministicOnlyWave.specialistCandidates = [];
+deterministicOnlyWave.arbitration = undefined;
+const deterministicOnlyService = createLowRiskTakeoverService();
+const deterministicOnly = await deterministicOnlyService.prepare(
+  session(deterministicOnlyWave),
+  state,
+);
+assert.equal(
+  deterministicOnly.status,
+  'prepared',
+  'a valid TurnBrief must drive the deterministic reducer without a Player Proposal or Arbiter',
+);
+if (deterministicOnly.status !== 'prepared') {
+  throw new Error('expected deterministic TurnBrief preparation');
+}
+assert.equal(
+  deterministicOnly.prepared.executionAuthorityId,
+  `deterministic.turn-brief-reducer.${envelope.turnId}`,
+);
+const deterministicOnlyCommit = await deterministicOnlyService.commit(
+  envelope.turnId,
+  deterministicOnly.prepared.playerResult.state,
+);
+assert.equal(deterministicOnlyCommit.outcome.result.commitStatus, 'committed');
+assert.ok(deterministicOnlyCommit.outcome.confirmedEvents.length > 0);
+assert.ok(
+  deterministicOnlyCommit.outcome.confirmedEvents.every((event) => (
+    event.sourceProposalId === `deterministic.turn-brief-reducer.${envelope.turnId}`
+  )),
+  'deterministic events must not be attributed to an AI proposal',
+);
 
 const recommendationWave = wave();
 const acceptedRecommendation = recommendationProposal(
@@ -347,6 +379,13 @@ assert.equal(
 specialistReplacementService.discard(envelope.turnId);
 
 const unsafeTransitionWave = wave();
+const unsafeTransitionRecommendation = recommendationProposal(
+  'proposal.recommendation.unsafe-transition',
+  'recommendation.unsafe-transition',
+  'This recommendation must be suppressed with the invalid arbitration.',
+);
+unsafeTransitionWave.specialistCandidates.push(unsafeTransitionRecommendation);
+unsafeTransitionWave.arbitration!.selectedProposalIds.push(unsafeTransitionRecommendation.id);
 unsafeTransitionWave.arbitration!.transition.violations = [{
   code: 'unattributed_transition_violation',
   subjectId: 'transition',
@@ -356,9 +395,17 @@ const unsafeTransition = await createLowRiskTakeoverService().prepare(
   session(unsafeTransitionWave),
   state,
 );
-assert.equal(unsafeTransition.status, 'bypassed');
-if (unsafeTransition.status === 'bypassed') {
-  assert.equal(unsafeTransition.reason, 'arbitration_not_clean');
+assert.equal(
+  unsafeTransition.status,
+  'prepared',
+  'an Arbiter violation must not block a deterministic low-risk TurnBrief',
+);
+if (unsafeTransition.status === 'prepared') {
+  assert.deepEqual(
+    unsafeTransition.recommendedActions,
+    [],
+    'an invalid arbitration must still suppress AI-authored creative outputs',
+  );
 }
 
 const committed = await service.commit(envelope.turnId, {
@@ -374,8 +421,12 @@ assert.equal(unsupported.status, 'bypassed');
 if (unsupported.status === 'bypassed') assert.equal(unsupported.reason, 'unsupported_operation');
 
 const unsafeProposal = await service.prepare(session(wave(brief(), playerProposal('high_impact'))), state);
-assert.equal(unsafeProposal.status, 'bypassed');
-if (unsafeProposal.status === 'bypassed') assert.equal(unsafeProposal.reason, 'selected_proposal_not_reversible');
+assert.equal(
+  unsafeProposal.status,
+  'prepared',
+  'Player Proposal risk metadata must not control the deterministic low-risk reducer',
+);
+service.discard(envelope.turnId);
 
 const mismatchedDeadlineBrief: TurnBrief = {
   ...brief(),
