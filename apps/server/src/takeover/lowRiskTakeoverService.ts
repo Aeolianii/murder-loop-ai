@@ -75,7 +75,11 @@ interface AcceptedRecommendationSnapshot {
 export interface LowRiskTakeoverService {
   readonly highRiskTakeoverEnabled?: boolean;
   readonly legacyMainPathExitEnabled?: boolean;
-  prepare(session: ShadowRunSession, state: GameState): Promise<LowRiskTakeoverPrepareResult>;
+  prepare(
+    session: ShadowRunSession,
+    state: GameState,
+    options?: { store?: AtomicTurnStore<GameState> },
+  ): Promise<LowRiskTakeoverPrepareResult>;
   commit(turnId: string, finalState: GameState): Promise<LowRiskTakeoverServiceCommitResult>;
   discard(turnId: string): void;
 }
@@ -115,7 +119,7 @@ export function createLowRiskTakeoverService(
   return {
     highRiskTakeoverEnabled,
     legacyMainPathExitEnabled,
-    async prepare(session, state) {
+    async prepare(session, state, prepareOptions) {
       let wave: ShadowCandidateWave;
       try {
         wave = await session.wave;
@@ -148,7 +152,7 @@ export function createLowRiskTakeoverService(
       const recommendedActions = recommendationSnapshots.map(({ action }) => action);
       pending.set(session.envelope.turnId, {
         prepared: preparation,
-        store: createStore({
+        store: prepareOptions?.store ?? createStore({
           loopId: preparation.envelope.loopId,
           stateVersion: preparation.envelope.inputStateVersion,
           state,

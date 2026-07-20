@@ -23,11 +23,20 @@ assert(!storage.has(FRONTEND_SAVE_KEY), 'resetFrontendProgress should clear pers
 assert(resetState.time === '23:00', 'resetFrontendProgress should return the opening time');
 assert(resetState.phase === 'intro', 'resetFrontendProgress should return the opening phase');
 assert(resetState.isParsing === false, 'resetFrontendProgress should not leave parsing state active');
+assert(resetState.gameSessionId.length > 0, 'resetFrontendProgress should create a game session id');
+assert(resetState.stateVersion === 0, 'a new game session should start at version zero');
 assert(resetState.clues[0]?.id === 'wrong_package', 'opening package clue should use the canonical clue id');
 assert(Boolean(getClueAsset(resetState.clues[0].id)), 'opening package clue should have an image asset');
 assert(Boolean(getClueAsset('c1')), 'legacy opening package clue id should still resolve to an image asset');
 
-fakeStorage.setItem(FRONTEND_SAVE_KEY, JSON.stringify({ time: '23:12', isParsing: true }));
+fakeStorage.setItem(FRONTEND_SAVE_KEY, JSON.stringify({
+  time: '23:12',
+  isParsing: true,
+  gameSessionId: 'saved-session',
+  stateVersion: 7,
+}));
 const loadedState = loadFrontendState(fakeStorage);
 assert(loadedState.time === '23:12', 'loadFrontendState should load persisted fields');
 assert(loadedState.isParsing === false, 'loadFrontendState should sanitize transient parsing state');
+assert(loadedState.gameSessionId === 'saved-session', 'loadFrontendState should preserve the saved game session id');
+assert(loadedState.stateVersion === 7, 'loadFrontendState should preserve the committed state version');

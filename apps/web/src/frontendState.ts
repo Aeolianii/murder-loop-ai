@@ -4,7 +4,11 @@ import type { GameState } from './types';
 export const FRONTEND_SAVE_KEY = 'murder-loop-ai:frontend-state:v1';
 
 export function freshFrontendState(): GameState {
-  return structuredClone(INITIAL_STATE);
+  return {
+    ...structuredClone(INITIAL_STATE),
+    gameSessionId: createGameSessionId(),
+    stateVersion: 0,
+  };
 }
 
 export function loadFrontendState(storage: Pick<Storage, 'getItem'> | null = typeof window === 'undefined' ? null : window.localStorage): GameState {
@@ -12,9 +16,17 @@ export function loadFrontendState(storage: Pick<Storage, 'getItem'> | null = typ
   try {
     const raw = storage.getItem(FRONTEND_SAVE_KEY);
     if (!raw) return freshFrontendState();
+    const fresh = freshFrontendState();
+    const saved = JSON.parse(raw) as Partial<GameState>;
     return {
-      ...freshFrontendState(),
-      ...(JSON.parse(raw) as Partial<GameState>),
+      ...fresh,
+      ...saved,
+      gameSessionId: typeof saved.gameSessionId === 'string' && saved.gameSessionId.trim()
+        ? saved.gameSessionId
+        : fresh.gameSessionId,
+      stateVersion: Number.isInteger(saved.stateVersion) && (saved.stateVersion ?? -1) >= 0
+        ? saved.stateVersion!
+        : 0,
       isParsing: false,
       isParsingAction: false,
       actionConfirmation: null,
@@ -22,6 +34,11 @@ export function loadFrontendState(storage: Pick<Storage, 'getItem'> | null = typ
   } catch {
     return freshFrontendState();
   }
+}
+
+function createGameSessionId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  return `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export function persistFrontendState(

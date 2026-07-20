@@ -87,6 +87,8 @@ export interface CoordinationState {
 }
 
 export interface GameState {
+  gameSessionId: string;
+  stateVersion: number;
   time: string; // "23:00"
   location: string;
   phase: GamePhase;

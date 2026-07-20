@@ -1,6 +1,8 @@
 import { GameState } from '../types';
 
 export const INITIAL_STATE: GameState = {
+  gameSessionId: '',
+  stateVersion: 0,
   time: '23:00',
   location: '青荷公寓 503室',
   phase: 'intro',

@@ -43,6 +43,8 @@ export function applyHarnessTurnResponse(
 
   return {
     ...state,
+    gameSessionId: response.gameSessionId ?? state.gameSessionId,
+    stateVersion: response.outputStateVersion ?? state.stateVersion,
     isParsing: false,
     actionConfirmation: null,
     time: response.time ?? state.time,
@@ -64,6 +66,8 @@ export function applyHarnessTurnResponse(
 export function rewindFrontendStateFromResponse(state: GameState, response: HarnessTurnResponse): GameState {
   return {
     ...state,
+    gameSessionId: response.gameSessionId ?? state.gameSessionId,
+    stateVersion: response.outputStateVersion ?? state.stateVersion,
     isParsing: false,
     time: response.time ?? state.time,
     location: response.location ?? state.location,

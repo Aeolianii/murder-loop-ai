@@ -38,7 +38,12 @@ export interface ShadowRunSession {
 }
 
 export interface ShadowRunCoordinator {
-  start(input: { rawInput: string; state: GameState }): ShadowRunSession;
+  start(input: {
+    rawInput: string;
+    state: GameState;
+    loopId?: string;
+    inputStateVersion?: number;
+  }): ShadowRunSession;
   complete(session: ShadowRunSession, resolution: TurnResolution): Promise<void>;
 }
 
@@ -74,15 +79,15 @@ export function createShadowRunCoordinator(
   } | undefined;
 
   return {
-    start({ rawInput, state }) {
+    start({ rawInput, state, loopId, inputStateVersion }) {
       const startedAt = now();
       const envelope: TurnEnvelope = {
-        loopId: `legacy-run-${state.run}`,
+        loopId: loopId ?? `legacy-run-${state.run}`,
         turnId: createTurnId(),
-        inputStateVersion: deriveLegacyShadowStateVersion(state),
+        inputStateVersion: inputStateVersion ?? deriveLegacyShadowStateVersion(state),
         deadlineAt: new Date(startedAt.getTime() + deadlineMs).toISOString(),
       };
-      const observedVersion = deriveLegacyShadowStateVersion(state);
+      const observedVersion = inputStateVersion ?? deriveLegacyShadowStateVersion(state);
       if (
         !latestObserved
         || state.run > latestObserved.run

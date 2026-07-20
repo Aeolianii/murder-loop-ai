@@ -1699,6 +1699,124 @@ async function testContradictoryPaperNoteCluesAreDeduped() {
   await app.close();
 }
 
+async function testGameSessionRejectsStaleVersionAndIgnoresReplacementState() {
+  const app = Fastify({ logger: false });
+  const parserMinutes: number[] = [];
+  await registerTestHarnessRoute(app, {
+    createAiAdapters: () => ({
+      aiAdapters: {
+        parseAction: async (_input: string, state: GameState) => {
+          parserMinutes.push(state.minute);
+          return resolution.plan;
+        },
+        chooseKillerStrategy: async () => resolution.killerStrategy,
+        narrateAction: async () => resolution.narration,
+        narrateAmbient: async () => ({ title: 'Ambient', text: 'The room remains observable.' }),
+      },
+      coordination: { warnings: [], judgements: {} },
+    }),
+  });
+
+  const gameSessionId = 'route-session-cas';
+  const first = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'reply to Chen',
+      state: baseState,
+      gameSessionId,
+      inputStateVersion: 0,
+    },
+  });
+  assert.equal(first.statusCode, 200);
+  const firstBody = first.json();
+  assert.equal(firstBody.gameSessionId, gameSessionId);
+  assert.equal(firstBody.inputStateVersion, 0);
+  assert.equal(firstBody.outputStateVersion, 1);
+  assert.deepEqual(parserMinutes, [baseState.minute]);
+
+  const stale = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'reply again',
+      state: { ...baseState, minute: baseState.minute + 99 },
+      gameSessionId,
+      inputStateVersion: 0,
+    },
+  });
+  assert.equal(stale.statusCode, 409);
+  assert.equal(stale.json().error, 'state_version_conflict');
+  assert.equal(stale.json().authoritativeStateVersion, 1);
+  assert.deepEqual(parserMinutes, [baseState.minute], 'stale work must be rejected before invoking AI');
+
+  const current = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'reply from the current version',
+      state: { ...baseState, minute: baseState.minute + 99 },
+      gameSessionId,
+      inputStateVersion: 1,
+    },
+  });
+  assert.equal(current.statusCode, 200);
+  assert.equal(current.json().outputStateVersion, 2);
+  assert.deepEqual(
+    parserMinutes,
+    [baseState.minute, firstBody.coreState.minute],
+    'the next turn must use the server snapshot instead of the replacement client state',
+  );
+
+  await app.close();
+}
+
+async function testGameSessionRewindAtomicallySwitchesLoop() {
+  const app = Fastify({ logger: false });
+  await registerTestHarnessRoute(app, {});
+  const gameSessionId = 'route-session-rewind';
+  const deadState: GameState = {
+    ...baseState,
+    phase: 'death',
+    ending: 'death',
+    endingReason: 'forced_entry',
+  };
+
+  const rewound = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: '',
+      state: deadState,
+      gameSessionId,
+      inputStateVersion: 0,
+    },
+  });
+  assert.equal(rewound.statusCode, 200);
+  const rewoundBody = rewound.json();
+  assert.equal(rewoundBody.coreState.run, deadState.run + 1);
+  assert.equal(rewoundBody.outputStateVersion, 0);
+
+  const repeated = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: '',
+      state: deadState,
+      gameSessionId,
+      inputStateVersion: 0,
+    },
+  });
+  assert.equal(repeated.statusCode, 200);
+  assert.equal(
+    repeated.json().coreState.run,
+    deadState.run + 1,
+    'the authoritative rewound state must prevent a second reset from stale client state',
+  );
+
+  await app.close();
+}
+
 function testActionPlanVerifierDoesNotRewriteAiOutput() {
   const plan: ActionPlan = {
     id: 'bad-ai-plan',
@@ -1783,5 +1901,7 @@ await testThreatEventsDoNotBecomeDynamicCluesWithoutExplicitEvidence();
 await testNarrationClueIsAcceptedOnlyWhenVisibleTextExplicitlyMentionsIt();
 await testNarrationClueIsRejectedWhenVisibleTextDoesNotExplicitlyMentionIt();
 await testContradictoryPaperNoteCluesAreDeduped();
+await testGameSessionRejectsStaleVersionAndIgnoresReplacementState();
+await testGameSessionRewindAtomicallySwitchesLoop();
 testActionPlanVerifierDoesNotRewriteAiOutput();
 testKillerStrategyVerifierDoesNotDowngradeAiOutput();

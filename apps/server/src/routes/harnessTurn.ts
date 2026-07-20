@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
   createHarness, normalizeLoopMemory, resolveLegacyTurnHarness, resolveMinimumPlayableTurn,
@@ -27,6 +28,11 @@ import {
 } from '../presenters/confirmedTurnNarrator';
 import { coerceGameState, normalizeDynamicClueId } from '../state/coerceGameState';
 import {
+  createInMemoryGameSessionStore,
+  gameSessionLoopId,
+  type GameSessionStore,
+} from '../state/gameSessionStore';
+import {
   createShadowRunCoordinator,
   type ShadowRunCoordinator,
   type ShadowRunSession,
@@ -53,6 +59,7 @@ export interface HarnessTurnRouteOptions {
   }) => Promise<ActionAudioCue | null>;
   shadowCoordinator?: ShadowRunCoordinator | null;
   lowRiskTakeoverService?: LowRiskTakeoverService | null;
+  gameSessionStore?: GameSessionStore;
 }
 
 interface HarnessResponseTraceEntry {
@@ -319,6 +326,7 @@ function attachRecommendedActions(
 // ============================================================================
 
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
+  const gameSessionStore = options.gameSessionStore ?? createInMemoryGameSessionStore();
   const anyStateTakeoverEnabled = env.aiLowRiskTakeoverEnabled
     || env.aiKnowledgeClueTakeoverEnabled
     || env.aiHighRiskTakeoverEnabled
@@ -354,23 +362,76 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       ?? env.aiLegacyMainPathExitEnabled;
 
   app.post('/api/harness/turn', async (request, reply) => {
-    const body = request.body as { input?: string; state?: GameState };
+    const body = request.body as {
+      input?: string;
+      state?: GameState;
+      gameSessionId?: string;
+      inputStateVersion?: number;
+    };
     const input = body.input?.trim() ?? '';
-    const rawState = coerceGameState(body.state);
+    const bootstrapState = coerceGameState(body.state);
+    const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
+    const requestedStateVersion = body.inputStateVersion ?? 0;
+    if (!Number.isInteger(requestedStateVersion) || requestedStateVersion < 0) {
+      return reply.code(400).send({
+        error: 'invalid_input_state_version',
+        gameSessionId,
+      });
+    }
+    const openedSession = gameSessionStore.open({
+      gameSessionId,
+      inputStateVersion: requestedStateVersion,
+      bootstrapState,
+    });
+    if (openedSession.status === 'conflict') {
+      return reply.code(409).send({
+        error: 'state_version_conflict',
+        gameSessionId,
+        inputStateVersion: requestedStateVersion,
+        authoritativeStateVersion: openedSession.authoritativeStateVersion,
+        authoritativeLoopId: openedSession.authoritativeLoopId,
+      });
+    }
+    let sessionLoopId = openedSession.loopId;
+    let sessionStateVersion = openedSession.stateVersion;
+    let outputStateVersion = sessionStateVersion;
+    let turnCommittedToSession = false;
     const harnessOptions: HarnessOptions = {
       worldTick: 'enabled',
     };
 
     // 死亡状态自动回退——无论有没有输入，先复活
-    let state = rawState;
-    if (rawState.phase === 'death' || (rawState.ending && rawState.phase !== 'loop_started')) {
+    let state = openedSession.state;
+    if (state.phase === 'death' || (state.ending && state.phase !== 'loop_started')) {
       const { rewindAfterDeath } = await import('@murder-loop-ai/game-core');
-      state = rewindAfterDeath(rawState);
+      const rewoundState = rewindAfterDeath(state);
+      const nextLoopId = gameSessionLoopId(gameSessionId, rewoundState.run);
+      const resetStatus = await openedSession.store.resetLoop({
+        expectedLoopId: sessionLoopId,
+        expectedStateVersion: sessionStateVersion,
+        nextLoopId,
+        startingStateVersion: 0,
+        candidateState: rewoundState,
+      });
+      if (resetStatus !== 'reset') {
+        return reply.code(resetStatus === 'conflict' ? 409 : 503).send({
+          error: resetStatus === 'conflict' ? 'state_version_conflict' : 'session_persistence_failed',
+          gameSessionId,
+          inputStateVersion: sessionStateVersion,
+        });
+      }
+      state = rewoundState;
+      sessionLoopId = nextLoopId;
+      sessionStateVersion = 0;
+      outputStateVersion = 0;
     }
 
     if (!input) {
       const sidebar = await buildSidebarPayload(createAiHarness(harnessOptions), state, true);
       return {
+        gameSessionId,
+        inputStateVersion: sessionStateVersion,
+        outputStateVersion,
         coreState: state, time: minuteLabel(state.minute), location: '青荷公寓 503 室',
         phase: state.phase, clues: toFrontendClues(state),
         audioCue: null,
@@ -396,7 +457,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     let shadowSession: ShadowRunSession | undefined;
     if (shadowCoordinator) {
       try {
-        shadowSession = shadowCoordinator.start({ rawInput: input, state });
+        shadowSession = shadowCoordinator.start({
+          rawInput: input,
+          state,
+          loopId: sessionLoopId,
+          inputStateVersion: sessionStateVersion,
+        });
       } catch (error) {
         routeWarnings.push(`Shadow Run start failed: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -420,7 +486,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     let resolution: TurnResolution | undefined;
     if (lowRiskTakeoverService && shadowSession) {
       try {
-        const preparation = await lowRiskTakeoverService.prepare(shadowSession, state);
+        const preparation = await lowRiskTakeoverService.prepare(shadowSession, state, {
+          store: openedSession.store,
+        });
         if (preparation.status === 'prepared') {
           resolution = legacyMainPathExitActive
             ? buildConfirmedAiFirstResolution({
@@ -492,6 +560,8 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               },
             });
           }
+          turnCommittedToSession = true;
+          outputStateVersion = committed.outcome.result.outputStateVersion!;
 
           if (legacyMainPathExitActive) {
             const publishedEventIds = new Set(
@@ -699,6 +769,28 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       };
     }
     resolution ??= await resolveLegacyTurnHarness(state, input, harness);
+    if (!turnCommittedToSession) {
+      const legacyTurnId = shadowSession?.envelope.turnId ?? `route-${randomUUID()}`;
+      const legacyCommit = await openedSession.store.commitTurn({
+        expectedLoopId: sessionLoopId,
+        turnId: legacyTurnId,
+        expectedInputStateVersion: sessionStateVersion,
+        outputStateVersion: sessionStateVersion + 1,
+        candidateState: resolution.finalState,
+        confirmedEvents: [],
+      });
+      if (legacyCommit.status !== 'committed') {
+        const conflict = legacyCommit.status === 'conflict';
+        return reply.code(conflict ? 409 : 503).send({
+          error: conflict ? 'state_version_conflict' : 'session_persistence_failed',
+          gameSessionId,
+          inputStateVersion: sessionStateVersion,
+          ...(conflict ? { reason: legacyCommit.reason } : {}),
+        });
+      }
+      turnCommittedToSession = true;
+      outputStateVersion = sessionStateVersion + 1;
+    }
     if (legacyMainPathExitCoordination?.status === 'committed') {
       confirmedTurnNarration = await narrateConfirmedTurn(resolution, aiAdapters);
       routeWarnings.push(...confirmedTurnNarration.warnings);
@@ -779,6 +871,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     );
 
     return {
+      gameSessionId,
+      inputStateVersion: sessionStateVersion,
+      outputStateVersion,
       recap,
       coreState: resolution.finalState, time: minuteLabel(resolution.finalState.minute),
       location: '青荷公寓 503 室', phase: resolution.finalState.phase,

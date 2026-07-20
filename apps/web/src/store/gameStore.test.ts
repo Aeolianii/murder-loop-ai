@@ -1,5 +1,5 @@
 import type { HarnessTurnResponse } from '../api/harnessTurnClient';
-import { INITIAL_STATE } from '../constants';
+import { freshFrontendState } from '../frontendState';
 import { useGameStore } from './gameStore';
 
 function assert(condition: unknown, message: string) {
@@ -8,7 +8,7 @@ function assert(condition: unknown, message: string) {
 
 function resetStore() {
   useGameStore.setState({
-    frontendState: structuredClone(INITIAL_STATE),
+    frontendState: freshFrontendState(),
     busy: false,
     inputBusy: false,
     serverStatus: 'unknown',
@@ -27,8 +27,12 @@ function mockHarnessResponse(response: HarnessTurnResponse, requests: unknown[] 
 }
 
 resetStore();
+const gameSessionId = useGameStore.getState().frontendState.gameSessionId;
 
 const turnResponse: HarnessTurnResponse = {
+  gameSessionId,
+  inputStateVersion: 0,
+  outputStateVersion: 1,
   time: '23:08',
   phase: 'investigating',
   storyLog: [
@@ -50,7 +54,10 @@ const afterSubmit = useGameStore.getState();
 
 assert(submitted?.time === turnResponse.time, 'submitAction should return the harness response');
 assert((submitRequests[0] as { debug?: unknown }).debug === undefined, 'submitAction should not send a World Tick debug switch');
+assert((submitRequests[0] as { gameSessionId?: unknown }).gameSessionId === gameSessionId, 'submitAction should send the persisted game session id');
+assert((submitRequests[0] as { inputStateVersion?: unknown }).inputStateVersion === 0, 'submitAction should send the current state version');
 assert(afterSubmit.frontendState.time === '23:08', 'submitAction should merge response into frontendState');
+assert(afterSubmit.frontendState.stateVersion === 1, 'submitAction should advance to the committed output version');
 assert((afterSubmit.frontendState.coreState as { minute: number }).minute === 1388, 'submitAction should preserve returned coreState');
 assert(afterSubmit.frontendState.storyLog.filter(node => node.type === 'player_input').length === 1, 'submitAction should not duplicate server player_input nodes');
 assert(afterSubmit.frontendState.storyLog.at(-1)?.id === 'server-narration', 'submitAction should append server narration');
@@ -59,6 +66,9 @@ assert(afterSubmit.serverStatus === 'online', 'submitAction should mark server o
 assert((afterSubmit.lastTurnDebug as HarnessTurnResponse).time === turnResponse.time, 'submitAction should store the last turn response for debugging');
 
 const rewindResponse: HarnessTurnResponse = {
+  gameSessionId,
+  inputStateVersion: 1,
+  outputStateVersion: 0,
   time: '23:00',
   phase: 'loop_started',
   coreState: { minute: 1380 },
@@ -81,7 +91,10 @@ const afterRewind = useGameStore.getState();
 
 assert(rewound?.time === rewindResponse.time, 'rewind should return the harness response');
 assert((rewindRequests[0] as { debug?: unknown }).debug === undefined, 'rewind should not send debug controls');
+assert((rewindRequests[0] as { gameSessionId?: unknown }).gameSessionId === gameSessionId, 'rewind should keep the same game session id');
+assert((rewindRequests[0] as { inputStateVersion?: unknown }).inputStateVersion === 1, 'rewind should send the last committed state version');
 assert(afterRewind.frontendState.phase === 'loop_started', 'rewind should merge the rewound phase');
+assert(afterRewind.frontendState.stateVersion === 0, 'rewind should accept the reset loop version');
 assert(afterRewind.frontendState.ending === null, 'rewind should clear ending state');
 assert(afterRewind.frontendState.deathTitle === null, 'rewind should clear death title');
 
@@ -90,4 +103,5 @@ const afterReset = useGameStore.getState();
 
 assert(afterReset.frontendState.time === '23:00', 'reset should restore opening time');
 assert(afterReset.frontendState.phase === 'intro', 'reset should restore intro phase');
+assert(afterReset.frontendState.gameSessionId !== gameSessionId, 'reset should start a new authoritative game session');
 assert(afterReset.lastTurnDebug === null, 'reset should clear lastTurnDebug');
