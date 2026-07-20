@@ -4,6 +4,7 @@ import {
   SpecialistCandidateSchema,
   WORLD_MODEL_SCHEMA_VERSION,
   type CompactPlayerContext,
+  type Fact,
   type Proposal,
   type ProposalDomain,
   type SemanticCompilerRequest,
@@ -644,10 +645,34 @@ function buildSourcePolicies(
   projections: IntentProjections,
   specialists: ShadowSpecialistRegistration[],
 ): Record<string, ShadowSourcePolicy> {
+  const authorizedFactIdsByActor: Record<string, string[]> = {};
+  const authorizedOperationsByActor: Record<string, string[]> = {};
+  const registerActorProjection = (
+    viewerId: string,
+    projection: { facts: Fact[]; factIds: string[] },
+  ) => {
+    const actorIds = new Set([
+      viewerId,
+      ...projection.facts
+        .filter((fact) => fact.predicate === 'capability')
+        .map((fact) => fact.subject),
+    ]);
+    for (const actorId of actorIds) {
+      authorizedFactIdsByActor[actorId] = projection.factIds;
+      authorizedOperationsByActor[actorId] = capabilityOperations(projection.facts);
+    }
+  };
+  registerActorProjection('player', projections.playerSpecialist);
+  registerActorProjection('killer', projections.killerSpecialist);
+  for (const [npcId, projection] of Object.entries(projections.npcSpecialists)) {
+    registerActorProjection(npcId, projection);
+  }
+
   const policies: Record<string, ShadowSourcePolicy> = {
     'main-world-model': {
       allowedDomains: [...REQUIRED_SHADOW_DOMAINS, 'world'],
       authorizedFactIds: knowledge.worldModel.factIds,
+      authorizedOperations: capabilityOperations(knowledge.worldModel.facts),
       authorizedFactIdsByDomain: {
         player: projections.playerSpecialist.factIds,
         killer: projections.killerSpecialist.factIds,
@@ -657,11 +682,20 @@ function buildSourcePolicies(
         recommendation: projections.recommendationSpecialist.factIds,
         world: knowledge.worldModel.factIds,
       },
-      authorizedFactIdsByActor: Object.fromEntries([
-        ['player', projections.playerSpecialist.factIds],
-        ['killer', projections.killerSpecialist.factIds],
-        ...Object.entries(projections.npcSpecialists).map(([npcId, projection]) => [npcId, projection.factIds]),
-      ]),
+      authorizedOperationsByDomain: {
+        player: capabilityOperations(projections.playerSpecialist.facts),
+        killer: capabilityOperations(projections.killerSpecialist.facts),
+        npc: [...new Set(Object.values(projections.npcSpecialists).flatMap((projection) => (
+          capabilityOperations(projection.facts)
+        )))],
+        environment: capabilityOperations(projections.environmentSpecialist.facts),
+        clue: capabilityOperations(projections.clueSpecialist.facts),
+        recommendation: capabilityOperations(projections.recommendationSpecialist.facts),
+        world: capabilityOperations(knowledge.worldModel.facts),
+      },
+      authorizedFactIdsByActor,
+      authorizedOperationsByActor,
+      enforceCapabilityChecks: true,
     },
   };
   for (const registration of specialists) {
@@ -669,7 +703,19 @@ function buildSourcePolicies(
     policies[registration.id] = {
       allowedDomains: [registration.domain],
       authorizedFactIds: projection?.factIds ?? [],
+      authorizedOperations: capabilityOperations(
+        (projection as { facts?: Fact[] } | undefined)?.facts ?? [],
+      ),
+      enforceCapabilityChecks: true,
     };
   }
   return policies;
+}
+
+function capabilityOperations(facts: Fact[]): string[] {
+  return [...new Set(facts.flatMap((fact) => (
+    fact.predicate === 'capability' && typeof fact.value === 'string'
+      ? [fact.value]
+      : []
+  )))];
 }

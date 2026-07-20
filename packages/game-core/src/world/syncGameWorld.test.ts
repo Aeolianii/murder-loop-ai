@@ -84,8 +84,21 @@ function testEnsureWorldStatePreservesExistingWorldEvents() {
   assert.equal(synced.minute, state.minute);
 }
 
+function testEnsureWorldStateBackfillsCapabilitiesForLegacySnapshots() {
+  const state = createInitialGameState();
+  state.world = ensureWorldState(state);
+  delete (state.world.characters.real_police as Partial<
+    typeof state.world.characters.real_police
+  >).capabilities;
+
+  const synced = ensureWorldState(state);
+
+  assert(synced.characters.real_police.capabilities.includes('intervene'));
+}
+
 testEnsureWorldStateCreatesSyncedWorld();
 testSyncEvidenceAndLinYueKnowledge();
 testSyncPoliceKnowledge();
 testSyncDoorAndWindowState();
 testEnsureWorldStatePreservesExistingWorldEvents();
+testEnsureWorldStateBackfillsCapabilitiesForLegacySnapshots();

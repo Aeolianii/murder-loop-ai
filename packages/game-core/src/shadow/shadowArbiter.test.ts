@@ -23,17 +23,28 @@ const envelope: TurnEnvelope = {
 
 function proposedEvent(
   id: string,
-  eventType: string,
+  operation: string,
   riskClass: ProposedEvent['riskClass'] = 'reversible',
   evidenceRefs: string[] = [],
   causalParentIds: string[] = [],
+  actorId = 'player',
 ): ProposedEvent {
+  const targetId = id.split('.').at(-1) ?? id;
   return {
     id,
-    eventType,
-    subject: id.split('.').at(-1) ?? id,
-    summary: `${eventType} proposed`,
-    facts: [`fact.result.${id}`],
+    kind: operation === 'resolve_ending' ? 'ending' : 'action',
+    actorId,
+    operation,
+    targetIds: [targetId],
+    status: 'completed',
+    summary: `${operation} proposed`,
+    assertions: [{
+      id: `assertion.${id}`,
+      subject: targetId,
+      predicate: 'result',
+      value: operation,
+      visibleTo: ['player'],
+    }],
     visibility: ['player'],
     riskClass,
     evidenceRefs,
@@ -49,6 +60,8 @@ function proposal(input: {
   events: ProposedEvent[];
   rank?: number;
 }): Proposal {
+  const actorId = input.domain === 'killer' ? 'killer' : 'player';
+  const events = input.events.map((event) => ({ ...event, actorId }));
   return {
     ...envelope,
     id: input.id,
@@ -59,8 +72,8 @@ function proposal(input: {
     candidateRank: input.rank ?? 0,
     turnBriefActionIds: ['action-1'],
     replacementFor: [],
-    actorId: input.domain === 'killer' ? 'killer' : 'player',
-    operation: input.events[0]?.eventType ?? 'wait',
+    actorId,
+    operation: events[0]?.operation ?? 'wait',
     targetIds: ['package'],
     basedOnFactIds: input.basedOnFactIds ?? [],
     preconditions: [],
@@ -72,14 +85,14 @@ function proposal(input: {
     riskClass: input.events.some((event) => event.riskClass === 'irreversible') ? 'irreversible' : 'reversible',
     evidenceRefs: input.events.flatMap((event) => event.evidenceRefs),
     causalParentIds: [],
-    proposedEvents: input.events,
+    proposedEvents: events,
     clueCandidates: [],
     recommendations: [],
-    displayFragments: input.events.map((event) => ({
+    displayFragments: events.map((event) => ({
       id: `display.${event.id}`,
       text: event.summary,
       eventRefs: [event.id],
-      claimRefs: event.facts,
+      claimRefs: event.assertions.map((assertion) => assertion.id),
     })),
   };
 }
@@ -97,14 +110,14 @@ const mainPlayer = proposal({
   sourceAgent: 'main-world-model',
   domain: 'player',
   basedOnFactIds: ['fact.player.has_phone'],
-  events: [proposedEvent('event.shadow.photo', 'package_photographed', 'reversible', ['fact.player.has_phone'])],
+  events: [proposedEvent('event.shadow.photo', 'photograph', 'reversible', ['fact.player.has_phone'])],
 });
 const validPlayerSpecialist = specialist(proposal({
   id: 'proposal.specialist.player',
   sourceAgent: 'player-specialist',
   domain: 'player',
   basedOnFactIds: ['fact.player.has_phone'],
-  events: [proposedEvent('event.shadow.player_waited', 'player_waited')],
+  events: [proposedEvent('event.shadow.player_waited', 'wait')],
   rank: 1,
 }), 'player-specialist');
 const leakingMainKiller = proposal({
@@ -112,7 +125,7 @@ const leakingMainKiller = proposal({
   sourceAgent: 'main-world-model',
   domain: 'killer',
   basedOnFactIds: ['fact.player.private_memory'],
-  events: [proposedEvent('event.shadow.killer_probe', 'killer_phone_probe')],
+  events: [proposedEvent('event.shadow.killer_probe', 'probe')],
 });
 const killerSpecialist = specialist(proposal({
   id: 'proposal.specialist.killer',
@@ -121,7 +134,7 @@ const killerSpecialist = specialist(proposal({
   basedOnFactIds: ['fact.killer.in_corridor'],
   events: [proposedEvent(
     'event.shadow.killer_death_claim',
-    'ending_reached',
+    'resolve_ending',
     'irreversible',
     [],
   )],
@@ -131,13 +144,13 @@ const invalidClue = proposal({
   id: 'proposal.main.clue',
   sourceAgent: 'main-world-model',
   domain: 'clue',
-  events: [proposedEvent('event.shadow.clue', 'clue_discovered')],
+  events: [proposedEvent('event.shadow.clue', 'discover')],
 });
 invalidClue.clueCandidates = [{
   id: 'clue-internal-note',
-  claims: ['package_contains_note'],
+  claimAssertionIds: ['assertion.package_contains_note'],
   basedOnObservationIds: ['observation.package.interior.missing'],
-  visibleFactIds: [],
+  visibleAssertionIds: [],
   confidence: 0.8,
 }];
 
@@ -180,9 +193,15 @@ assert(report.rejectedProposals.some((item) => (
 assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'event.shadow.photo'), true);
 
 {
-  const photoFactId = 'fact.package.exterior.photo_captured';
-  const photoEvent = proposedEvent('event.shadow.photo-observed', 'package_photographed');
-  photoEvent.facts = [photoFactId];
+  const photoAssertionId = 'assertion.package.exterior.photo_captured';
+  const photoEvent = proposedEvent('event.shadow.photo-observed', 'photograph');
+  photoEvent.assertions = [{
+    id: photoAssertionId,
+    subject: 'package',
+    predicate: 'photo_captured',
+    value: true,
+    visibleTo: ['player'],
+  }];
   const provenanceClue = proposal({
     id: 'proposal.provenance-clue',
     sourceAgent: 'main-world-model',
@@ -197,13 +216,13 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
     scope: 'exterior',
     basedOnEffectIds: [],
     basedOnEventIds: [photoEvent.id],
-    visibleFactIds: [photoFactId],
+    visibleAssertionIds: [photoAssertionId],
   }];
   provenanceClue.clueCandidates = [{
     id: 'clue.package-photo',
-    claims: [photoFactId],
+    claimAssertionIds: [photoAssertionId],
     basedOnObservationIds: ['observation.package.photo'],
-    visibleFactIds: [photoFactId],
+    visibleAssertionIds: [photoAssertionId],
     confidence: 1,
   }];
 
@@ -217,7 +236,7 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
     sourcePolicies: {
       'main-world-model': {
         allowedDomains: ['clue'],
-        authorizedFactIds: [photoFactId],
+        authorizedFactIds: [],
       },
     },
     availableEvidenceRefs: [],
@@ -233,9 +252,15 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
 }
 
 {
-  const harmlessFactId = 'fact.package.contains_harmless_item';
-  const harmlessEvent = proposedEvent('event.shadow.harmless-observed', 'inspection_completed');
-  harmlessEvent.facts = [harmlessFactId];
+  const harmlessAssertionId = 'assertion.package.contains_harmless_item';
+  const harmlessEvent = proposedEvent('event.shadow.harmless-observed', 'inspect');
+  harmlessEvent.assertions = [{
+    id: harmlessAssertionId,
+    subject: 'package',
+    predicate: 'contains',
+    value: 'harmless_item',
+    visibleTo: ['player'],
+  }];
   const ambiguousPredicateClue = proposal({
     id: 'proposal.ambiguous-predicate-clue',
     sourceAgent: 'main-world-model',
@@ -250,13 +275,13 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
     scope: 'interior',
     basedOnEffectIds: [],
     basedOnEventIds: [harmlessEvent.id],
-    visibleFactIds: [harmlessFactId],
+    visibleAssertionIds: [harmlessAssertionId],
   }];
   ambiguousPredicateClue.clueCandidates = [{
     id: 'clue.ambiguous-contains',
-    claims: ['contains'],
+    claimAssertionIds: ['contains'],
     basedOnObservationIds: ['observation.package.contents'],
-    visibleFactIds: [harmlessFactId],
+    visibleAssertionIds: [harmlessAssertionId],
     confidence: 1,
   }];
 
@@ -270,7 +295,7 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
     sourcePolicies: {
       'main-world-model': {
         allowedDomains: ['clue'],
-        authorizedFactIds: [harmlessFactId, 'contains'],
+        authorizedFactIds: [],
       },
     },
     availableEvidenceRefs: [],
@@ -282,7 +307,7 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
     (item) => item.proposalId === ambiguousPredicateClue.id,
   );
   assert(
-    rejection?.reasonCodes.includes('clue_claim_not_observed'),
+    rejection?.reasonCodes.includes('clue_assertion_not_observed'),
     'matching only predicate text must not authorize a clue that ignores the observed subject and value',
   );
 }
@@ -292,7 +317,7 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
     id: 'proposal.malformed-observation',
     sourceAgent: 'main-world-model',
     domain: 'clue',
-    events: [proposedEvent('event.shadow.malformed-observation', 'inspection_completed')],
+    events: [proposedEvent('event.shadow.malformed-observation', 'inspect')],
   });
   malformedObservationProposal.observations = [{
     id: 'observation.missing-provenance',
@@ -381,9 +406,15 @@ const factMismatch = compareShadowWithLegacy(
       sourceAgent: 'main-world-model',
       domain: 'player',
       events: [{
-        ...proposedEvent('event.fact-mismatch', 'inspection_completed'),
-        subject: 'package',
-        facts: ['package_exterior_seen'],
+        ...proposedEvent('event.fact-mismatch', 'inspect'),
+        targetIds: ['package'],
+        assertions: [{
+          id: 'assertion.package.exterior_seen',
+          subject: 'package',
+          predicate: 'exterior_seen',
+          value: true,
+          visibleTo: ['player'],
+        }],
       }],
     })],
     specialistCandidates: [],
@@ -405,11 +436,72 @@ const factMismatch = compareShadowWithLegacy(
 assert.equal(factMismatch.items.length, 2, 'same event shell with different facts must remain visible in the diff');
 
 {
+  const mismatchedActor = proposal({
+    id: 'proposal.actor-mismatch',
+    sourceAgent: 'main-world-model',
+    domain: 'player',
+    events: [proposedEvent('event.actor-mismatch', 'photograph')],
+  });
+  mismatchedActor.proposedEvents[0].actorId = 'unrelated_actor';
+  const mismatchReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [mismatchedActor],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    sourcePolicies: {
+      'main-world-model': { allowedDomains: ['player'], authorizedFactIds: [] },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  assert(
+    mismatchReport.rejectedProposals[0]?.reasonCodes.includes('event_actor_mismatch'),
+    'a proposal cannot author an event on behalf of a different actor',
+  );
+}
+
+{
+  const missingCapability = proposal({
+    id: 'proposal.missing-capability',
+    sourceAgent: 'main-world-model',
+    domain: 'player',
+    events: [proposedEvent('event.missing-capability', 'attack')],
+  });
+  const capabilityReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [missingCapability],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: [],
+        authorizedOperations: ['photograph'],
+        enforceCapabilityChecks: true,
+      },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  assert(
+    capabilityReport.rejectedProposals[0]?.reasonCodes
+      .includes('event_capability_unauthorized'),
+    'actor-controlled operations require a matching capability from policy data',
+  );
+}
+
+{
   const unsafeClue = proposal({
     id: 'proposal.unsafe-clue',
     sourceAgent: 'main-world-model',
     domain: 'clue',
-    events: [proposedEvent('event.unsafe-clue', 'clue_discovered')],
+    events: [proposedEvent('event.unsafe-clue', 'discover')],
   });
   unsafeClue.observations = [{
     id: 'observation.unsafe',
@@ -419,16 +511,16 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
     scope: 'interior',
     basedOnEffectIds: ['effect.missing'],
     basedOnEventIds: ['event.missing'],
-    visibleFactIds: ['fact.killer.private_memory'],
+    visibleAssertionIds: ['assertion.killer.private_memory'],
   }];
   unsafeClue.clueCandidates = [{
     id: 'clue.unsafe',
-    claims: ['package_contains_secret_note'],
+    claimAssertionIds: ['assertion.package_contains_secret_note'],
     basedOnObservationIds: ['observation.unsafe'],
-    visibleFactIds: ['fact.killer.private_memory'],
+    visibleAssertionIds: ['assertion.killer.private_memory'],
     confidence: 0.9,
   }];
-  unsafeClue.displayFragments[0].claimRefs = ['fact.killer.private_memory'];
+  unsafeClue.displayFragments[0].claimRefs = ['assertion.killer.private_memory'];
   unsafeClue.proposedEvents[0].visibility = ['hidden'];
   unsafeClue.recommendations = [{
     id: 'recommendation.unsafe',
@@ -453,8 +545,8 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
   });
   const rejection = unsafeReport.rejectedProposals.find((item) => item.proposalId === unsafeClue.id);
   assert(rejection?.reasonCodes.includes('observation_effect_reference_invalid'));
-  assert(rejection?.reasonCodes.includes('clue_claim_not_observed'));
-  assert(rejection?.reasonCodes.includes('clue_visible_fact_unauthorized'));
+  assert(rejection?.reasonCodes.includes('clue_assertion_not_observed'));
+  assert(rejection?.reasonCodes.includes('observation_event_reference_invalid'));
   assert(rejection?.reasonCodes.includes('recommendation_source_missing'));
   assert(rejection?.reasonCodes.includes('display_claim_reference_invalid'));
   assert.deepEqual(unsafeReport.transition.fallbackDomains, ['clue']);
@@ -463,13 +555,13 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
 {
   const attack = proposedEvent(
     'event.shadow.attack',
-    'attack_confirmed',
+    'attack',
     'high_impact',
     ['invariant.attack_requires_reach'],
   );
   const death = proposedEvent(
     'event.shadow.death',
-    'ending_reached',
+    'resolve_ending',
     'irreversible',
     ['event.shadow.attack', 'invariant.death_requires_lethal_attack'],
     ['event.shadow.attack'],
@@ -488,13 +580,13 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
 {
   const attack = proposedEvent(
     'event.shadow.parent-only-attack',
-    'attack_confirmed',
+    'attack',
     'high_impact',
     ['invariant.attack_requires_reach'],
   );
   const death = proposedEvent(
     'event.shadow.parent-only-death',
-    'ending_reached',
+    'resolve_ending',
     'irreversible',
     [attack.id],
     [attack.id],
@@ -511,19 +603,19 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
 {
   const firstAttack = proposedEvent(
     'event.shadow.first-attack',
-    'attack_confirmed',
+    'attack',
     'high_impact',
     ['invariant.attack_requires_reach'],
   );
   const unrelatedAttack = proposedEvent(
     'event.shadow.unrelated-attack',
-    'attack_confirmed',
+    'attack',
     'high_impact',
     ['invariant.attack_requires_reach'],
   );
   const death = proposedEvent(
     'event.shadow.sibling-backed-death',
-    'ending_reached',
+    'resolve_ending',
     'irreversible',
     [unrelatedAttack.id, 'invariant.death_requires_lethal_attack'],
     [firstAttack.id],
@@ -543,13 +635,13 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
 {
   const rejectedAttack = proposedEvent(
     'event.shadow.rejected-attack',
-    'attack_confirmed',
+    'attack',
     'high_impact',
     ['invariant.missing'],
   );
   const dependentDeath = proposedEvent(
     'event.shadow.dependent-death',
-    'ending_reached',
+    'resolve_ending',
     'irreversible',
     [rejectedAttack.id],
     [rejectedAttack.id],

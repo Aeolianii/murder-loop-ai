@@ -136,6 +136,16 @@ export function buildFactLedgerFromGameState(
         ['system'],
         [viewerId, 'system'],
       );
+      for (const capability of character.capabilities ?? []) {
+        add(
+          `capability.${character.id}.${capability}`,
+          character.id,
+          'capability',
+          capability,
+          ['system'],
+          [viewerId, 'system'],
+        );
+      }
     }
     for (const object of Object.values(world.objects)) {
       add(

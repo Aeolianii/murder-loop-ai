@@ -13,6 +13,7 @@ import {
   type CommitEventCandidate,
 } from '../commit/atomicTurnCommit';
 import type { DomainEvent } from '../domain/domainEvents';
+import { assertionIds } from '../facts/eventAssertions';
 import {
   buildLowRiskKnowledgeClueCandidates,
   type KnowledgeClueProjectionCandidates,
@@ -213,7 +214,7 @@ export function prepareLowRiskTurn(input: {
       id: `display.${proposedEvent.id}`,
       text: summary,
       eventRefs: [proposedEvent.id],
-      claimRefs: [...proposedEvent.facts],
+      claimRefs: assertionIds(proposedEvent),
     })),
     knowledgeClueCandidates,
   };
@@ -377,6 +378,7 @@ function applyLowRiskAction(input: {
   let subject = canonicalActionTarget(action.targetIds);
   let summary = 'The low-risk action was confirmed.';
   let facts: string[] = [`action_confirmed:${action.actionId}`];
+  let status: ProposedEvent['status'] = 'completed';
   let ruleKind: RuleEvent['kind'] = 'action';
 
   if (operation === 'inspect') {
@@ -393,6 +395,7 @@ function applyLowRiskAction(input: {
   } else if (operation === 'preserve_evidence') {
     if (!state.phoneFunctional) {
       eventType = 'photograph_failed';
+      status = 'failed';
       summary = `Could not photograph ${subject} because the phone is unavailable.`;
       facts = ['photograph_failed:phone_unavailable'];
     } else {
@@ -412,6 +415,7 @@ function applyLowRiskAction(input: {
       facts = [`message_delivered:${subject}`];
     } else {
       eventType = 'message_delivery_failed';
+      status = 'failed';
       summary = `The message to ${subject} was not delivered because the phone is unavailable.`;
       facts = [`message_delivery_failed:${subject}`];
     }
@@ -439,6 +443,7 @@ function applyLowRiskAction(input: {
     subject = itemId;
     if (state.playerHolding !== itemId) {
       eventType = 'item_use_failed';
+      status = 'failed';
       summary = `Could not use ${itemId} because it is not being held.`;
       facts = [`item_use_failed:not_held:${itemId}`];
     } else if (itemId === 'phone_charger') {
@@ -464,6 +469,11 @@ function applyLowRiskAction(input: {
   return makeAppliedEvent({
     eventId: input.eventId,
     eventType,
+    kind: operation === 'communicate' ? 'information_transfer' : 'action',
+    actorId: 'player',
+    operation,
+    targetIds: action.targetIds.length > 0 ? action.targetIds : [subject],
+    status,
     subject,
     summary,
     facts,
@@ -484,6 +494,11 @@ function createTimeEvent(
   return makeAppliedEvent({
     eventId: `event.low-risk.${envelope.turnId}.time`,
     eventType: 'time_advanced',
+    kind: 'timer',
+    actorId: 'system',
+    operation: 'advance_time',
+    targetIds: ['clock'],
+    status: 'completed',
     subject: 'clock',
     summary: `Time advanced by ${after - before} minute(s).`,
     facts: [`minute:${after}`, `minutes_elapsed:${after - before}`],
@@ -505,6 +520,11 @@ function createBatteryEvent(
   return makeAppliedEvent({
     eventId: `event.low-risk.${envelope.turnId}.battery`,
     eventType: 'phone_battery_changed',
+    kind: 'state_transition',
+    actorId: 'system',
+    operation: 'change_battery',
+    targetIds: ['phone'],
+    status: 'completed',
     subject: 'phone',
     summary: `Phone battery changed from ${before} to ${after}.`,
     facts: [`phone_battery:${after}`],
@@ -518,6 +538,11 @@ function createBatteryEvent(
 function makeAppliedEvent(input: {
   eventId: string;
   eventType: string;
+  kind: ProposedEvent['kind'];
+  actorId: string;
+  operation: string;
+  targetIds: string[];
+  status: ProposedEvent['status'];
   subject: string;
   summary: string;
   facts: string[];
@@ -529,10 +554,18 @@ function makeAppliedEvent(input: {
   return {
     proposedEvent: {
       id: input.eventId,
-      eventType: input.eventType,
-      subject: input.subject,
+      kind: input.kind,
+      actorId: input.actorId,
+      operation: input.operation,
+      targetIds: input.targetIds,
+      status: input.status,
       summary: input.summary,
-      facts: input.facts,
+      assertions: assertionsFromLegacyFacts(
+        input.eventId,
+        input.subject,
+        input.facts,
+        ['player'],
+      ),
       visibility: ['player'],
       riskClass: 'reversible',
       evidenceRefs: [],
@@ -562,6 +595,39 @@ function makeAppliedEvent(input: {
     },
     summary: input.summary,
   };
+}
+
+function assertionsFromLegacyFacts(
+  eventId: string,
+  defaultSubject: string,
+  facts: string[],
+  visibleTo: string[],
+): ProposedEvent['assertions'] {
+  return facts.map((fact, index) => {
+    if (fact.startsWith('fact.')) {
+      const [subject = defaultSubject, ...predicateParts] = fact.slice('fact.'.length).split('.');
+      return {
+        id: `assertion.${eventId}.${index}`,
+        subject,
+        predicate: predicateParts.join('.') || 'confirmed',
+        value: true,
+        visibleTo: [...visibleTo],
+      };
+    }
+    const separator = fact.indexOf(':');
+    const predicate = separator >= 0 ? fact.slice(0, separator) : fact;
+    const rawValue = separator >= 0 ? fact.slice(separator + 1) : true;
+    const numericValue = typeof rawValue === 'string' && rawValue.trim() !== ''
+      ? Number(rawValue)
+      : Number.NaN;
+    return {
+      id: `assertion.${eventId}.${index}`,
+      subject: defaultSubject,
+      predicate,
+      value: Number.isFinite(numericValue) ? numericValue : rawValue,
+      visibleTo: [...visibleTo],
+    };
+  });
 }
 
 function canonicalActionTarget(targetIds: string[]): string {

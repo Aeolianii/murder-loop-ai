@@ -35,6 +35,7 @@ export interface CharacterState {
   id: CharacterId;
   name: string;
   faction: 'player' | 'chen_huaimin_side' | 'police' | 'neutral';
+  capabilities: string[];
   location: LocationId;
   destination?: LocationId;
   status: 'active' | 'waiting' | 'moving' | 'blocked' | 'injured' | 'dead' | 'arrested' | 'fled';

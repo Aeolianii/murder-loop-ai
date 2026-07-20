@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { ProposedEvent } from '@murder-loop-ai/ai-contracts';
+import { canonicalFactIdForAssertion } from '../facts/eventAssertions';
 import { createInitialGameState } from '../state/createInitialState';
 import { createInitialWorldState } from '../world/worldSimulator';
 import {
@@ -13,12 +14,35 @@ function event(
   subject: string,
   facts: string[],
 ): ProposedEvent {
+  const failed = eventType.endsWith('_failed');
   return {
     id,
-    eventType,
-    subject,
+    kind: eventType.startsWith('message_') ? 'information_transfer' : 'action',
+    actorId: 'player',
+    operation: eventType.startsWith('message_') ? 'communicate' : 'inspect',
+    targetIds: [subject],
+    status: failed ? 'failed' : 'completed',
     summary: `${eventType} for ${subject}`,
-    facts,
+    assertions: facts.map((fact, index) => {
+      if (fact.startsWith('fact.')) {
+        const [assertionSubject = subject, ...predicateParts] = fact.slice(5).split('.');
+        return {
+          id: `assertion.${id}.${index}`,
+          subject: assertionSubject,
+          predicate: predicateParts.join('.'),
+          value: true,
+          visibleTo: ['player'],
+        };
+      }
+      const separator = fact.indexOf(':');
+      return {
+        id: `assertion.${id}.${index}`,
+        subject,
+        predicate: fact.slice(0, separator),
+        value: fact.slice(separator + 1),
+        visibleTo: ['player'],
+      };
+    }),
     visibility: ['player'],
     riskClass: 'reversible',
     evidenceRefs: [],
@@ -64,7 +88,10 @@ const deliveredCandidates: KnowledgeClueProjectionCandidates = {
     confidence: 1,
     source: 'message',
     sourceEventId: deliveredMessage.id,
-    basedOnFactIds: ['message_delivered:linyue'],
+    basedOnFactIds: [canonicalFactIdForAssertion(
+      deliveredMessage.id,
+      deliveredMessage.assertions[0].id,
+    )],
   }],
   clues: [],
 };
@@ -87,6 +114,10 @@ const inspection = event(
   'package',
   ['inspected:package', 'fact.package.exterior.label_ambiguous'],
 );
+const labelAssertion = inspection.assertions.find((assertion) => (
+  assertion.predicate === 'exterior.label_ambiguous'
+))!;
+const labelFactId = canonicalFactIdForAssertion(inspection.id, labelAssertion.id);
 const legalClueCandidates: KnowledgeClueProjectionCandidates = {
   observations: [{
     id: 'observation.package.exterior',
@@ -94,7 +125,7 @@ const legalClueCandidates: KnowledgeClueProjectionCandidates = {
     predicate: 'exterior_label',
     value: 'ambiguous',
     scope: 'exterior.label',
-    visibleFactIds: ['fact.package.exterior.label_ambiguous'],
+    visibleFactIds: [labelFactId],
     sourceEventIds: [inspection.id],
     observedAt: { run: baseline.run, minute: baseline.minute },
   }],
@@ -104,11 +135,11 @@ const legalClueCandidates: KnowledgeClueProjectionCandidates = {
     confidence: 1,
     source: 'seen',
     sourceEventId: inspection.id,
-    basedOnFactIds: ['fact.package.exterior.label_ambiguous'],
+    basedOnFactIds: [labelFactId],
   }],
   clues: [{
     id: 'wrong_package',
-    claims: ['fact.package.exterior.label_ambiguous'],
+    claims: [labelFactId],
     basedOnObservationIds: ['observation.package.exterior'],
   }],
 };

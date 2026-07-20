@@ -17,6 +17,7 @@ import { hasConvictingEvidence } from '../rules/endingRules';
 import { scoreRun } from '../scoring/scoreRun';
 import { evaluateShadowHighRiskGate } from '../shadow/shadowArbiter';
 import { ensureWorldState } from '../world/syncGameWorld';
+import { assertionValue } from '../facts/eventAssertions';
 
 const HIGH_RISK_INVARIANT_REFS = [
   'invariant.arrest.requires_police_presence',
@@ -30,26 +31,21 @@ const HIGH_RISK_INVARIANT_REFS = [
   'invariant.injury.requires_landed_attack',
 ] as const;
 
-const SUPPORTED_EVENT_TYPES = new Set([
-  'actor_entered',
-  'actor_moved',
-  'attack_attempted',
-  'attack_blocked',
-  'attack_landed',
-  'character_arrested',
-  'character_fled',
-  'character_incapacitated',
-  'character_injured',
-  'character_killed',
-  'deadline_reached',
-  'ending_reached',
-  'entry_attempted',
-  'entry_blocked',
-  'evidence_destroyed',
-  'evidence_destruction_attempted',
-  'killer_action_attempted',
-  'npc_action_attempted',
-  'police_intervention_confirmed',
+const SUPPORTED_EVENT_SEMANTICS = new Set([
+  'act:attempted',
+  'attack:attempted',
+  'attack:blocked',
+  'attack:completed',
+  'change_status:completed',
+  'destroy:attempted',
+  'destroy:completed',
+  'enter:attempted',
+  'enter:blocked',
+  'enter:completed',
+  'intervene:completed',
+  'move:completed',
+  'reach_deadline:completed',
+  'resolve_ending:completed',
 ]);
 
 const CHARACTER_IDS = new Set<CharacterId>([
@@ -128,6 +124,9 @@ export function buildHighRiskEvidenceRefs(state: GameState): string[] {
   for (const character of Object.values(world.characters)) {
     refs.add(`fact.world.character.${character.id}.location`);
     refs.add(`fact.world.character.${character.id}.status`);
+    for (const capability of character.capabilities) {
+      refs.add(`capability.${character.id}.${capability}`);
+    }
   }
   for (const object of Object.values(world.objects)) {
     refs.add(`fact.world.object.${object.id}.location`);
@@ -184,7 +183,7 @@ export function projectConfirmedHighRiskResults(input: {
       else rejectedEventIds.add(event.id);
       continue;
     }
-    if (!SUPPORTED_EVENT_TYPES.has(event.eventType)) {
+    if (!SUPPORTED_EVENT_SEMANTICS.has(eventSemantic(event))) {
       rejectEvent(event, decisionsById, 'high_risk_event_type_unsupported');
       rejectedEventIds.add(event.id);
       continue;
@@ -252,20 +251,19 @@ function applyConfirmedEvent(
   event: ProposedEvent,
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
-  switch (event.eventType) {
-    case 'killer_action_attempted':
-      return event.subject === 'chen_huaimin'
+  switch (eventSemantic(event)) {
+    case 'act:attempted':
+      return event.actorId === 'chen_huaimin'
         ? { status: 'applied' }
         : { status: 'rejected', reason: 'killer_action_actor_invalid' };
-    case 'npc_action_attempted':
-      return { status: 'applied' };
-    case 'attack_blocked':
+    case 'attack:blocked':
       return { status: 'rejected', reason: 'attack_block_capability_unmodeled' };
-    case 'actor_moved':
+    case 'move:completed':
       return applyActorMoved(state, event);
-    case 'entry_attempted':
+    case 'enter:attempted':
       if (
-        event.subject !== 'chen_huaimin'
+        event.actorId !== 'chen_huaimin'
+        || !actorHasCapability(state, event.actorId, 'enter')
         || !['front_door', 'window'].includes(factValue(event, 'entry_route') ?? '')
       ) {
         return { status: 'rejected', reason: 'entry_actor_invalid' };
@@ -275,40 +273,34 @@ function applyConfirmedEvent(
       state.threat = Math.min(100, state.threat + 2);
       state.world!.threat = state.threat;
       return { status: 'applied' };
-    case 'entry_blocked':
+    case 'enter:blocked':
       if (!entryBlockIsConfirmed(state, event)) {
         return { status: 'rejected', reason: 'entry_block_not_confirmed' };
       }
       state.threat = Math.min(100, state.threat + 3);
       state.world!.threat = state.threat;
       return { status: 'applied' };
-    case 'actor_entered':
+    case 'enter:completed':
       return applyActorEntered(state, event, eventsById);
-    case 'attack_attempted':
+    case 'attack:attempted':
       return applyAttackAttempted(state, event);
-    case 'attack_landed':
+    case 'attack:completed':
       return applyAttackLanded(state, event, eventsById);
-    case 'character_injured':
-      return applyCharacterInjured(state, event, eventsById);
-    case 'character_incapacitated':
-      return applyCharacterIncapacitated(state, event, eventsById);
-    case 'character_killed':
-      return applyCharacterKilled(state, event, eventsById);
-    case 'police_intervention_confirmed':
+    case 'change_status:completed':
+      return applyCharacterStatusChanged(state, event, eventsById);
+    case 'intervene:completed':
       return validatePoliceIntervention(state, event);
-    case 'character_arrested':
-      return applyCharacterArrested(state, event, eventsById);
-    case 'character_fled':
-      return applyCharacterFled(state, event, eventsById);
-    case 'evidence_destruction_attempted':
-      return event.subject === 'package' && factValue(event, 'actor') === 'chen_huaimin'
+    case 'destroy:attempted':
+      return event.targetIds.includes('package')
+        && event.actorId === 'chen_huaimin'
+        && actorHasCapability(state, event.actorId, 'destroy')
         ? { status: 'applied' }
         : { status: 'rejected', reason: 'evidence_destruction_actor_invalid' };
-    case 'evidence_destroyed':
+    case 'destroy:completed':
       return applyEvidenceDestroyed(state, event, eventsById);
-    case 'deadline_reached':
+    case 'reach_deadline:completed':
       return applyDeadlineReached(state, event);
-    case 'ending_reached':
+    case 'resolve_ending:completed':
       return applyEnding(state, event, eventsById);
     default:
       return { status: 'rejected', reason: 'high_risk_event_type_unsupported' };
@@ -316,7 +308,7 @@ function applyConfirmedEvent(
 }
 
 function entryBlockIsConfirmed(state: GameState, event: ProposedEvent): boolean {
-  if (event.subject !== 'chen_huaimin') return false;
+  if (event.actorId !== 'chen_huaimin') return false;
   const route = factValue(event, 'entry_route');
   const blockedBy = factValue(event, 'blocked_by');
   if (route === 'front_door') {
@@ -329,9 +321,14 @@ function entryBlockIsConfirmed(state: GameState, event: ProposedEvent): boolean 
 }
 
 function applyActorMoved(state: GameState, event: ProposedEvent): ApplyResult {
-  const actorId = characterId(event.subject);
+  const actorId = characterId(event.actorId);
   const destination = locationId(factValue(event, 'location'));
-  if (!actorId || actorId === 'player' || !destination) {
+  if (
+    !actorId
+    || actorId === 'player'
+    || !destination
+    || !actorHasCapability(state, actorId, 'move')
+  ) {
     return { status: 'rejected', reason: 'actor_or_destination_invalid' };
   }
   if (destination === 'room_503') {
@@ -352,13 +349,14 @@ function applyActorEntered(
   event: ProposedEvent,
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
-  if (!hasDirectParentType(event, eventsById, 'entry_attempted')) {
+  if (!hasDirectParentSemantic(event, eventsById, 'enter', 'attempted')) {
     return { status: 'rejected', reason: 'entry_attempt_missing' };
   }
-  const actorId = characterId(event.subject);
+  const actorId = characterId(event.actorId);
   const route = factValue(event, 'entry_route');
   if (
     actorId !== 'chen_huaimin'
+    || !actorHasCapability(state, actorId, 'enter')
     || factValue(event, 'location') !== 'room_503'
     || ['incapacitated', 'dead', 'arrested', 'fled'].includes(state.killerStatus)
   ) {
@@ -423,10 +421,13 @@ function applyActorEntered(
 }
 
 function applyAttackAttempted(state: GameState, event: ProposedEvent): ApplyResult {
-  const attackerId = characterId(factValue(event, 'attacker'));
-  const targetId = characterId(factValue(event, 'target') ?? event.subject);
+  const attackerId = characterId(event.actorId);
+  const targetId = characterId(event.targetIds[0]);
   if (!attackerId || !targetId || attackerId === targetId) {
     return { status: 'rejected', reason: 'attack_participant_invalid' };
+  }
+  if (!actorHasCapability(state, attackerId, 'attack')) {
+    return { status: 'rejected', reason: 'attacker_capability_missing' };
   }
   if (
     state.world!.characters[attackerId].status === 'dead'
@@ -456,10 +457,31 @@ function applyAttackLanded(
   event: ProposedEvent,
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
-  if (!hasDirectParentType(event, eventsById, 'attack_attempted')) {
+  if (!hasDirectParentSemantic(event, eventsById, 'attack', 'attempted')) {
     return { status: 'rejected', reason: 'attack_attempt_missing' };
   }
   return applyAttackAttempted(state, event);
+}
+
+function applyCharacterStatusChanged(
+  state: GameState,
+  event: ProposedEvent,
+  eventsById: Map<string, ProposedEvent>,
+): ApplyResult {
+  switch (factValue(event, 'status')) {
+    case 'injured':
+      return applyCharacterInjured(state, event, eventsById);
+    case 'incapacitated':
+      return applyCharacterIncapacitated(state, event, eventsById);
+    case 'dead':
+      return applyCharacterKilled(state, event, eventsById);
+    case 'arrested':
+      return applyCharacterArrested(state, event, eventsById);
+    case 'fled':
+      return applyCharacterFled(state, event, eventsById);
+    default:
+      return { status: 'rejected', reason: 'character_status_invalid' };
+  }
 }
 
 function applyCharacterInjured(
@@ -468,28 +490,29 @@ function applyCharacterInjured(
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
   if (
-    !hasDirectParentType(event, eventsById, 'attack_landed')
+    !hasDirectParentSemantic(event, eventsById, 'attack', 'completed')
     || !hasEvidence(event, ['invariant.injury.requires_landed_attack'])
   ) {
     return { status: 'rejected', reason: 'injury_cause_or_evidence_missing' };
   }
   const attackParent = event.causalParentIds
     .map((id) => eventsById.get(id))
-    .find((parent) => parent?.eventType === 'attack_landed');
-  if (factValue(attackParent, 'target') !== event.subject) {
+    .find((parent) => parent && eventSemantic(parent) === 'attack:completed');
+  const subject = event.targetIds[0];
+  if (attackParent?.targetIds[0] !== subject) {
     return { status: 'rejected', reason: 'injury_target_mismatch' };
   }
   const injury = factValue(event, 'injury') as PlayerCondition['injury'] | undefined;
-  if (event.subject === 'player') {
+  if (subject === 'player') {
     if (!injury || !['minor', 'bleeding', 'leg_injured', 'critical'].includes(injury)) {
       return { status: 'rejected', reason: 'injury_value_invalid' };
     }
     state.player.injury = injury;
     state.world!.characters.player.status = 'injured';
-  } else if (event.subject === 'chen_huaimin') {
+  } else if (subject === 'chen_huaimin') {
     state.killerStatus = 'injured';
     state.world!.characters.chen_huaimin.status = 'injured';
-  } else if (event.subject === 'lin_yue') {
+  } else if (subject === 'lin_yue') {
     state.linYuePhase = 'injured';
     state.world!.characters.lin_yue.status = 'injured';
   } else {
@@ -504,21 +527,22 @@ function applyCharacterIncapacitated(
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
   if (
-    !hasDirectParentType(event, eventsById, 'character_injured')
+    !hasDirectParentStatus(event, eventsById, 'injured')
     || !hasEvidence(event, ['invariant.incapacitation.requires_injury'])
   ) {
     return { status: 'rejected', reason: 'incapacitation_cause_missing' };
   }
   const injuryParent = event.causalParentIds
     .map((id) => eventsById.get(id))
-    .find((parent) => parent?.eventType === 'character_injured');
-  if (injuryParent?.subject !== event.subject) {
+    .find((parent) => parent && factValue(parent, 'status') === 'injured');
+  const subject = event.targetIds[0];
+  if (injuryParent?.targetIds[0] !== subject) {
     return { status: 'rejected', reason: 'incapacitation_subject_mismatch' };
   }
-  if (event.subject === 'chen_huaimin') {
+  if (subject === 'chen_huaimin') {
     state.killerStatus = 'incapacitated';
     state.world!.characters.chen_huaimin.status = 'injured';
-  } else if (event.subject === 'lin_yue') {
+  } else if (subject === 'lin_yue') {
     state.linYuePhase = 'injured';
     state.world!.characters.lin_yue.status = 'injured';
   } else {
@@ -533,27 +557,28 @@ function applyCharacterKilled(
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
   if (
-    !hasDirectParentType(event, eventsById, 'character_injured')
+    !hasDirectParentStatus(event, eventsById, 'injured')
     || !hasEvidence(event, ['invariant.death.requires_lethal_injury'])
   ) {
     return { status: 'rejected', reason: 'lethal_cause_or_evidence_missing' };
   }
   const injuryParent = event.causalParentIds
     .map((id) => eventsById.get(id))
-    .find((parent) => parent?.eventType === 'character_injured');
+    .find((parent) => parent && factValue(parent, 'status') === 'injured');
+  const subject = event.targetIds[0];
   if (
-    injuryParent?.subject !== event.subject
+    injuryParent?.targetIds[0] !== subject
     || factValue(injuryParent, 'injury') !== 'critical'
   ) {
     return { status: 'rejected', reason: 'lethal_injury_not_confirmed' };
   }
-  if (event.subject === 'player') {
+  if (subject === 'player') {
     state.player.injury = 'critical';
     state.world!.characters.player.status = 'dead';
-  } else if (event.subject === 'chen_huaimin') {
+  } else if (subject === 'chen_huaimin') {
     state.killerStatus = 'dead';
     state.world!.characters.chen_huaimin.status = 'dead';
-  } else if (event.subject === 'lin_yue') {
+  } else if (subject === 'lin_yue') {
     state.linYuePhase = 'dead';
     state.world!.characters.lin_yue.status = 'dead';
   } else {
@@ -563,16 +588,19 @@ function applyCharacterKilled(
 }
 
 function validatePoliceIntervention(state: GameState, event: ProposedEvent): ApplyResult {
+  const actorId = characterId(event.actorId);
   if (
-    state.policePhase !== 'arrived'
+    !actorId
+    || !state.world!.characters[actorId].capabilities.includes('intervene')
+    || state.policePhase !== 'arrived'
     || !hasEvidence(event, ['invariant.arrest.requires_police_presence'])
   ) {
     return { status: 'rejected', reason: 'police_authority_or_evidence_missing' };
   }
-  const targetId = characterId(factValue(event, 'target') ?? event.subject);
+  const targetId = characterId(event.targetIds[0]);
   if (
     !targetId
-    || state.world!.characters.real_police.location !== state.world!.characters[targetId].location
+    || state.world!.characters[actorId].location !== state.world!.characters[targetId].location
   ) {
     return { status: 'rejected', reason: 'police_presence_invalid' };
   }
@@ -585,16 +613,16 @@ function applyCharacterArrested(
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
   if (
-    event.subject !== 'chen_huaimin'
-    || !hasDirectParentType(event, eventsById, 'police_intervention_confirmed')
+    event.targetIds[0] !== 'chen_huaimin'
+    || !hasDirectParentSemantic(event, eventsById, 'intervene', 'completed')
     || !hasEvidence(event, ['invariant.arrest.requires_police_presence'])
   ) {
     return { status: 'rejected', reason: 'arrest_cause_or_evidence_missing' };
   }
   const intervention = event.causalParentIds
     .map((id) => eventsById.get(id))
-    .find((parent) => parent?.eventType === 'police_intervention_confirmed');
-  if ((factValue(intervention, 'target') ?? intervention?.subject) !== event.subject) {
+    .find((parent) => parent && eventSemantic(parent) === 'intervene:completed');
+  if (intervention?.targetIds[0] !== event.targetIds[0]) {
     return { status: 'rejected', reason: 'arrest_target_mismatch' };
   }
   state.killerStatus = 'arrested';
@@ -609,11 +637,11 @@ function applyCharacterFled(
   eventsById?: Map<string, ProposedEvent>,
 ): ApplyResult {
   if (
-    event.subject !== 'chen_huaimin'
+    event.targetIds[0] !== 'chen_huaimin'
     || state.world!.characters.chen_huaimin.location === 'room_503'
     || !hasEvidence(event, ['invariant.flight.requires_confirmed_route'])
     || !eventsById
-    || !hasDirectParentType(event, eventsById, 'actor_moved')
+    || !hasDirectParentSemantic(event, eventsById, 'move', 'completed')
   ) {
     return { status: 'rejected', reason: 'flight_route_invalid' };
   }
@@ -629,8 +657,8 @@ function applyEvidenceDestroyed(
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
   if (
-    event.subject !== 'package'
-    || !hasDirectParentType(event, eventsById, 'evidence_destruction_attempted')
+    event.targetIds[0] !== 'package'
+    || !hasDirectParentSemantic(event, eventsById, 'destroy', 'attempted')
     || !hasEvidence(event, [
       'fact.object.package.location',
       'invariant.evidence_destroy.requires_access',
@@ -638,13 +666,13 @@ function applyEvidenceDestroyed(
   ) {
     return { status: 'rejected', reason: 'evidence_destruction_cause_or_evidence_missing' };
   }
-  const actorId = characterId(factValue(event, 'actor'));
+  const actorId = characterId(event.actorId);
   const attemptParent = event.causalParentIds
     .map((id) => eventsById.get(id))
-    .find((parent) => parent?.eventType === 'evidence_destruction_attempted');
+    .find((parent) => parent && eventSemantic(parent) === 'destroy:attempted');
   if (
     actorId !== 'chen_huaimin'
-    || factValue(attemptParent, 'actor') !== actorId
+    || attemptParent?.actorId !== actorId
     || state.world!.characters[actorId].location !== 'room_503'
     || ['incapacitated', 'dead', 'arrested', 'fled'].includes(state.killerStatus)
   ) {
@@ -695,11 +723,17 @@ function applyEnding(
     return { status: 'rejected', reason: 'ending_value_or_evidence_invalid' };
   }
 
-  const parentTypes = new Set(event.causalParentIds.map((id) => eventsById.get(id)?.eventType));
+  const parentSemantics = new Set(event.causalParentIds.map((id) => {
+    const parent = eventsById.get(id);
+    return parent ? eventSemantic(parent) : undefined;
+  }));
   if (ending === 'death') {
     const killedPlayer = event.causalParentIds.some((id) => {
       const parent = eventsById.get(id);
-      return parent?.eventType === 'character_killed' && parent.subject === 'player';
+      return parent
+        && eventSemantic(parent) === 'change_status:completed'
+        && factValue(parent, 'status') === 'dead'
+        && parent.targetIds[0] === 'player';
     });
     if (!killedPlayer || state.player.injury !== 'critical') {
       return { status: 'rejected', reason: 'death_terminal_cause_missing' };
@@ -712,15 +746,21 @@ function applyEnding(
       .map((id) => eventsById.get(id))
       .filter((parent): parent is ProposedEvent => Boolean(parent));
     const killerKilled = parentEvents.some((parent) => (
-      parent.eventType === 'character_killed' && parent.subject === 'chen_huaimin'
+      eventSemantic(parent) === 'change_status:completed'
+      && factValue(parent, 'status') === 'dead'
+      && parent.targetIds[0] === 'chen_huaimin'
     ));
     const killerArrested = parentEvents.some((parent) => (
-      parent.eventType === 'character_arrested' && parent.subject === 'chen_huaimin'
+      eventSemantic(parent) === 'change_status:completed'
+      && factValue(parent, 'status') === 'arrested'
+      && parent.targetIds[0] === 'chen_huaimin'
     ));
     const killerFled = parentEvents.some((parent) => (
-      parent.eventType === 'character_fled' && parent.subject === 'chen_huaimin'
+      eventSemantic(parent) === 'change_status:completed'
+      && factValue(parent, 'status') === 'fled'
+      && parent.targetIds[0] === 'chen_huaimin'
     ));
-    const deadlineReached = parentTypes.has('deadline_reached');
+    const deadlineReached = parentSemantics.has('reach_deadline:completed');
     if (!killerKilled && !killerArrested && !killerFled && !deadlineReached) {
       return { status: 'rejected', reason: 'survival_terminal_cause_missing' };
     }
@@ -761,7 +801,7 @@ function acceptCandidate(
     id: `display.phase5.${candidate.event.id}`,
     text: summary,
     eventRefs: [candidate.event.id],
-    claimRefs: [...candidate.event.facts],
+    claimRefs: candidate.event.assertions.map((assertion) => assertion.id),
   });
   appendEventLog(state, candidate.event, summary);
 }
@@ -773,7 +813,7 @@ function appendEventLog(state: GameState, event: ProposedEvent, summary: string)
     minute: state.minute,
     title: deterministicTitle(event),
     text: summary,
-    tone: event.eventType === 'ending_reached' && event.subject === 'death'
+    tone: event.kind === 'ending' && factValue(event, 'ending') === 'death'
       ? 'death'
       : event.riskClass === 'reversible'
         ? 'neutral'
@@ -798,14 +838,30 @@ function rejectEvent(
 }
 
 function correctedBlockedEntry(event: ProposedEvent, blockedBy: string): ProposedEvent {
+  const entryRoute = factValue(event, 'entry_route') ?? 'unknown';
   return {
     id: `${event.id}.blocked`,
-    eventType: 'entry_blocked',
-    subject: event.subject,
+    kind: 'action',
+    actorId: event.actorId,
+    operation: 'enter',
+    targetIds: [...event.targetIds],
+    status: 'blocked',
     summary: 'The attempted entry was blocked by a confirmed barrier.',
-    facts: [
-      `entry_route:${factValue(event, 'entry_route') ?? 'unknown'}`,
-      `blocked_by:${blockedBy}`,
+    assertions: [
+      {
+        id: `assertion.${event.id}.blocked.route`,
+        subject: event.targetIds[0] ?? event.actorId,
+        predicate: 'entry_route',
+        value: entryRoute,
+        visibleTo: [...event.visibility],
+      },
+      {
+        id: `assertion.${event.id}.blocked.barrier`,
+        subject: event.targetIds[0] ?? event.actorId,
+        predicate: 'blocked_by',
+        value: blockedBy,
+        visibleTo: [...event.visibility],
+      },
     ],
     visibility: [...event.visibility],
     riskClass: 'reversible',
@@ -815,35 +871,33 @@ function correctedBlockedEntry(event: ProposedEvent, blockedBy: string): Propose
 }
 
 function sanitizeConfirmedEvent(event: ProposedEvent): ProposedEvent {
-  const keysByType: Record<string, string[]> = {
-    actor_moved: ['location'],
-    entry_attempted: ['entry_route'],
-    entry_blocked: ['entry_route', 'blocked_by'],
-    actor_entered: ['entry_route', 'location'],
-    attack_attempted: ['attacker', 'target'],
-    attack_landed: ['attacker', 'target'],
-    attack_blocked: ['attacker', 'target', 'blocked_by'],
-    character_injured: ['injury'],
-    police_intervention_confirmed: ['actor', 'target'],
-    evidence_destruction_attempted: ['actor'],
-    evidence_destroyed: ['actor', 'evidence'],
-    ending_reached: ['ending', 'reason'],
+  const predicatesBySemantic: Record<string, string[]> = {
+    'move:completed': ['location'],
+    'enter:attempted': ['entry_route'],
+    'enter:blocked': ['entry_route', 'blocked_by'],
+    'enter:completed': ['entry_route', 'location'],
+    'attack:attempted': ['weapon'],
+    'attack:completed': ['weapon'],
+    'attack:blocked': ['blocked_by'],
+    'change_status:completed': ['status', 'injury'],
+    'intervene:completed': ['authority'],
+    'destroy:attempted': ['method'],
+    'destroy:completed': ['evidence'],
+    'reach_deadline:completed': ['minute'],
+    'resolve_ending:completed': ['ending', 'reason'],
   };
-  const fixedFactsByType: Record<string, string[]> = {
-    character_incapacitated: ['status:incapacitated'],
-    character_killed: ['status:dead'],
-    character_arrested: ['status:arrested'],
-    character_fled: ['status:fled'],
-  };
-  const facts = fixedFactsByType[event.eventType]
-    ?? (keysByType[event.eventType] ?? []).flatMap((key) => {
-      const value = factValue(event, key);
-      return value === undefined ? [] : [`${key}:${value}`];
-    });
+  const allowedPredicates = new Set(predicatesBySemantic[eventSemantic(event)] ?? []);
   return {
     ...event,
     summary: deterministicSummary(event),
-    facts,
+    assertions: event.assertions
+      .filter((assertion) => allowedPredicates.has(assertion.predicate))
+      .map((assertion) => ({
+        ...assertion,
+        visibleTo: [...new Set(assertion.visibleTo.filter((value) => (
+          ['player', 'public', 'killer', 'system', 'hidden'].includes(value)
+        )))],
+      })),
     visibility: [...new Set(event.visibility.filter((value) => (
       ['player', 'public', 'killer', 'system', 'hidden'].includes(value)
     )))],
@@ -870,12 +924,27 @@ function topologicalCandidates(candidates: CommitEventCandidate[]): CommitEventC
   return ordered;
 }
 
-function hasDirectParentType(
+function hasDirectParentSemantic(
   event: ProposedEvent,
   eventsById: Map<string, ProposedEvent>,
-  eventType: string,
+  operation: string,
+  status: ProposedEvent['status'],
 ): boolean {
-  return event.causalParentIds.some((id) => eventsById.get(id)?.eventType === eventType);
+  return event.causalParentIds.some((id) => {
+    const parent = eventsById.get(id);
+    return parent?.operation === operation && parent.status === status;
+  });
+}
+
+function hasDirectParentStatus(
+  event: ProposedEvent,
+  eventsById: Map<string, ProposedEvent>,
+  status: string,
+): boolean {
+  return event.causalParentIds.some((id) => {
+    const parent = eventsById.get(id);
+    return parent?.operation === 'change_status' && factValue(parent, 'status') === status;
+  });
 }
 
 function hasEvidence(event: ProposedEvent, required: string[]): boolean {
@@ -883,8 +952,9 @@ function hasEvidence(event: ProposedEvent, required: string[]): boolean {
 }
 
 function factValue(event: ProposedEvent | undefined, key: string): string | undefined {
-  const prefix = `${key}:`;
-  return event?.facts.find((fact) => fact.startsWith(prefix))?.slice(prefix.length);
+  const value = assertionValue(event, key);
+  if (value === undefined || value === null) return undefined;
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 function characterId(value: string | undefined): CharacterId | undefined {
@@ -895,67 +965,65 @@ function locationId(value: string | undefined): LocationId | undefined {
   return value && LOCATION_IDS.has(value as LocationId) ? value as LocationId : undefined;
 }
 
+function actorHasCapability(state: GameState, actorId: string, capability: string): boolean {
+  const character = state.world?.characters[actorId as CharacterId];
+  return Boolean(character?.capabilities.includes(capability));
+}
+
 function isPlayerVisible(event: ProposedEvent): boolean {
   return event.visibility.includes('player') || event.visibility.includes('public');
 }
 
 function deterministicTitle(event: ProposedEvent): string {
-  switch (event.eventType) {
-    case 'entry_attempted': return 'Entry attempt';
-    case 'entry_blocked': return 'Entry blocked';
-    case 'actor_entered': return 'Entry confirmed';
-    case 'attack_attempted': return 'Attack attempt';
-    case 'attack_landed': return 'Attack confirmed';
-    case 'character_injured': return 'Injury confirmed';
-    case 'character_killed': return 'Death confirmed';
-    case 'character_arrested': return 'Arrest confirmed';
-    case 'evidence_destroyed': return 'Evidence destroyed';
-    case 'ending_reached': return 'Ending confirmed';
+  switch (eventSemantic(event)) {
+    case 'enter:attempted': return 'Entry attempt';
+    case 'enter:blocked': return 'Entry blocked';
+    case 'enter:completed': return 'Entry confirmed';
+    case 'attack:attempted': return 'Attack attempt';
+    case 'attack:completed': return 'Attack confirmed';
+    case 'change_status:completed': return 'Status changed';
+    case 'destroy:completed': return 'Evidence destroyed';
+    case 'resolve_ending:completed': return 'Ending confirmed';
     default: return 'World event confirmed';
   }
 }
 
 function deterministicSummary(event: ProposedEvent): string {
-  switch (event.eventType) {
-    case 'actor_moved':
-      return `${event.subject} moved to ${factValue(event, 'location') ?? 'a confirmed location'}.`;
-    case 'entry_attempted':
-      return `${event.subject} attempted entry via ${factValue(event, 'entry_route') ?? 'a route'}.`;
-    case 'entry_blocked':
+  const target = event.targetIds[0] ?? 'the target';
+  switch (eventSemantic(event)) {
+    case 'move:completed':
+      return `${event.actorId} moved to ${factValue(event, 'location') ?? 'a confirmed location'}.`;
+    case 'enter:attempted':
+      return `${event.actorId} attempted entry via ${factValue(event, 'entry_route') ?? 'a route'}.`;
+    case 'enter:blocked':
       return `The entry attempt was blocked by ${factValue(event, 'blocked_by') ?? 'a confirmed barrier'}.`;
-    case 'actor_entered':
-      return `${event.subject} entered room_503 through ${factValue(event, 'entry_route') ?? 'a confirmed route'}.`;
-    case 'attack_attempted':
-      return `${factValue(event, 'attacker') ?? 'An actor'} attempted to attack ${factValue(event, 'target') ?? event.subject}.`;
-    case 'attack_landed':
-      return `The attack against ${factValue(event, 'target') ?? event.subject} landed.`;
-    case 'attack_blocked':
-      return `The attack against ${event.subject} was blocked.`;
-    case 'character_injured':
-      return `${event.subject} sustained a confirmed ${factValue(event, 'injury') ?? 'injury'}.`;
-    case 'character_incapacitated':
-      return `${event.subject} was incapacitated.`;
-    case 'character_killed':
-      return `${event.subject} died from the confirmed lethal injury.`;
-    case 'police_intervention_confirmed':
-      return `Police intervention against ${event.subject} was confirmed.`;
-    case 'character_arrested':
-      return `${event.subject} was arrested.`;
-    case 'character_fled':
-      return `${event.subject} fled through a confirmed route.`;
-    case 'evidence_destruction_attempted':
-      return `${factValue(event, 'actor') ?? 'An actor'} attempted to destroy ${event.subject}.`;
-    case 'evidence_destroyed':
-      return `${event.subject} was destroyed by an actor with confirmed access.`;
-    case 'deadline_reached':
+    case 'enter:completed':
+      return `${event.actorId} entered ${target} through ${factValue(event, 'entry_route') ?? 'a confirmed route'}.`;
+    case 'attack:attempted':
+      return `${event.actorId} attempted to attack ${target}.`;
+    case 'attack:completed':
+      return `The attack against ${target} landed.`;
+    case 'attack:blocked':
+      return `The attack against ${target} was blocked.`;
+    case 'change_status:completed':
+      return `${target} status changed to ${factValue(event, 'status') ?? 'a confirmed state'}.`;
+    case 'intervene:completed':
+      return `Intervention against ${target} was confirmed.`;
+    case 'destroy:attempted':
+      return `${event.actorId} attempted to destroy ${target}.`;
+    case 'destroy:completed':
+      return `${target} was destroyed by an actor with confirmed access.`;
+    case 'reach_deadline:completed':
       return 'The confirmed deadline was reached.';
-    case 'ending_reached':
-      return `The ${factValue(event, 'ending') ?? event.subject} ending was confirmed.`;
-    case 'killer_action_attempted':
-      return 'A killer action was attempted.';
-    case 'npc_action_attempted':
-      return `${event.subject} attempted an NPC action.`;
+    case 'resolve_ending:completed':
+      return `The ${factValue(event, 'ending') ?? target} ending was confirmed.`;
+    case 'act:attempted':
+      return `${event.actorId} attempted an action.`;
     default:
       return 'A deterministic world event was confirmed.';
   }
+}
+
+function eventSemantic(event: ProposedEvent): string {
+  return `${event.operation}:${event.status}`;
 }

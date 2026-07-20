@@ -1,4 +1,4 @@
-import type { ProposedEvent } from '@murder-loop-ai/ai-contracts';
+import type { Fact, ProposedEvent } from '@murder-loop-ai/ai-contracts';
 import type {
   CharacterId,
   ClueRecord,
@@ -7,6 +7,10 @@ import type {
   ObservationRecord,
 } from '@murder-loop-ai/shared';
 import type { CommitEventCandidate } from '../commit/atomicTurnCommit';
+import {
+  canonicalFactIdForAssertion,
+  materializeEventFacts,
+} from '../facts/eventAssertions';
 import { createInitialWorldState } from '../world/worldSimulator';
 
 export interface KnowledgeUpdateCandidate {
@@ -42,8 +46,13 @@ export function buildLowRiskKnowledgeClueCandidates(
   };
 
   for (const event of events) {
-    if (event.eventType === 'message_delivered') {
-      const characterId = canonicalCharacterId(event.subject);
+    if (
+      event.kind === 'information_transfer'
+      && event.operation === 'communicate'
+      && event.status === 'completed'
+    ) {
+      const recipientId = event.targetIds[0];
+      const characterId = canonicalCharacterId(recipientId);
       if (characterId) {
         candidates.knowledgeUpdates.push({
           characterId,
@@ -51,28 +60,37 @@ export function buildLowRiskKnowledgeClueCandidates(
           confidence: 1,
           source: 'message',
           sourceEventId: event.id,
-          basedOnFactIds: [`message_delivered:${event.subject}`],
+          basedOnFactIds: event.assertions.map((assertion) => (
+            canonicalFactIdForAssertion(event.id, assertion.id)
+          )),
         });
       }
       continue;
     }
 
-    if (event.eventType === 'inspection_completed') {
-      const visibleFactIds = event.facts.filter((factId) => factId.startsWith('fact.'));
+    if (event.operation === 'inspect' && event.status === 'completed') {
+      const visibleAssertions = playerVisibleAssertions(event);
+      const visibleFactIds = visibleAssertions.map((assertion) => (
+        canonicalFactIdForAssertion(event.id, assertion.id)
+      ));
       if (visibleFactIds.length === 0) continue;
+      const subject = event.targetIds[0] ?? visibleAssertions[0].subject;
       const observationId = `observation.${event.id}.exterior-label`;
       candidates.observations.push({
         id: observationId,
-        subject: event.subject,
-        predicate: event.subject === 'package' ? 'exterior_label' : 'visible_exterior',
-        value: event.subject === 'package' ? 'ambiguous' : 'observed',
-        scope: event.subject === 'package' ? 'exterior.label' : 'exterior',
+        subject,
+        predicate: subject === 'package' ? 'exterior_label' : 'visible_exterior',
+        value: subject === 'package' ? 'ambiguous' : 'observed',
+        scope: subject === 'package' ? 'exterior.label' : 'exterior',
         visibleFactIds,
         sourceEventIds: [event.id],
         observedAt,
       });
-      const packageLabelFact = 'fact.package.exterior.label_ambiguous';
-      if (visibleFactIds.includes(packageLabelFact)) {
+      const packageLabelAssertion = visibleAssertions.find((assertion) => (
+        assertion.subject === 'package' && assertion.predicate === 'exterior.label_ambiguous'
+      ));
+      if (packageLabelAssertion) {
+        const packageLabelFact = canonicalFactIdForAssertion(event.id, packageLabelAssertion.id);
         candidates.knowledgeUpdates.push({
           characterId: 'player',
           factId: 'package_exterior_label_ambiguous',
@@ -90,13 +108,17 @@ export function buildLowRiskKnowledgeClueCandidates(
       continue;
     }
 
-    if (event.eventType === 'package_photographed' || event.eventType === 'object_photographed') {
-      const visibleFactIds = event.facts.filter((factId) => factId.startsWith('fact.'));
+    if (event.operation === 'preserve_evidence' && event.status === 'completed') {
+      const visibleAssertions = playerVisibleAssertions(event);
+      const visibleFactIds = visibleAssertions.map((assertion) => (
+        canonicalFactIdForAssertion(event.id, assertion.id)
+      ));
       if (visibleFactIds.length === 0) continue;
+      const subject = event.targetIds[0] ?? visibleAssertions[0].subject;
       const observationId = `observation.${event.id}.exterior-photo`;
       candidates.observations.push({
         id: observationId,
-        subject: event.subject,
+        subject,
         predicate: 'exterior_photo',
         value: 'captured',
         scope: 'exterior',
@@ -106,14 +128,20 @@ export function buildLowRiskKnowledgeClueCandidates(
       });
       candidates.knowledgeUpdates.push({
         characterId: 'player',
-        factId: `${event.subject}_exterior_photo`,
+        factId: `${subject}_exterior_photo`,
         confidence: 1,
         source: 'seen',
         sourceEventId: event.id,
-        basedOnFactIds: [`fact.${event.subject}.exterior.photo_captured`],
+        basedOnFactIds: visibleAssertions
+          .filter((assertion) => assertion.predicate === 'exterior.photo_captured')
+          .map((assertion) => canonicalFactIdForAssertion(event.id, assertion.id)),
       });
-      if (event.subject === 'package') {
-        const photoFact = 'fact.package.exterior.photo_captured';
+      if (subject === 'package') {
+        const photoAssertion = visibleAssertions.find((assertion) => (
+          assertion.subject === 'package' && assertion.predicate === 'exterior.photo_captured'
+        ));
+        if (!photoAssertion) continue;
+        const photoFact = canonicalFactIdForAssertion(event.id, photoAssertion.id);
         candidates.clues.push({
           id: 'package_photo',
           claims: [photoFact],
@@ -141,21 +169,21 @@ const PHASE_FOUR_CLUE_DEFINITIONS: Record<string, {
   detail: string;
   weight: number;
   isPersistent: boolean;
-  allowedClaims: string[];
+  allowedAssertions: Array<Pick<Fact, 'subject' | 'predicate' | 'value'>>;
 }> = {
   wrong_package: {
     title: '标记模糊的包裹',
     detail: '包裹外部标签上的 5-03 / 503 标记很模糊，收件信息需要进一步核实。',
     weight: 12,
     isPersistent: true,
-    allowedClaims: ['fact.package.exterior.label_ambiguous'],
+    allowedAssertions: [{ subject: 'package', predicate: 'exterior.label_ambiguous', value: true }],
   },
   package_photo: {
     title: '包裹外包装照片',
     detail: '照片只记录了包裹尚未开启时的外包装、标签和可见表面，没有包含内部物品。',
     weight: 16,
     isPersistent: true,
-    allowedClaims: ['fact.package.exterior.photo_captured'],
+    allowedAssertions: [{ subject: 'package', predicate: 'exterior.photo_captured', value: true }],
   },
 };
 
@@ -177,6 +205,9 @@ export function projectConfirmedKnowledgeAndClues(input: {
   candidates: KnowledgeClueProjectionCandidates;
 }): KnowledgeClueProjection {
   const events = new Map(input.eventCandidates.map(({ event }) => [event.id, event]));
+  const materializedFacts = new Map(input.eventCandidates.flatMap(({ event }) => (
+    materializeEventFacts(event, 'projection')
+  )).map((fact) => [fact.id, fact]));
   const observationValidation = validateObservations(input.candidates.observations, events);
   if (observationValidation) return { status: 'rejected', reason: observationValidation };
 
@@ -185,7 +216,7 @@ export function projectConfirmedKnowledgeAndClues(input: {
 
   const observations = new Map(input.baselineState.observations.map((item) => [item.id, item]));
   for (const observation of input.candidates.observations) observations.set(observation.id, observation);
-  const clueValidation = validateClues(input.candidates.clues, observations);
+  const clueValidation = validateClues(input.candidates.clues, observations, materializedFacts);
   if (clueValidation) return { status: 'rejected', reason: clueValidation };
 
   const state = structuredClone(input.candidateState) as GameState;
@@ -262,7 +293,9 @@ function validateObservations(
     if (observation.sourceEventIds.length === 0) return 'observation_source_missing';
     const sourceEvents = observation.sourceEventIds.map((id) => events.get(id));
     if (sourceEvents.some((event) => !event || !isPlayerVisible(event))) return 'observation_source_missing';
-    const confirmedFacts = new Set(sourceEvents.flatMap((event) => event?.facts ?? []));
+    const confirmedFacts = new Set(sourceEvents.flatMap((event) => (
+      event?.assertions.map((assertion) => canonicalFactIdForAssertion(event.id, assertion.id)) ?? []
+    )));
     if (observation.visibleFactIds.some((factId) => !confirmedFacts.has(factId))) {
       return 'observation_fact_not_confirmed';
     }
@@ -278,7 +311,12 @@ function validateKnowledgeUpdates(
     const event = events.get(update.sourceEventId);
     if (!event) return 'knowledge_source_missing';
     if (update.source === 'message') {
-      if (event.eventType !== 'message_delivered' || canonicalCharacterId(event.subject) !== update.characterId) {
+      if (
+        event.kind !== 'information_transfer'
+        || event.operation !== 'communicate'
+        || event.status !== 'completed'
+        || canonicalCharacterId(event.targetIds[0]) !== update.characterId
+      ) {
         return 'knowledge_event_not_confirmed';
       }
     } else if (update.characterId !== 'player' || !isPlayerVisible(event)) {
@@ -286,7 +324,9 @@ function validateKnowledgeUpdates(
     }
     if (
       update.basedOnFactIds.length === 0
-      || update.basedOnFactIds.some((factId) => !event.facts.includes(factId))
+      || update.basedOnFactIds.some((factId) => !event.assertions.some((assertion) => (
+        canonicalFactIdForAssertion(event.id, assertion.id) === factId
+      )))
     ) {
       return 'knowledge_fact_not_confirmed';
     }
@@ -297,6 +337,7 @@ function validateKnowledgeUpdates(
 function validateClues(
   clues: ClueProjectionCandidate[],
   observations: Map<string, ObservationRecord>,
+  facts: Map<string, Fact>,
 ): KnowledgeClueProjectionRejectReason | undefined {
   for (const clue of clues) {
     const definition = PHASE_FOUR_CLUE_DEFINITIONS[clue.id];
@@ -308,11 +349,25 @@ function validateClues(
     if (clue.claims.length === 0 || clue.claims.some((claim) => !visibleFacts.has(claim))) {
       return 'clue_claim_not_observed';
     }
-    if (clue.claims.some((claim) => !definition.allowedClaims.includes(claim))) {
+    if (clue.claims.some((claim) => {
+      const fact = facts.get(claim);
+      return !fact || !definition.allowedAssertions.some((allowed) => (
+        allowed.subject === fact.subject
+        && allowed.predicate === fact.predicate
+        && allowed.value === fact.value
+      ));
+    })) {
       return 'clue_definition_unsupported';
     }
   }
   return undefined;
+}
+
+function playerVisibleAssertions(event: ProposedEvent): ProposedEvent['assertions'] {
+  if (!isPlayerVisible(event)) return [];
+  return event.assertions.filter((assertion) => (
+    assertion.visibleTo.includes('player') || assertion.visibleTo.includes('public')
+  ));
 }
 
 function isPlayerVisible(event: ProposedEvent): boolean {

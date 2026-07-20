@@ -950,3 +950,17 @@ Death / Ending、关键线索、永久 Knowledge、Killer 强入、NPC 永久状
 建议新对话的首个任务：
 
 > 基于 `docs/ai-first-world-model-arbiter-handoff.md` 和 `docs/architecture-current.md`，审计现有类型、DomainEvent、ContextBuilder、状态持久化、循环重置与 resolveTurnHarness 主链路，输出阶段 1 的详细实施计划：重点覆盖轻量 Semantic Compiler、共享 TurnBrief、本地 Intent Projection、主 World Model 与全量 Specialist 并行候选、四层 Arbiter、High-Risk Gate、Atomic Turn Commit、Loop Reset Policy 和 deadline / 迟到结果规则，以及需要新增或修改的文件、失败测试、兼容策略和验证命令。先不要写实现代码。
+
+## 18. 2026-07-20 通用事件模型更新
+
+当前 AI World Model 契约已升级为 `world-model-v3`。`ProposedEvent` 不再使用
+剧情式 `eventType` 与 `facts: string[]`，而使用六类机制事件、`operation`、
+`status` 和结构化 `assertions`。Observation、Clue、Display 均通过 proposal-local
+assertion ID 建立来源链，本地 Fact ID 工厂在校验后的投影/提交边界生成稳定 ID。
+
+Main/Specialist Prompt 已删除固定人物、房号和剧情事件链；Shadow Arbiter 与
+takeover authority gate 只执行通用的 actor ownership、domain event-kind、引用、
+可见性、权限、因果与证据规则。
+
+完整设计、兼容边界与剩余场景策略数据化工作见：
+`docs/ai-first-phase-7-generic-event-model.md`。

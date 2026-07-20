@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const IdSchema = z.string().min(1);
 const StateVersionSchema = z.number().int().nonnegative();
-export const WORLD_MODEL_SCHEMA_VERSION = 'world-model-v2';
+export const WORLD_MODEL_SCHEMA_VERSION = 'world-model-v3';
 const JsonValueSchema = z.union([
   z.string(),
   z.number(),
@@ -13,6 +13,15 @@ const JsonValueSchema = z.union([
 ]);
 
 export const RiskClassValues = ['reversible', 'high_impact', 'irreversible'] as const;
+export const EventKindValues = [
+  'action',
+  'state_transition',
+  'information_transfer',
+  'observation',
+  'timer',
+  'ending',
+] as const;
+export const EventStatusValues = ['attempted', 'completed', 'blocked', 'failed'] as const;
 export const ProposalDomainValues = [
   'player',
   'killer',
@@ -185,15 +194,26 @@ export const ProposedObservationSchema = z.object({
   scope: z.string().min(1),
   basedOnEffectIds: z.array(IdSchema),
   basedOnEventIds: z.array(IdSchema).min(1),
-  visibleFactIds: z.array(IdSchema).min(1),
+  visibleAssertionIds: z.array(IdSchema).min(1),
+}).strict();
+
+export const ProposedAssertionSchema = z.object({
+  id: IdSchema,
+  subject: IdSchema,
+  predicate: IdSchema,
+  value: JsonValueSchema,
+  visibleTo: z.array(IdSchema),
 }).strict();
 
 export const ProposedEventSchema = z.object({
   id: IdSchema,
-  eventType: IdSchema,
-  subject: IdSchema,
+  kind: z.enum(EventKindValues),
+  actorId: IdSchema,
+  operation: IdSchema,
+  targetIds: z.array(IdSchema),
+  status: z.enum(EventStatusValues),
   summary: z.string().min(1),
-  facts: z.array(IdSchema),
+  assertions: z.array(ProposedAssertionSchema),
   visibility: z.array(IdSchema),
   riskClass: z.enum(RiskClassValues),
   evidenceRefs: z.array(IdSchema),
@@ -202,10 +222,10 @@ export const ProposedEventSchema = z.object({
 
 export const ClueCandidateSchema = z.object({
   id: IdSchema,
-  // Canonical Fact IDs exposed by basedOnObservationIds, never free-form claim text.
-  claims: z.array(IdSchema).min(1),
+  // Proposal-local assertion IDs exposed by basedOnObservationIds.
+  claimAssertionIds: z.array(IdSchema).min(1),
   basedOnObservationIds: z.array(IdSchema).min(1),
-  visibleFactIds: z.array(IdSchema),
+  visibleAssertionIds: z.array(IdSchema),
   confidence: z.number().min(0).max(1),
 }).strict();
 
@@ -377,6 +397,7 @@ export type SemanticCompilerResult = z.infer<typeof SemanticCompilerResultSchema
 export type OrderedAction = z.infer<typeof OrderedActionSchema>;
 export type Proposal = z.infer<typeof ProposalSchema>;
 export type SpecialistCandidate = z.infer<typeof SpecialistCandidateSchema>;
+export type ProposedAssertion = z.infer<typeof ProposedAssertionSchema>;
 export type ProposedEvent = z.infer<typeof ProposedEventSchema>;
 export type DisplayFragment = z.infer<typeof DisplayFragmentSchema>;
 export type StateTransitionResult = z.infer<typeof StateTransitionResultSchema>;

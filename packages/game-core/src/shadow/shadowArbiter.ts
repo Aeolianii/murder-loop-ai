@@ -18,6 +18,10 @@ export interface ShadowSourcePolicy {
   authorizedFactIds: string[];
   authorizedFactIdsByDomain?: Partial<Record<ProposalDomain, string[]>>;
   authorizedFactIdsByActor?: Record<string, string[]>;
+  authorizedOperations?: string[];
+  authorizedOperationsByDomain?: Partial<Record<ProposalDomain, string[]>>;
+  authorizedOperationsByActor?: Record<string, string[]>;
+  enforceCapabilityChecks?: boolean;
 }
 
 export interface ShadowArbiterInput {
@@ -30,7 +34,7 @@ export interface ShadowArbiterInput {
   sourcePolicies: Record<string, ShadowSourcePolicy>;
   availableEvidenceRefs: string[];
   availableObservationIds: string[];
-  availableObservationFactIds?: Record<string, string[]>;
+  availableObservationAssertionIds?: Record<string, string[]>;
   visibleConfirmedEventIds: string[];
 }
 
@@ -360,8 +364,8 @@ export function compareShadowWithLegacy(
   legacyEvents: LegacyEventSnapshot[],
 ): ShadowDifferenceReport {
   const shadowEvents = report.transition.acceptedEvents;
-  const shadowKeys = new Map(shadowEvents.map((event) => [eventKey(event), event]));
-  const legacyKeys = new Map(legacyEvents.map((event) => [eventKey(event), event]));
+  const shadowKeys = new Map(shadowEvents.map((event) => [genericEventKey(event), event]));
+  const legacyKeys = new Map(legacyEvents.map((event) => [legacyEventKey(event), event]));
   const items: ShadowDifferenceItem[] = [];
 
   for (const [key, event] of shadowKeys) {
@@ -479,22 +483,48 @@ function validateProposal(
   ))) {
     reasons.add('observation_source_missing');
   }
-  const observationFactIds = new Map<string, Set<string>>(
-    Object.entries(input.availableObservationFactIds ?? {}).map(([id, factIds]) => [id, new Set(factIds)]),
+  const observationAssertionIds = new Map<string, Set<string>>(
+    Object.entries(input.availableObservationAssertionIds ?? {})
+      .map(([id, assertionIds]) => [id, new Set(assertionIds)]),
   );
   for (const observation of proposal.observations) {
-    observationFactIds.set(observation.id, new Set(observation.visibleFactIds));
+    observationAssertionIds.set(observation.id, new Set(observation.visibleAssertionIds));
   }
   if (proposal.clueCandidates.some((clue) => {
-    const observedFactIds = new Set(clue.basedOnObservationIds.flatMap((id) => (
-      [...(observationFactIds.get(id) ?? [])]
+    const observedAssertionIds = new Set(clue.basedOnObservationIds.flatMap((id) => (
+      [...(observationAssertionIds.get(id) ?? [])]
     )));
-    return clue.claims.some((claim) => !observedFactIds.has(claim));
+    return clue.claimAssertionIds.some((assertionId) => !observedAssertionIds.has(assertionId));
   })) {
-    reasons.add('clue_claim_not_observed');
+    reasons.add('clue_assertion_not_observed');
   }
 
   const proposedEventIds = new Set(proposal.proposedEvents.map((event) => event.id));
+  if (proposedEventIds.size !== proposal.proposedEvents.length) {
+    reasons.add('duplicate_event_id');
+  }
+  const allAssertions = proposal.proposedEvents.flatMap((event) => event.assertions);
+  const proposedAssertionIds = new Set(allAssertions.map((assertion) => assertion.id));
+  if (proposedAssertionIds.size !== allAssertions.length) {
+    reasons.add('duplicate_assertion_id');
+  }
+  if (proposal.proposedEvents.some((event) => event.actorId !== proposal.actorId)) {
+    reasons.add('event_actor_mismatch');
+  }
+  const authorizedOperations = new Set(
+    policy?.authorizedOperationsByActor?.[proposal.actorId]
+    ?? policy?.authorizedOperationsByDomain?.[proposal.domain]
+    ?? policy?.authorizedOperations
+    ?? [],
+  );
+  if (
+    policy?.enforceCapabilityChecks
+    && proposal.proposedEvents.some((event) => (
+      eventRequiresCapability(event) && !authorizedOperations.has(event.operation)
+    ))
+  ) {
+    reasons.add('event_capability_unauthorized');
+  }
   const proposedEffectIds = new Set(proposal.proposedEffects.map((effect) => effect.id));
   if (proposal.observations.some((observation) => (
     observation.basedOnEffectIds.some((id) => !proposedEffectIds.has(id))
@@ -517,23 +547,26 @@ function validateProposal(
     ))) {
       return true;
     }
-    const sourceFactIds = new Set(sourceEvents.flatMap((event) => event.facts));
-    return observation.visibleFactIds.some((factId) => !sourceFactIds.has(factId));
+    const sourceAssertionIds = new Set(sourceEvents.flatMap((event) => (
+      event.assertions
+        .filter((assertion) => (
+          assertion.visibleTo.includes('player') || assertion.visibleTo.includes('public')
+        ))
+        .map((assertion) => assertion.id)
+    )));
+    return observation.visibleAssertionIds.some((assertionId) => (
+      !sourceAssertionIds.has(assertionId)
+    ));
   })) {
-    reasons.add('observation_fact_reference_invalid');
+    reasons.add('observation_assertion_reference_invalid');
   }
   if (proposal.clueCandidates.some((clue) => {
-    const observedFactIds = new Set(clue.basedOnObservationIds.flatMap((id) => (
-      [...(observationFactIds.get(id) ?? [])]
+    const observedAssertionIds = new Set(clue.basedOnObservationIds.flatMap((id) => (
+      [...(observationAssertionIds.get(id) ?? [])]
     )));
-    return clue.visibleFactIds.some((factId) => !observedFactIds.has(factId));
+    return clue.visibleAssertionIds.some((assertionId) => !observedAssertionIds.has(assertionId));
   })) {
-    reasons.add('clue_visible_fact_not_observed');
-  }
-  if (proposal.clueCandidates.some((clue) => (
-    clue.visibleFactIds.some((id) => !authorizedFacts.has(id))
-  ))) {
-    reasons.add('clue_visible_fact_unauthorized');
+    reasons.add('clue_visible_assertion_not_observed');
   }
   const visibleProposedEventIds = new Set(proposal.proposedEvents
     .filter((event) => event.visibility.includes('player') || event.visibility.includes('public'))
@@ -552,8 +585,8 @@ function validateProposal(
     reasons.add('display_event_reference_invalid');
   }
   const displayClaimRefs = new Set([
-    ...proposal.proposedEvents.flatMap((event) => event.facts),
-    ...proposal.clueCandidates.flatMap((clue) => clue.claims),
+    ...proposedAssertionIds,
+    ...proposal.clueCandidates.flatMap((clue) => clue.claimAssertionIds),
   ]);
   if (proposal.displayFragments.some((fragment) => (
     fragment.claimRefs.length === 0
@@ -581,9 +614,30 @@ function byCandidateRank(left: Proposal, right: Proposal): number {
   return left.candidateRank - right.candidateRank;
 }
 
-function eventKey(event: { eventType: string; subject: string }): string {
-  const facts = 'facts' in event && Array.isArray(event.facts)
-    ? [...event.facts].sort().join('|')
-    : '';
-  return `${event.eventType}:${event.subject}:${facts}`;
+function genericEventKey(event: ProposedEvent): string {
+  const assertions = event.assertions
+    .map((assertion) => JSON.stringify([
+      assertion.subject,
+      assertion.predicate,
+      assertion.value,
+    ]))
+    .sort()
+    .join('|');
+  return [
+    event.kind,
+    event.operation,
+    event.status,
+    event.actorId,
+    [...event.targetIds].sort().join(','),
+    assertions,
+  ].join(':');
+}
+
+function legacyEventKey(event: LegacyEventSnapshot): string {
+  return `${event.eventType}:${event.subject}:${[...event.facts].sort().join('|')}`;
+}
+
+function eventRequiresCapability(event: ProposedEvent): boolean {
+  return ['action', 'information_transfer'].includes(event.kind)
+    || ['move', 'destroy'].includes(event.operation);
 }

@@ -163,7 +163,11 @@ const committed = await commitPreparedLowRiskTurn({
 assert.equal(committed.outcome.result.commitStatus, 'committed');
 assert.equal(committed.state?.threat, 37, 'legacy high-risk stages may contribute state before the final atomic commit');
 assert.equal(committed.state?.room.package.state.opened, false);
-assert(committed.outcome.confirmedEvents.some((event) => event.eventType === 'package_photographed'));
+assert(committed.outcome.confirmedEvents.some((event) => (
+  event.operation === 'preserve_evidence'
+  && event.targetIds.includes('package')
+  && event.status === 'completed'
+)));
 assert(committed.outcome.displayFragments.length > 0);
 
 const conflictStore = new InMemoryAtomicTurnStore({

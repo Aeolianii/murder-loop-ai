@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ConfirmedEventSchema,
+  EventKindValues,
   FactSchema,
   HighRiskDecisionSchema,
+  ProposedAssertionSchema,
+  ProposedEventSchema,
   ProposedObservationSchema,
   ProposalSchema,
   SemanticCompilerRequestSchema,
@@ -24,10 +27,19 @@ const envelope = {
 
 const proposedEvent = {
   id: 'event.photo.created',
-  eventType: 'package_photographed',
-  subject: 'package',
+  kind: 'action' as const,
+  actorId: 'player',
+  operation: 'photograph',
+  targetIds: ['package'],
+  status: 'completed' as const,
   summary: 'A photograph of the package exterior is created.',
-  facts: ['fact.package.exterior_photographed'],
+  assertions: [{
+    id: 'assertion.photo.created',
+    subject: 'candidate.photo.action-1',
+    predicate: 'exists',
+    value: true,
+    visibleTo: ['player'],
+  }],
   visibility: ['player'],
   riskClass: 'reversible' as const,
   evidenceRefs: ['fact.player.has_phone'],
@@ -72,11 +84,52 @@ const proposal = {
     id: 'display-photo',
     text: 'You photograph only the exterior label.',
     eventRefs: ['event.photo.created'],
-    claimRefs: ['fact.package.exterior_photographed'],
+    claimRefs: ['assertion.photo.created'],
   }],
 };
 
 describe('AI-first phase-one contracts', () => {
+  it('uses a small mechanism-level event vocabulary with structured assertions', () => {
+    expect(EventKindValues).toEqual([
+      'action',
+      'state_transition',
+      'information_transfer',
+      'observation',
+      'timer',
+      'ending',
+    ]);
+
+    const assertion = {
+      id: 'assertion-photo-created',
+      subject: 'candidate.photo.action-1',
+      predicate: 'exists',
+      value: true,
+      visibleTo: ['player'],
+    };
+    expect(ProposedAssertionSchema.parse(assertion)).toEqual(assertion);
+
+    const event = {
+      id: 'event.photo.created',
+      kind: 'action',
+      actorId: 'player',
+      operation: 'photograph',
+      targetIds: ['package'],
+      status: 'completed',
+      summary: 'A photograph of the visible exterior was created.',
+      assertions: [assertion],
+      visibility: ['player'],
+      riskClass: 'reversible' as const,
+      evidenceRefs: ['fact.player.has_phone'],
+      causalParentIds: [],
+    };
+    expect(ProposedEventSchema.parse(event)).toEqual(event);
+    expect(ProposedEventSchema.safeParse({
+      ...event,
+      eventType: 'package_photographed',
+      facts: ['fact.package.photo'],
+    }).success).toBe(false);
+  });
+
   it('requires a versioned, deadline-aware turn envelope', () => {
     expect(TurnEnvelopeSchema.parse(envelope)).toEqual(envelope);
     expect(TurnEnvelopeSchema.safeParse({ ...envelope, deadlineAt: 'tomorrow' }).success).toBe(false);
@@ -184,7 +237,7 @@ describe('AI-first phase-one contracts', () => {
     }).candidateType).toBe('specialist');
   });
 
-  it('requires observations to expose canonical facts from explicit source events', () => {
+  it('requires observations to expose structured assertions from explicit source events', () => {
     const observation = {
       id: 'observation.package.photo',
       subject: 'package',
@@ -193,14 +246,14 @@ describe('AI-first phase-one contracts', () => {
       scope: 'exterior',
       basedOnEffectIds: ['effect-photo'],
       basedOnEventIds: ['event.photo.created'],
-      visibleFactIds: ['fact.package.exterior_photographed'],
+      visibleAssertionIds: ['assertion.photo.created'],
     };
 
     expect(ProposedObservationSchema.parse(observation)).toEqual(observation);
     const { basedOnEventIds: _basedOnEventIds, ...withoutSourceEvents } = observation;
     expect(ProposedObservationSchema.safeParse(withoutSourceEvents).success).toBe(false);
-    const { visibleFactIds: _visibleFactIds, ...withoutVisibleFacts } = observation;
-    expect(ProposedObservationSchema.safeParse(withoutVisibleFacts).success).toBe(false);
+    const { visibleAssertionIds: _visibleAssertionIds, ...withoutVisibleAssertions } = observation;
+    expect(ProposedObservationSchema.safeParse(withoutVisibleAssertions).success).toBe(false);
   });
 
   it('separates adjudication, high-risk gating, commit, and confirmation', () => {

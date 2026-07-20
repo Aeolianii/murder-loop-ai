@@ -9,10 +9,19 @@ import {
 
 const event: ProposedEvent = {
   id: 'event.photo.created',
-  eventType: 'package_photographed',
-  subject: 'package',
+  kind: 'action',
+  actorId: 'player',
+  operation: 'photograph',
+  targetIds: ['package'],
+  status: 'completed',
   summary: 'The exterior photograph was created.',
-  facts: ['fact.package.exterior_photographed'],
+  assertions: [{
+    id: 'assertion.photo.created',
+    subject: 'package',
+    predicate: 'photo_captured',
+    value: true,
+    visibleTo: ['player'],
+  }],
   visibility: ['player'],
   riskClass: 'reversible',
   evidenceRefs: ['fact.player.has_phone'],
@@ -22,7 +31,10 @@ const event: ProposedEvent = {
 const highRiskEvent: ProposedEvent = {
   ...event,
   id: 'event.ending.death',
-  eventType: 'ending_reached',
+  kind: 'ending',
+  actorId: 'system',
+  operation: 'resolve_ending',
+  targetIds: ['player'],
   riskClass: 'irreversible',
 };
 
@@ -44,7 +56,7 @@ function createRequest(candidateState = createInitialGameState()) {
       id: 'display-photo',
       text: 'You photograph the exterior label.',
       eventRefs: [event.id],
-      claimRefs: event.facts,
+      claimRefs: event.assertions.map((assertion) => assertion.id),
     }],
   };
 }

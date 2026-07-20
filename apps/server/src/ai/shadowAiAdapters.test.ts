@@ -169,22 +169,35 @@ await killer?.generate({ facts: [], conditionalSignals: [] }, {
 assert.equal(calls.at(-1)?.role, 'killer_specialist');
 assert.equal(calls.at(-1)?.thinking, 'disabled');
 assert.equal(JSON.stringify(calls.at(-1)?.user).includes(request.rawInput), false);
-assert(calls.at(-1)?.system.includes('actor_entered'));
-assert(calls.at(-1)?.system.includes('attack_landed'));
-assert(calls.at(-1)?.system.includes('character_killed'));
-assert(calls.at(-1)?.system.includes('ending_reached'));
-assert(calls.at(-1)?.system.includes('evidence_destroyed'));
+assert(calls.at(-1)?.system.includes('action, state_transition, information_transfer'));
+assert(calls.at(-1)?.system.includes('actorId, targetIds, operation, and structured assertions'));
+for (const storySpecificToken of [
+  'actor_entered',
+  'attack_landed',
+  'character_killed',
+  'package_photographed',
+  'room_503',
+  'chen_huaimin',
+  'lin_yue',
+  'real_police',
+]) {
+  assert.equal(
+    calls.at(-1)?.system.includes(storySpecificToken),
+    false,
+    `Proposal prompt must not hard-code story token "${storySpecificToken}".`,
+  );
+}
 assert(calls.at(-1)?.system.includes('"basedOnEventIds"'));
-assert(calls.at(-1)?.system.includes('"visibleFactIds"'));
+assert(calls.at(-1)?.system.includes('"visibleAssertionIds"'));
 assert(
   calls.at(-1)?.system.includes(
-    'Clue claims are canonical fact IDs, never paraphrases',
+    'Observations, clues, and display fragments cite proposal-local assertion IDs',
   ),
-  'Proposal prompt must use provenance fact IDs instead of matching free-form claim text.',
+  'Proposal prompt must use structured assertion provenance instead of matching free-form text.',
 );
 assert(
-  calls.at(-1)?.system.includes('"claims":["fact-id"]'),
-  'Clue contract example must cite the canonical fact exposed by its observation.',
+  calls.at(-1)?.system.includes('"claimAssertionIds":["assertion-1"]'),
+  'Clue contract example must cite the assertion exposed by its observation.',
 );
 for (const requiredField of [
   'candidateRank',

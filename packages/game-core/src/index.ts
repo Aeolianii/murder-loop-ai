@@ -29,6 +29,7 @@ export * from './domain/playerActionDomain';
 export * from './domain/killerStrategyDomain';
 export * from './intent/turnBriefValidator';
 export * from './facts/FactLedger';
+export * from './facts/eventAssertions';
 export * from './facts/knowledgeProjection';
 export * from './intent/IntentProjector';
 export * from './commit/atomicTurnCommit';

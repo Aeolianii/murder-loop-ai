@@ -58,6 +58,40 @@ function proposal(
   rank = 0,
 ): Proposal {
   const eventId = `event.shadow.${sourceAgent}.${domain}`.replace(/:/g, '.');
+  const actorId = domain === 'killer'
+    ? 'killer'
+    : domain === 'npc'
+      ? sourceAgent.includes('police_dispatch')
+        ? 'real_police'
+        : 'lin_yue'
+      : 'player';
+  const operation = domain === 'killer'
+    ? 'enter'
+    : domain === 'npc'
+      ? 'move'
+      : 'wait';
+  const event = ['player', 'killer', 'npc'].includes(domain)
+    ? [{
+        id: eventId,
+        kind: domain === 'npc' ? 'state_transition' as const : 'action' as const,
+        actorId,
+        operation,
+        targetIds: ['room_503'],
+        status: 'completed' as const,
+        summary: `${domain} completed ${operation}`,
+        assertions: [{
+          id: `assertion.shadow.${domain}.${operation}`,
+          subject: domain,
+          predicate: 'result',
+          value: operation,
+          visibleTo: ['player'],
+        }],
+        visibility: ['player'],
+        riskClass: 'reversible' as const,
+        evidenceRefs: [],
+        causalParentIds: [],
+      }]
+    : [];
   return {
     ...turnEnvelope,
     id: `proposal.${sourceAgent}.${domain}`.replace(/:/g, '.'),
@@ -68,8 +102,8 @@ function proposal(
     candidateRank: rank,
     turnBriefActionIds: ['action-1'],
     replacementFor: [],
-    actorId: domain === 'killer' ? 'killer' : 'player',
-    operation: 'wait',
+    actorId,
+    operation: event[0]?.operation ?? 'no_op',
     targetIds: ['room_503'],
     basedOnFactIds: [],
     preconditions: [],
@@ -81,25 +115,15 @@ function proposal(
     riskClass: 'reversible',
     evidenceRefs: [],
     causalParentIds: [],
-    proposedEvents: [{
-      id: eventId,
-      eventType: `${domain}_waited`,
-      subject: domain,
-      summary: `${domain} waited`,
-      facts: [`fact.shadow.${domain}.waited`],
-      visibility: ['player'],
-      riskClass: 'reversible',
-      evidenceRefs: [],
-      causalParentIds: [],
-    }],
+    proposedEvents: event,
     clueCandidates: [],
     recommendations: [],
-    displayFragments: [{
+    displayFragments: event.map((item) => ({
       id: `display.${eventId}`,
-      text: `${domain} waited`,
+      text: item.summary,
       eventRefs: [eventId],
-      claimRefs: [`fact.shadow.${domain}.waited`],
-    }],
+      claimRefs: item.assertions.map((assertion) => assertion.id),
+    })),
   };
 }
 

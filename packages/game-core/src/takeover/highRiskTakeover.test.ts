@@ -16,12 +16,78 @@ function event(input: {
   evidenceRefs?: string[];
   causalParentIds?: string[];
 }): ProposedEvent {
+  const semanticsByLegacyType: Record<string, {
+    kind: ProposedEvent['kind'];
+    operation: string;
+    status: ProposedEvent['status'];
+    inferredStatus?: string;
+  }> = {
+    actor_entered: { kind: 'action', operation: 'enter', status: 'completed' },
+    actor_moved: { kind: 'state_transition', operation: 'move', status: 'completed' },
+    attack_attempted: { kind: 'action', operation: 'attack', status: 'attempted' },
+    attack_blocked: { kind: 'action', operation: 'attack', status: 'blocked' },
+    attack_landed: { kind: 'action', operation: 'attack', status: 'completed' },
+    character_arrested: { kind: 'state_transition', operation: 'change_status', status: 'completed', inferredStatus: 'arrested' },
+    character_fled: { kind: 'state_transition', operation: 'change_status', status: 'completed', inferredStatus: 'fled' },
+    character_incapacitated: { kind: 'state_transition', operation: 'change_status', status: 'completed', inferredStatus: 'incapacitated' },
+    character_injured: { kind: 'state_transition', operation: 'change_status', status: 'completed', inferredStatus: 'injured' },
+    character_killed: { kind: 'state_transition', operation: 'change_status', status: 'completed', inferredStatus: 'dead' },
+    deadline_reached: { kind: 'timer', operation: 'reach_deadline', status: 'completed' },
+    ending_reached: { kind: 'ending', operation: 'resolve_ending', status: 'completed' },
+    entry_attempted: { kind: 'action', operation: 'enter', status: 'attempted' },
+    entry_blocked: { kind: 'action', operation: 'enter', status: 'blocked' },
+    evidence_destroyed: { kind: 'state_transition', operation: 'destroy', status: 'completed' },
+    evidence_destruction_attempted: { kind: 'action', operation: 'destroy', status: 'attempted' },
+    killer_action_attempted: { kind: 'action', operation: 'act', status: 'attempted' },
+    npc_action_attempted: { kind: 'action', operation: 'act', status: 'attempted' },
+    police_intervention_confirmed: { kind: 'action', operation: 'intervene', status: 'completed' },
+  };
+  const semantics = semanticsByLegacyType[input.eventType];
+  if (!semantics) throw new Error(`Missing test semantics for ${input.eventType}`);
+  const rawFacts = [...(input.facts ?? [])];
+  if (semantics.inferredStatus && !rawFacts.some((fact) => fact.startsWith('status:'))) {
+    rawFacts.push(`status:${semantics.inferredStatus}`);
+  }
+  const factMap = new Map(rawFacts.map((fact) => {
+    const separator = fact.indexOf(':');
+    return [fact.slice(0, separator), fact.slice(separator + 1)];
+  }));
+  const subjectIsActor = [
+    'actor_entered',
+    'actor_moved',
+    'entry_attempted',
+    'entry_blocked',
+    'killer_action_attempted',
+    'npc_action_attempted',
+  ].includes(input.eventType);
+  const actorId = factMap.get('actor')
+    ?? factMap.get('attacker')
+    ?? (['deadline_reached', 'ending_reached'].includes(input.eventType)
+      ? 'system'
+      : subjectIsActor
+        ? input.subject
+        : 'chen_huaimin');
+  const targetId = input.eventType === 'actor_entered'
+    ? factMap.get('location') ?? input.subject
+    : factMap.get('target') ?? input.subject;
   return {
     id: input.id,
-    eventType: input.eventType,
-    subject: input.subject,
+    kind: semantics.kind,
+    actorId,
+    operation: semantics.operation,
+    targetIds: [targetId],
+    status: semantics.status,
     summary: `Untrusted summary for ${input.eventType}.`,
-    facts: input.facts ?? [],
+    assertions: rawFacts.map((fact, index) => {
+      const separator = fact.indexOf(':');
+      return {
+        id: `assertion.${input.id}.${index}`,
+        subject: input.subject,
+        predicate: fact.slice(0, separator),
+        value: fact.slice(separator + 1),
+        visibleTo: ['player'],
+      };
+    }),
     visibility: ['player'],
     riskClass: input.riskClass ?? 'reversible',
     evidenceRefs: input.evidenceRefs ?? [],
@@ -252,7 +318,7 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
   assert.equal(
     projection.acceptedEventCandidates
       .find(({ event: item }) => item.id === ending.id)
-      ?.event.facts.includes('invented_secret:must_not_commit'),
+      ?.event.assertions.some((assertion) => assertion.predicate === 'invented_secret'),
     false,
   );
 }
@@ -369,6 +435,40 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
   });
   assert.equal(projection.state.killerStatus, 'arrested');
   assert.equal(projection.state.world?.characters.chen_huaimin.status, 'arrested');
+}
+
+{
+  const state = createInitialGameState();
+  state.world = createInitialWorldState();
+  state.policePhase = 'arrived';
+  state.world.characters.real_police.location = 'corridor_5f';
+  state.world.characters.lin_yue.location = 'corridor_5f';
+  state.world.characters.chen_huaimin.location = 'corridor_5f';
+  const unauthorizedIntervention = event({
+    id: 'event.unauthorized.intervention',
+    eventType: 'police_intervention_confirmed',
+    subject: 'chen_huaimin',
+    riskClass: 'high_impact',
+    facts: ['actor:lin_yue', 'target:chen_huaimin'],
+    evidenceRefs: [
+      'fact.game.police_phase',
+      'fact.world.character.real_police.location',
+      'fact.world.character.chen_huaimin.location',
+      'invariant.arrest.requires_police_presence',
+    ],
+  });
+  const projection = projectConfirmedHighRiskResults({
+    baselineState: state,
+    eventCandidates: [{
+      event: unauthorizedIntervention,
+      sourceProposalId: 'proposal.npc.lin-yue',
+    }],
+  });
+  assert.equal(
+    projection.rejectedEventIds.includes(unauthorizedIntervention.id),
+    true,
+    'an actor without the intervene capability cannot author an intervention',
+  );
 }
 
 {

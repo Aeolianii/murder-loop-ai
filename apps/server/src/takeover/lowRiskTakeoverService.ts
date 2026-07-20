@@ -262,64 +262,32 @@ function selectDownstreamEventCandidates(wave: ShadowCandidateWave): {
   return { eventCandidates, rejectedEventIds, rejectionDecisions };
 }
 
-const KILLER_AUTHORIZED_EVENT_TYPES = new Set([
-  'actor_entered',
-  'actor_moved',
-  'attack_attempted',
-  'attack_blocked',
-  'attack_landed',
-  'character_fled',
-  'character_incapacitated',
-  'character_injured',
-  'character_killed',
-  'ending_reached',
-  'entry_attempted',
-  'entry_blocked',
-  'evidence_destroyed',
-  'evidence_destruction_attempted',
-  'killer_action_attempted',
-]);
+const DOMAIN_EVENT_KIND_POLICY: Partial<Record<
+  Proposal['domain'],
+  Set<Proposal['proposedEvents'][number]['kind']>
+>> = {
+  killer: new Set(['action', 'state_transition', 'information_transfer', 'ending']),
+  npc: new Set(['action', 'state_transition', 'information_transfer', 'observation', 'ending']),
+  environment: new Set(['state_transition', 'observation', 'timer', 'ending']),
+  world: new Set([
+    'action',
+    'state_transition',
+    'information_transfer',
+    'observation',
+    'timer',
+    'ending',
+  ]),
+};
 
 function proposalCanAuthorEvent(
   proposal: Proposal | SpecialistCandidate,
   event: Proposal['proposedEvents'][number],
 ): boolean {
-  const actorFact = eventFact(event, 'actor');
-  const attackerFact = eventFact(event, 'attacker');
-  if (proposal.domain === 'killer') {
-    return proposal.actorId === 'chen_huaimin'
-      && KILLER_AUTHORIZED_EVENT_TYPES.has(event.eventType)
-      && (!actorFact || actorFact === 'chen_huaimin')
-      && (!attackerFact || attackerFact === 'chen_huaimin');
-  }
-  if (proposal.domain === 'environment') {
-    return ['deadline_reached', 'ending_reached'].includes(event.eventType);
-  }
-  if (proposal.domain !== 'npc') return false;
-
-  const actorId = proposal.actorId === 'police_dispatch'
-    ? 'real_police'
-    : proposal.actorId === 'linyue'
-      ? 'lin_yue'
-      : proposal.actorId;
-  if (actorFact && actorFact !== actorId) return false;
-  if (attackerFact && attackerFact !== actorId) return false;
-  if (event.eventType === 'actor_moved' || event.eventType === 'npc_action_attempted') {
-    return event.subject === actorId;
-  }
-  if (actorId === 'real_police') {
-    return ['police_intervention_confirmed', 'character_arrested', 'ending_reached']
-      .includes(event.eventType);
-  }
-  return actorId === 'lin_yue'
-    && event.subject === 'lin_yue'
-    && ['character_injured', 'character_incapacitated', 'character_killed']
-      .includes(event.eventType);
-}
-
-function eventFact(event: Proposal['proposedEvents'][number], key: string): string | undefined {
-  const prefix = `${key}:`;
-  return event.facts.find((fact) => fact.startsWith(prefix))?.slice(prefix.length);
+  const allowedKinds = DOMAIN_EVENT_KIND_POLICY[proposal.domain];
+  return Boolean(
+    allowedKinds?.has(event.kind)
+    && event.actorId === proposal.actorId,
+  );
 }
 
 function validateShadowTakeoverGate(

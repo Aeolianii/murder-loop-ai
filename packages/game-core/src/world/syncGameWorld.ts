@@ -107,6 +107,10 @@ export function syncGameStateToWorld(state: GameState, current: WorldState): Wor
 
 export function ensureWorldState(state: GameState): WorldState {
   const base = state.world ? cloneWorld(state.world) : createInitialWorldState();
+  const defaults = createInitialWorldState();
+  for (const character of Object.values(base.characters)) {
+    character.capabilities ??= [...defaults.characters[character.id].capabilities];
+  }
   base.consumedNarrationEventIds ??= [];
   base.pendingNarration ??= [];
   base.narrationCursor = resolveWorldNarrationCursor(base);
