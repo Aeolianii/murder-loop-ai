@@ -57,7 +57,9 @@ AI proposals no longer author canonical Fact IDs.
 3. Observations cite `visibleAssertionIds` from visible source events.
 4. Clues cite `claimAssertionIds` exposed by their source observations.
 5. Display fragments cite event IDs and assertion IDs.
-6. The local `canonicalFactIdForAssertion(eventId, assertionId)` factory creates
+6. Recommendations cite authorized current facts through `basedOnFactIds`,
+   confirmed visible events through `basedOnEventIds`, or both.
+7. The local `canonicalFactIdForAssertion(eventId, assertionId)` factory creates
    stable canonical Fact IDs at the validated projection/commit boundary.
 
 Predicates and natural-language summaries are descriptive values. They are
@@ -74,6 +76,7 @@ The Shadow Arbiter checks:
 - event, effect, observation, assertion, clue, recommendation, and display
   reference integrity;
 - assertion visibility through the cited source event;
+- recommendation fact authorization and visible-event provenance;
 - fact authorization for proposal inputs and preconditions;
 - causal chains and deterministic evidence for high-risk events.
 

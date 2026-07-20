@@ -8,6 +8,7 @@ import {
   ProposedEventSchema,
   ProposedObservationSchema,
   ProposalSchema,
+  RecommendationCandidateSchema,
   SemanticCompilerRequestSchema,
   SemanticCompilerResultSchema,
   SpecialistCandidateSchema,
@@ -239,6 +240,27 @@ describe('AI-first phase-one contracts', () => {
       specialistId: 'player-specialist',
       candidateRank: 1,
     }).candidateType).toBe('specialist');
+  });
+
+  it('allows recommendations grounded in authorized facts or visible events', () => {
+    const factGrounded = {
+      id: 'recommendation-secure-door',
+      label: 'Secure the door',
+      rationale: 'The visible door is currently unlocked.',
+      basedOnFactIds: ['fact.object.front_door.locked'],
+      basedOnEventIds: [],
+    };
+    expect(RecommendationCandidateSchema.parse(factGrounded)).toEqual(factGrounded);
+    expect(RecommendationCandidateSchema.parse({
+      ...factGrounded,
+      basedOnFactIds: [],
+      basedOnEventIds: ['event.front-door-observed'],
+    }).basedOnEventIds).toEqual(['event.front-door-observed']);
+    expect(RecommendationCandidateSchema.safeParse({
+      ...factGrounded,
+      basedOnFactIds: [],
+      basedOnEventIds: [],
+    }).success).toBe(false);
   });
 
   it('requires observations to expose structured assertions from explicit source events', () => {

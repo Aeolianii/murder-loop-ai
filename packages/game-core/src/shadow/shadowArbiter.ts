@@ -639,6 +639,11 @@ function validateProposal(
   })) {
     reasons.add('clue_visible_assertion_not_observed');
   }
+  if (proposal.recommendations.some((recommendation) => (
+    recommendation.basedOnFactIds.some((id) => !authorizedFacts.has(id))
+  ))) {
+    reasons.add('recommendation_fact_unauthorized');
+  }
   const visibleProposedEventIds = new Set(proposal.proposedEvents
     .filter((event) => event.visibility.includes('player') || event.visibility.includes('public'))
     .map((event) => event.id));

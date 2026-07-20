@@ -298,6 +298,18 @@ assert(
   ),
   'Recommendation prompt must state what it knows and how it may recommend actions.',
 );
+assert(
+  calls.at(-1)?.system.includes(
+    'A recommendation must cite at least one authorized basedOnFactIds item or one confirmed visible basedOnEventIds item.',
+  ),
+  'Recommendation prompt must explain its generic fact/event provenance rule.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    '"basedOnFactIds":["authorized-fact-id"],"basedOnEventIds":[]',
+  ),
+  'Recommendation contract example must demonstrate fact-grounded recommendations.',
+);
 
 const repairCalls: Array<{ system: string; user: unknown }> = [];
 const repairAdapters = createAiShadowAdapters(async (role, system, user) => {

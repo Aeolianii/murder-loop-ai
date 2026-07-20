@@ -376,6 +376,68 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
 }
 
 {
+  const factGroundedRecommendation = specialist(proposal({
+    id: 'proposal.specialist.recommendation.fact-grounded',
+    sourceAgent: 'recommendation-specialist',
+    domain: 'recommendation',
+    basedOnFactIds: ['fact.player.phone_battery'],
+    events: [],
+  }), 'recommendation-specialist');
+  factGroundedRecommendation.turnBriefActionIds = [];
+  factGroundedRecommendation.recommendations = [{
+    id: 'recommendation.charge-phone',
+    label: 'Charge the phone',
+    rationale: 'The visible battery fact supports keeping the phone available.',
+    basedOnFactIds: ['fact.player.phone_battery'],
+    basedOnEventIds: [],
+  }];
+
+  const recommendationReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [],
+    specialistCandidates: [factGroundedRecommendation],
+    requiredDomains: ['recommendation'],
+    sourcePolicies: {
+      'recommendation-specialist': {
+        allowedDomains: ['recommendation'],
+        authorizedFactIds: ['fact.player.phone_battery'],
+      },
+    },
+    availableEvidenceRefs: ['fact.player.phone_battery'],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  assert.deepEqual(recommendationReport.selectedProposalIds, [factGroundedRecommendation.id]);
+
+  const unauthorizedRecommendation = structuredClone(factGroundedRecommendation);
+  unauthorizedRecommendation.id = 'proposal.specialist.recommendation.unauthorized-fact';
+  unauthorizedRecommendation.recommendations[0].basedOnFactIds = ['fact.killer.private_plan'];
+  const unauthorizedRecommendationReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [],
+    specialistCandidates: [unauthorizedRecommendation],
+    requiredDomains: ['recommendation'],
+    sourcePolicies: {
+      'recommendation-specialist': {
+        allowedDomains: ['recommendation'],
+        authorizedFactIds: ['fact.player.phone_battery'],
+      },
+    },
+    availableEvidenceRefs: ['fact.player.phone_battery'],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  assert(unauthorizedRecommendationReport.rejectedProposals.some((item) => (
+    item.proposalId === unauthorizedRecommendation.id
+    && item.reasonCodes.includes('recommendation_fact_unauthorized')
+  )));
+}
+
+{
   const photoAssertionId = 'assertion.package.exterior.photo_captured';
   const photoEvent = proposedEvent('event.shadow.photo-observed', 'photograph');
   photoEvent.assertions = [{
@@ -709,6 +771,7 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
     id: 'recommendation.unsafe',
     label: 'Use hidden knowledge',
     rationale: 'A hidden event said so.',
+    basedOnFactIds: [],
     basedOnEventIds: [unsafeClue.proposedEvents[0].id],
   }];
 

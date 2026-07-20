@@ -234,8 +234,15 @@ export const RecommendationCandidateSchema = z.object({
   id: IdSchema,
   label: z.string().min(1),
   rationale: z.string().min(1),
-  basedOnEventIds: z.array(IdSchema).min(1),
-}).strict();
+  basedOnFactIds: z.array(IdSchema),
+  basedOnEventIds: z.array(IdSchema),
+}).strict().refine((recommendation) => (
+  recommendation.basedOnFactIds.length > 0
+  || recommendation.basedOnEventIds.length > 0
+), {
+  message: 'A recommendation requires at least one fact or event source.',
+  path: ['basedOnFactIds'],
+});
 
 export const DisplayFragmentSchema = z.object({
   id: IdSchema,

@@ -286,6 +286,7 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     'Use only these mechanism-level event kinds: action, state_transition, information_transfer, observation, timer, ending. Story entities and outcomes belong in actorId, targetIds, operation, and structured assertions; never create a story-specific event kind.',
     'Every proposed event actorId must equal the proposal actorId. Describe attempted, completed, blocked, or failed outcomes with status. Use operation for the reusable mechanic, such as move, enter, attack, change_status, communicate, observe, destroy, advance_time, or resolve_ending.',
     'Every proposed event must list the TurnBrief actions it resolves in sourceActionIds. sourceActionIds must be a subset of the candidate turnBriefActionIds. Autonomous specialist events use []. For a player candidate, every TurnBrief action must be covered by at least one completed, blocked, or failed event; attempted alone does not resolve an action.',
+    'A recommendation must cite at least one authorized basedOnFactIds item or one confirmed visible basedOnEventIds item. Current-state advice should cite exact IDs from projection.factIds; never fabricate an event ID merely to satisfy provenance.',
     'Never jump directly to a high-impact result. A resolved action cites its attempted causal parent when applicable; a state transition cites the action or prior transition that caused it; an ending cites a terminal parent. Every high-risk event must cite at least one causal ancestor and at least one independent fact, capability, or invariant from projection.facts or projection.canonicalConstraints.',
     'Every candidate object is strict. Every key in the following contract is required. Use [] for every array field that has no grounded items. Do not add keys that are not shown in the contract.',
     'Do not copy sample IDs or facts. Copy envelope values from user.envelope and compilerVersion/schemaVersion from user.projection. confidence must be between 0 and 1.',
@@ -381,7 +382,8 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
       id: 'recommendation-1',
       label: 'short action label',
       rationale: 'grounded rationale',
-      basedOnEventIds: ['visible-event-id'],
+      basedOnFactIds: ['authorized-fact-id'],
+      basedOnEventIds: [],
     })}`,
     `displayFragments item: ${JSON.stringify({
       id: 'display-1',
