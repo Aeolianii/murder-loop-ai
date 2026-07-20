@@ -351,10 +351,16 @@ function validateShadowTakeoverGate(
   }
   const arbitration = wave.arbitration;
   if (!arbitration) return bypass('arbitration_unavailable');
+  const rejectedProposalIds = new Set(
+    arbitration.rejectedProposals.map((proposal) => proposal.proposalId),
+  );
+  const hasUnattributedTransitionViolation = arbitration.transition.violations.some(
+    (violation) => !rejectedProposalIds.has(violation.subjectId),
+  );
   if (
     arbitration.transition.requiresRepair
     || arbitration.transition.requiresPlayerClarification
-    || arbitration.transition.violations.length > 0
+    || hasUnattributedTransitionViolation
     || arbitration.transition.fallbackDomains.includes('player')
   ) {
     return bypass('arbitration_not_clean');
@@ -369,6 +375,7 @@ function validateShadowTakeoverGate(
     && arbitration.selectedProposalIds.includes(candidate.id)
   ));
   if (!proposal) return bypass('selected_player_proposal_missing');
+  if (rejectedProposalIds.has(proposal.id)) return bypass('arbitration_not_clean');
   if (
     proposal.riskClass !== 'reversible'
     || proposal.proposedEvents.some((event) => event.riskClass !== 'reversible')

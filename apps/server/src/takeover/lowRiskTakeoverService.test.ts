@@ -186,6 +186,51 @@ if (prepared.status !== 'prepared') throw new Error('expected takeover preparati
 assert.equal(prepared.prepared.sourceProposalId, 'proposal.player.selected');
 assert.equal(prepared.prepared.playerResult.state.room.front_door.state.chainLocked, true);
 
+const specialistReplacementWave = wave();
+const rejectedMainProposal = {
+  ...playerProposal(),
+  id: 'proposal.player.main-rejected',
+  sourceAgent: 'main-world-model',
+};
+specialistReplacementWave.mainProposals = [rejectedMainProposal];
+specialistReplacementWave.arbitration!.rejectedProposals = [{
+  proposalId: rejectedMainProposal.id,
+  sourceAgent: rejectedMainProposal.sourceAgent,
+  domain: rejectedMainProposal.domain,
+  reasonCodes: ['unauthorized_fact_reference'],
+}];
+specialistReplacementWave.arbitration!.transition.violations = [{
+  code: 'unauthorized_fact_reference',
+  subjectId: rejectedMainProposal.id,
+  detail: 'Rejected main proposal cited a fact outside its authority projection.',
+}];
+const specialistReplacementService = createLowRiskTakeoverService();
+const specialistReplacement = await specialistReplacementService.prepare(
+  session(specialistReplacementWave),
+  state,
+);
+assert.equal(
+  specialistReplacement.status,
+  'prepared',
+  'an audited rejected candidate must not block a valid same-domain Specialist replacement',
+);
+specialistReplacementService.discard(envelope.turnId);
+
+const unsafeTransitionWave = wave();
+unsafeTransitionWave.arbitration!.transition.violations = [{
+  code: 'unattributed_transition_violation',
+  subjectId: 'transition',
+  detail: 'A transition-level violation is not explained by an unselected rejected proposal.',
+}];
+const unsafeTransition = await createLowRiskTakeoverService().prepare(
+  session(unsafeTransitionWave),
+  state,
+);
+assert.equal(unsafeTransition.status, 'bypassed');
+if (unsafeTransition.status === 'bypassed') {
+  assert.equal(unsafeTransition.reason, 'arbitration_not_clean');
+}
+
 const committed = await service.commit(envelope.turnId, {
   ...prepared.prepared.playerResult.state,
   threat: 41,
