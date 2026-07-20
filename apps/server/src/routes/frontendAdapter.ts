@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { ActionPlanSchema, KillerStrategySchema, NarrationSchema } from '@murder-loop-ai/ai-contracts';
 import { clueBook } from '@murder-loop-ai/content';
-import { buildParserContext, chooseFallbackKillerStrategy, createFallbackActionNarrationFromConfirmedFacts, createFallbackAmbientNarrationFromConfirmedFacts, createHarness, createInitialGameState, fallbackParseAction, resolveTurnHarness } from '@murder-loop-ai/game-core';
+import { buildParserContext, chooseFallbackKillerStrategy, createFallbackActionNarrationFromConfirmedFacts, createFallbackAmbientNarrationFromConfirmedFacts, createHarness, createInitialGameState, fallbackParseAction, resolveLegacyTurnHarness } from '@murder-loop-ai/game-core';
 import type { AiAdapters, DirectorContext, KillerContext } from '@murder-loop-ai/game-core';
 import { minuteLabel, type ActionPlan, type GameState, type KillerStrategy, type Narration, type NarrationContext, type RecommendedAction, type RuleResult, type StoryLogEntry, type TurnResolution } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
@@ -342,7 +342,7 @@ export async function frontendAdapterRoute(app: FastifyInstance, options: Fronte
     const beforeLogLength = baseState.log.length;
     const adapterBundle = options.createAiAdapters?.(actionText, baseState) ?? createFrontendHarnessAdapters(actionText, baseState);
     const harness = createHarness(adapterBundle.aiAdapters);
-    const resolution = await resolveTurnHarness(baseState, actionText, harness);
+    const resolution = await resolveLegacyTurnHarness(baseState, actionText, harness);
     const finalState = resolution.finalState;
     const outcomeWarnings = collectNarrationOutcomeWarnings(
       resolution.actionNarration,

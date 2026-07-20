@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
-  createHarness, normalizeLoopMemory, resolveMinimumPlayableTurn, resolveTurnHarness,
+  createHarness, normalizeLoopMemory, resolveLegacyTurnHarness, resolveMinimumPlayableTurn,
   resolveTurnHarnessFromPreparedPlayerTurn,
   type AiAdapters,
   type HarnessOptions,
@@ -680,7 +680,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         minimumPlayableFallback: 'ai_unavailable_only',
       };
     }
-    resolution ??= await resolveTurnHarness(state, input, harness);
+    resolution ??= await resolveLegacyTurnHarness(state, input, harness);
     if (shadowSession && shadowCoordinator) {
       void shadowCoordinator.complete(shadowSession, resolution);
     }

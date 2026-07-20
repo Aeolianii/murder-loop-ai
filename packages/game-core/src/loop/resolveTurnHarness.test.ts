@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
 import { DEADLINE_MINUTE, type ActionPlan, type RecommendedAction } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
-import { createHarness, resolveTurnHarness, resolveTurnHarnessFromPreparedPlayerTurn } from './resolveTurn';
+import {
+  createHarness,
+  resolveLegacyTurnHarness,
+  resolveTurnHarness,
+  resolveTurnHarnessFromPreparedPlayerTurn,
+} from './resolveTurn';
 import { createInitialWorldState } from '../world/worldSimulator';
 import { buildKillerContext, buildNpcVisibleContext } from '../context/ContextBuilder';
 import type { NpcAdapter } from '../world/npcTypes';
@@ -349,12 +354,11 @@ async function testParserTimeCostCanAdvanceUpToFiveMinutes() {
   assert.equal(resolution.finalState.minute, startMinute + 5);
 }
 
-async function testStoryNodeShortCircuitsAfterParser() {
+async function testStoryNodeShortCircuitIsLegacyOnly() {
   const state = createInitialGameState();
   state.phoneBattery = 20;
   state.phoneFunctional = true;
-  const harness = createHarness({
-    parseAction: async () => ({
+  const parseAction = async () => ({
       id: 'plan-call',
       raw: '打电话给林越',
       summary: '用手机联系林越',
@@ -371,10 +375,10 @@ async function testStoryNodeShortCircuitsAfterParser() {
       }],
       confidence: 0.96,
       warnings: [],
-    }),
-  });
+    });
+  const harness = createHarness({ parseAction });
 
-  const resolution = await resolveTurnHarness(state, '打电话给林越', harness);
+  const resolution = await resolveLegacyTurnHarness(state, '打电话给林越', harness);
   const traceEvents = harness.dispatcher.getTrace().map((entry) => entry.eventType);
 
   assert.equal(resolution.playerResult.title, '手机快没电了');
@@ -386,6 +390,17 @@ async function testStoryNodeShortCircuitsAfterParser() {
   assert.ok(!traceEvents.includes('ActionParsed'));
   assert.ok(!traceEvents.includes('RulesApplied'));
   assert.ok(!traceEvents.includes('NarrationRequested'));
+
+  const formalHarness = createHarness({ parseAction });
+  const formalResolution = await resolveTurnHarness(state, '打电话给林越', formalHarness);
+  const formalTraceEvents = formalHarness.dispatcher.getTrace().map((entry) => entry.eventType);
+  assert.equal(formalResolution.finalState.minute > state.minute, true);
+  assert.equal(
+    formalResolution.finalState.clues.some((clue) => clue.id === 'battery_critical'),
+    false,
+  );
+  assert.ok(formalTraceEvents.includes('ActionParsed'));
+  assert.ok(formalTraceEvents.includes('RulesApplied'));
 }
 
 async function testLinYueWarningAfterRetractionReachesPoliceAssistPhase() {
@@ -1341,7 +1356,7 @@ await testReviveProtectionBlocksImmediateForcedEntryDeath();
 await testReviveProtectionBlocksDeadlineDeathOnFirstTurn();
 await testParserTimeCostAdvancesOneMinuteForSimpleAction();
 await testParserTimeCostCanAdvanceUpToFiveMinutes();
-await testStoryNodeShortCircuitsAfterParser();
+await testStoryNodeShortCircuitIsLegacyOnly();
 await testLinYueWarningAfterRetractionReachesPoliceAssistPhase();
 await testResolveTurnHarnessPersistsSyncedWorldState();
 await testResolveTurnHarnessAppliesPlayerWorldInputs();

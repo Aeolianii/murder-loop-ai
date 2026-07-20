@@ -834,8 +834,25 @@ async function finalizeHarnessTurn(
 /**
  * Runs one player turn through the Harness pipeline.
  * Deterministic stages own state changes; AI stages return proposals or render artifacts.
+ * Story material cannot short-circuit the player's confirmed action.
  */
 export async function resolveTurnHarness(
+  state: GameState,
+  input: string,
+  harness: HarnessRuntime,
+): Promise<TurnResolution> {
+  const parsedTurn = await parseHarnessTurn(state, input, harness);
+  const resolvedTurn = await resolveRuleStages(parsedTurn, harness);
+  const narratedTurn = await renderHarnessTurn(resolvedTurn, harness);
+  dispatchNarrationCritic(narratedTurn, harness);
+  return finalizeHarnessTurn(narratedTurn, harness);
+}
+
+/**
+ * Rollback adapter for the pre-phase-six turn path.
+ * It intentionally preserves StoryNode short-circuit behavior while the phase-six flag is off.
+ */
+export async function resolveLegacyTurnHarness(
   state: GameState,
   input: string,
   harness: HarnessRuntime,
