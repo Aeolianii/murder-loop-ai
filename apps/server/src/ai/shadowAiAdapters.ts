@@ -1,5 +1,6 @@
 import {
   SemanticCompilerResultSchema,
+  WORLD_MODEL_SCHEMA_VERSION,
   type SemanticCompilerRequest,
   type TurnEnvelope,
 } from '@murder-loop-ai/ai-contracts';
@@ -139,7 +140,7 @@ function semanticCompilerPrompt(): string {
     'An unknown answer or future outcome is not an input ambiguity. Preserve it as communication content or desiredOutcome; do not ask the player to supply the answer that another actor is being asked to provide.',
     'Canonical executable operation IDs: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait. Use a canonical ID whenever its meaning matches the requested action; otherwise preserve the unsupported intent with a concise snake_case operation instead of forcing it into an incorrect capability.',
     'All outgoing speech, questions, replies, calls, and messages use operation="communicate"; use operation="photograph" for image capture. A question carried by a message is communication content, not a separate action. Put its recipients, channel, attachments, audience, and contentSummary in one communications item tied to that actionId.',
-    'Echo loopId, turnId, inputStateVersion, and deadlineAt exactly. Use compilerVersion="semantic-compiler-v1" and schemaVersion="world-model-v1".',
+    `Echo loopId, turnId, inputStateVersion, and deadlineAt exactly. Use compilerVersion="semantic-compiler-v1" and schemaVersion="${WORLD_MODEL_SCHEMA_VERSION}".`,
     'Return valid json only.',
     'Every object is strict. Every key shown below is required unless explicitly marked optional. Use [] for every array field that has no grounded items. Do not add keys that are not shown in the contract.',
     'Do not copy sample IDs or text. Replace them with values grounded in the current request. Omit optional keys instead of returning null.',
@@ -152,7 +153,7 @@ function semanticCompilerPrompt(): string {
         inputStateVersion: 0,
         deadlineAt: 'COPY_REQUEST_DEADLINE_AT',
         compilerVersion: 'semantic-compiler-v1',
-        schemaVersion: 'world-model-v1',
+        schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
         utteranceMode: 'command',
         resolvedReferences: [],
         orderedActions: [],
@@ -226,7 +227,7 @@ function semanticCompilerPrompt(): string {
       inputStateVersion: 0,
       deadlineAt: 'COPY_REQUEST_DEADLINE_AT',
       compilerVersion: 'semantic-compiler-v1',
-      schemaVersion: 'world-model-v1',
+      schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
       questions: ['one precise clarification question'],
       ambiguities: [{
         id: 'ambiguity-1',
@@ -244,7 +245,7 @@ function semanticCompilerPrompt(): string {
       inputStateVersion: 0,
       deadlineAt: 'COPY_REQUEST_DEADLINE_AT',
       compilerVersion: 'semantic-compiler-v1',
-      schemaVersion: 'world-model-v1',
+      schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
       reasonCode: 'compiler_unavailable',
     }),
     'Never include Canonical Truth, Killer/NPC knowledge, narration, recommendations, or free-form analysis.',
@@ -277,7 +278,7 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     'Actor actions must cite basedOnFactIds that the actor is authorized to know. Candidate communications and handles remain conditional until their prerequisite events are confirmed.',
     factAuthorizationRule,
     'A fact merely being present in projection.facts does not authorize the candidate to cite it. basedOnFactIds, fact-kind precondition refs, and clue visibleFactIds must be subsets of the authorized fact IDs.',
-    'Never use narration as evidence. Clue candidates must cite observation IDs, and every clue claim must exactly match a cited observation predicate. Recommendations must cite visible event IDs. Display fragments must cite their atomic eventRefs and claimRefs.',
+    'Never use narration as evidence. Every observation must cite its visible source events and list only canonical fact IDs exposed by those events. Clue claims are canonical fact IDs, never paraphrases, and must be exposed by the cited observations. Recommendations must cite visible event IDs. Display fragments must cite their atomic eventRefs and claimRefs.',
     'Echo the envelope and contract versions exactly. riskClass is reversible, high_impact, or irreversible. High-risk events must include deterministic evidenceRefs and causalParentIds.',
     'For phase-five physical outcomes, use only this event vocabulary: actor_moved, entry_attempted, actor_entered, entry_blocked, attack_attempted, attack_landed, attack_blocked, character_injured, character_incapacitated, character_killed, police_intervention_confirmed, character_arrested, character_fled, evidence_destruction_attempted, evidence_destroyed, deadline_reached, ending_reached. Use facts such as entry_route:front_door, location:room_503, attacker:chen_huaimin, target:player, injury:critical, actor:chen_huaimin, ending:death, and reason:forced_entry.',
     'Killer-domain proposals must use actorId="chen_huaimin". NPC proposals may author only their own actions or permanent status, except real_police may author police_intervention_confirmed and character_arrested. Environment proposals may author only deadline_reached and its ending consequence.',
@@ -341,6 +342,8 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
       value: 'observed-value',
       scope: 'visible-scope',
       basedOnEffectIds: ['effect-1'],
+      basedOnEventIds: ['event-1'],
+      visibleFactIds: ['fact-id'],
     })}`,
     `proposedEvents item: ${JSON.stringify({
       id: 'event-1',
@@ -355,9 +358,9 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     })}`,
     `clueCandidates item: ${JSON.stringify({
       id: 'clue-1',
-      claims: ['observed-predicate'],
+      claims: ['fact-id'],
       basedOnObservationIds: ['observation-1'],
-      visibleFactIds: ['authorized-fact-id'],
+      visibleFactIds: ['fact-id'],
       confidence: 1,
     })}`,
     `recommendations item: ${JSON.stringify({

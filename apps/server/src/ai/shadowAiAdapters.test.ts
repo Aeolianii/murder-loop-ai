@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import type { SemanticCompilerRequest } from '@murder-loop-ai/ai-contracts';
+import {
+  WORLD_MODEL_SCHEMA_VERSION,
+  type SemanticCompilerRequest,
+} from '@murder-loop-ai/ai-contracts';
 import { createAiShadowAdapters, type ShadowCompletion } from './shadowAiAdapters';
 
 const request: SemanticCompilerRequest = {
@@ -24,7 +27,7 @@ const brief = {
   rawInput: undefined,
   playerContext: undefined,
   compilerVersion: 'semantic-compiler-v1',
-  schemaVersion: 'world-model-v1',
+  schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
   utteranceMode: 'command' as const,
   resolvedReferences: [],
   orderedActions: [],
@@ -171,6 +174,18 @@ assert(calls.at(-1)?.system.includes('attack_landed'));
 assert(calls.at(-1)?.system.includes('character_killed'));
 assert(calls.at(-1)?.system.includes('ending_reached'));
 assert(calls.at(-1)?.system.includes('evidence_destroyed'));
+assert(calls.at(-1)?.system.includes('"basedOnEventIds"'));
+assert(calls.at(-1)?.system.includes('"visibleFactIds"'));
+assert(
+  calls.at(-1)?.system.includes(
+    'Clue claims are canonical fact IDs, never paraphrases',
+  ),
+  'Proposal prompt must use provenance fact IDs instead of matching free-form claim text.',
+);
+assert(
+  calls.at(-1)?.system.includes('"claims":["fact-id"]'),
+  'Clue contract example must cite the canonical fact exposed by its observation.',
+);
 for (const requiredField of [
   'candidateRank',
   'turnBriefActionIds',

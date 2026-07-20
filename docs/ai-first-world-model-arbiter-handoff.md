@@ -681,7 +681,7 @@ visibleFactIds
 confidence
 ```
 
-Arbiter 验证 `claims` 是 Observation 内容的子集。
+这里的 `claims` 是规范 Fact ID，不是自然语言断言。每个 Proposal Observation 必须同时提供 `basedOnEventIds` 和 `visibleFactIds`；Arbiter 先验证 Observation 的可见事实来自其引用事件，再验证 `claims` 是被引用 Observation 的 `visibleFactIds` 子集。`predicate`、`subject` 和 `value` 只描述观察，不作为跨对象引用键。
 
 只拍外包装时，可以生成标签、外观和破损信息，不能生成旧书、药盒或内部纸条。
 

@@ -3,6 +3,7 @@ import {
   ConfirmedEventSchema,
   FactSchema,
   HighRiskDecisionSchema,
+  ProposedObservationSchema,
   ProposalSchema,
   SemanticCompilerRequestSchema,
   SemanticCompilerResultSchema,
@@ -11,6 +12,7 @@ import {
   TurnBriefSchema,
   TurnCommitResultSchema,
   TurnEnvelopeSchema,
+  WORLD_MODEL_SCHEMA_VERSION,
 } from './world-model-contracts';
 
 const envelope = {
@@ -36,7 +38,7 @@ const proposal = {
   ...envelope,
   id: 'proposal-main-player',
   compilerVersion: 'semantic-compiler-v1',
-  schemaVersion: 'world-model-v1',
+  schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
   sourceAgent: 'main-world-model',
   domain: 'player',
   candidateRank: 0,
@@ -102,7 +104,7 @@ describe('AI-first phase-one contracts', () => {
     const brief = {
       ...envelope,
       compilerVersion: 'semantic-compiler-v1',
-      schemaVersion: 'world-model-v1',
+      schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
       utteranceMode: 'command',
       resolvedReferences: [{
         referenceId: 'reference-package',
@@ -180,6 +182,25 @@ describe('AI-first phase-one contracts', () => {
       specialistId: 'player-specialist',
       candidateRank: 1,
     }).candidateType).toBe('specialist');
+  });
+
+  it('requires observations to expose canonical facts from explicit source events', () => {
+    const observation = {
+      id: 'observation.package.photo',
+      subject: 'package',
+      predicate: 'photographed',
+      value: true,
+      scope: 'exterior',
+      basedOnEffectIds: ['effect-photo'],
+      basedOnEventIds: ['event.photo.created'],
+      visibleFactIds: ['fact.package.exterior_photographed'],
+    };
+
+    expect(ProposedObservationSchema.parse(observation)).toEqual(observation);
+    const { basedOnEventIds: _basedOnEventIds, ...withoutSourceEvents } = observation;
+    expect(ProposedObservationSchema.safeParse(withoutSourceEvents).success).toBe(false);
+    const { visibleFactIds: _visibleFactIds, ...withoutVisibleFacts } = observation;
+    expect(ProposedObservationSchema.safeParse(withoutVisibleFacts).success).toBe(false);
   });
 
   it('separates adjudication, high-risk gating, commit, and confirmation', () => {

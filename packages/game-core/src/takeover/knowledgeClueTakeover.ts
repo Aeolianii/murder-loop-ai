@@ -20,6 +20,7 @@ export interface KnowledgeUpdateCandidate {
 
 export interface ClueProjectionCandidate {
   id: string;
+  /** Canonical Fact IDs exposed by basedOnObservationIds. */
   claims: string[];
   basedOnObservationIds: string[];
 }

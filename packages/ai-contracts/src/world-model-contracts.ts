@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const IdSchema = z.string().min(1);
 const StateVersionSchema = z.number().int().nonnegative();
+export const WORLD_MODEL_SCHEMA_VERSION = 'world-model-v2';
 const JsonValueSchema = z.union([
   z.string(),
   z.number(),
@@ -183,6 +184,8 @@ export const ProposedObservationSchema = z.object({
   value: JsonValueSchema,
   scope: z.string().min(1),
   basedOnEffectIds: z.array(IdSchema),
+  basedOnEventIds: z.array(IdSchema).min(1),
+  visibleFactIds: z.array(IdSchema).min(1),
 }).strict();
 
 export const ProposedEventSchema = z.object({
@@ -199,6 +202,7 @@ export const ProposedEventSchema = z.object({
 
 export const ClueCandidateSchema = z.object({
   id: IdSchema,
+  // Canonical Fact IDs exposed by basedOnObservationIds, never free-form claim text.
   claims: z.array(IdSchema).min(1),
   basedOnObservationIds: z.array(IdSchema).min(1),
   visibleFactIds: z.array(IdSchema),

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import type {
-  Proposal,
-  ProposalDomain,
-  SemanticCompilerRequest,
-  SpecialistCandidate,
-  TurnBrief,
-  TurnEnvelope,
+import {
+  WORLD_MODEL_SCHEMA_VERSION,
+  type Proposal,
+  type ProposalDomain,
+  type SemanticCompilerRequest,
+  type SpecialistCandidate,
+  type TurnBrief,
+  type TurnEnvelope,
 } from '@murder-loop-ai/ai-contracts';
 import type { ActionPlan } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
@@ -29,7 +30,7 @@ function brief(turnEnvelope: TurnEnvelope): TurnBrief {
   return {
     ...turnEnvelope,
     compilerVersion: 'semantic-compiler-v1',
-    schemaVersion: 'world-model-v1',
+    schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
     utteranceMode: 'command',
     resolvedReferences: [],
     orderedActions: [{
@@ -61,7 +62,7 @@ function proposal(
     ...turnEnvelope,
     id: `proposal.${sourceAgent}.${domain}`.replace(/:/g, '.'),
     compilerVersion: 'semantic-compiler-v1',
-    schemaVersion: 'world-model-v1',
+    schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
     sourceAgent,
     domain,
     candidateRank: rank,

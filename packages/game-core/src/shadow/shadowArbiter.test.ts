@@ -178,6 +178,155 @@ assert(report.rejectedProposals.some((item) => (
   item.proposalId === invalidClue.id && item.reasonCodes.includes('observation_source_missing')
 )));
 assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'event.shadow.photo'), true);
+
+{
+  const photoFactId = 'fact.package.exterior.photo_captured';
+  const photoEvent = proposedEvent('event.shadow.photo-observed', 'package_photographed');
+  photoEvent.facts = [photoFactId];
+  const provenanceClue = proposal({
+    id: 'proposal.provenance-clue',
+    sourceAgent: 'main-world-model',
+    domain: 'clue',
+    events: [photoEvent],
+  });
+  provenanceClue.observations = [{
+    id: 'observation.package.photo',
+    subject: 'package',
+    predicate: 'photographed',
+    value: true,
+    scope: 'exterior',
+    basedOnEffectIds: [],
+    basedOnEventIds: [photoEvent.id],
+    visibleFactIds: [photoFactId],
+  }];
+  provenanceClue.clueCandidates = [{
+    id: 'clue.package-photo',
+    claims: [photoFactId],
+    basedOnObservationIds: ['observation.package.photo'],
+    visibleFactIds: [photoFactId],
+    confidence: 1,
+  }];
+
+  const provenanceReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [provenanceClue],
+    specialistCandidates: [],
+    requiredDomains: ['clue'],
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['clue'],
+        authorizedFactIds: [photoFactId],
+      },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+
+  assert.deepEqual(
+    provenanceReport.selectedProposalIds,
+    [provenanceClue.id],
+    'a clue must cite canonical facts exposed by its source observation, not repeat its predicate text',
+  );
+}
+
+{
+  const harmlessFactId = 'fact.package.contains_harmless_item';
+  const harmlessEvent = proposedEvent('event.shadow.harmless-observed', 'inspection_completed');
+  harmlessEvent.facts = [harmlessFactId];
+  const ambiguousPredicateClue = proposal({
+    id: 'proposal.ambiguous-predicate-clue',
+    sourceAgent: 'main-world-model',
+    domain: 'clue',
+    events: [harmlessEvent],
+  });
+  ambiguousPredicateClue.observations = [{
+    id: 'observation.package.contents',
+    subject: 'package',
+    predicate: 'contains',
+    value: 'harmless_item',
+    scope: 'interior',
+    basedOnEffectIds: [],
+    basedOnEventIds: [harmlessEvent.id],
+    visibleFactIds: [harmlessFactId],
+  }];
+  ambiguousPredicateClue.clueCandidates = [{
+    id: 'clue.ambiguous-contains',
+    claims: ['contains'],
+    basedOnObservationIds: ['observation.package.contents'],
+    visibleFactIds: [harmlessFactId],
+    confidence: 1,
+  }];
+
+  const ambiguousPredicateReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [ambiguousPredicateClue],
+    specialistCandidates: [],
+    requiredDomains: ['clue'],
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['clue'],
+        authorizedFactIds: [harmlessFactId, 'contains'],
+      },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+
+  const rejection = ambiguousPredicateReport.rejectedProposals.find(
+    (item) => item.proposalId === ambiguousPredicateClue.id,
+  );
+  assert(
+    rejection?.reasonCodes.includes('clue_claim_not_observed'),
+    'matching only predicate text must not authorize a clue that ignores the observed subject and value',
+  );
+}
+
+{
+  const malformedObservationProposal = proposal({
+    id: 'proposal.malformed-observation',
+    sourceAgent: 'main-world-model',
+    domain: 'clue',
+    events: [proposedEvent('event.shadow.malformed-observation', 'inspection_completed')],
+  });
+  malformedObservationProposal.observations = [{
+    id: 'observation.missing-provenance',
+    subject: 'package',
+    predicate: 'contains',
+    value: 'unknown',
+    scope: 'interior',
+    basedOnEffectIds: [],
+  }] as unknown as typeof malformedObservationProposal.observations;
+
+  assert.doesNotThrow(() => {
+    const malformedReport = runShadowArbiter({
+      envelope,
+      compilerVersion: 'semantic-compiler-v1',
+      schemaVersion: 'world-model-v1',
+      mainProposals: [malformedObservationProposal],
+      specialistCandidates: [],
+      requiredDomains: ['clue'],
+      sourcePolicies: {
+        'main-world-model': {
+          allowedDomains: ['clue'],
+          authorizedFactIds: [],
+        },
+      },
+      availableEvidenceRefs: [],
+      availableObservationIds: [],
+      visibleConfirmedEventIds: [],
+    });
+    const rejection = malformedReport.rejectedProposals.find(
+      (item) => item.proposalId === malformedObservationProposal.id,
+    );
+    assert.deepEqual(rejection?.reasonCodes, ['schema_invalid']);
+  }, 'schema-invalid observations must be rejected without dereferencing missing provenance fields');
+}
 assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'event.shadow.killer_death_claim'), true);
 
 const arbitrationMetrics = buildShadowArbitrationMetrics(report, 5, 4);
@@ -269,6 +418,8 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
     value: 'secret-note',
     scope: 'interior',
     basedOnEffectIds: ['effect.missing'],
+    basedOnEventIds: ['event.missing'],
+    visibleFactIds: ['fact.killer.private_memory'],
   }];
   unsafeClue.clueCandidates = [{
     id: 'clue.unsafe',

@@ -2,6 +2,7 @@ import {
   ProposalSchema,
   SemanticCompilerResultSchema,
   SpecialistCandidateSchema,
+  WORLD_MODEL_SCHEMA_VERSION,
   type CompactPlayerContext,
   type Proposal,
   type ProposalDomain,
@@ -333,7 +334,7 @@ function buildCompilerFallbackBrief(envelope: TurnEnvelope): TurnBrief {
   return {
     ...envelope,
     compilerVersion: 'semantic-compiler-fallback-v1',
-    schemaVersion: 'world-model-v1',
+    schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
     utteranceMode: 'command',
     resolvedReferences: [],
     orderedActions: [],

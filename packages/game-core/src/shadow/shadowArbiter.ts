@@ -30,7 +30,7 @@ export interface ShadowArbiterInput {
   sourcePolicies: Record<string, ShadowSourcePolicy>;
   availableEvidenceRefs: string[];
   availableObservationIds: string[];
-  availableObservationClaims?: Record<string, string[]>;
+  availableObservationFactIds?: Record<string, string[]>;
   visibleConfirmedEventIds: string[];
 }
 
@@ -433,9 +433,9 @@ function validateProposal(
   input: ShadowArbiterInput,
   specialist: boolean,
 ): string[] {
-  const reasons = new Set<string>();
   const schema = specialist ? SpecialistCandidateSchema : ProposalSchema;
-  if (!schema.safeParse(proposal).success) reasons.add('schema_invalid');
+  if (!schema.safeParse(proposal).success) return ['schema_invalid'];
+  const reasons = new Set<string>();
   if (
     proposal.loopId !== input.envelope.loopId
     || proposal.turnId !== input.envelope.turnId
@@ -479,17 +479,17 @@ function validateProposal(
   ))) {
     reasons.add('observation_source_missing');
   }
-  const observationClaims = new Map<string, Set<string>>(
-    Object.entries(input.availableObservationClaims ?? {}).map(([id, claims]) => [id, new Set(claims)]),
+  const observationFactIds = new Map<string, Set<string>>(
+    Object.entries(input.availableObservationFactIds ?? {}).map(([id, factIds]) => [id, new Set(factIds)]),
   );
   for (const observation of proposal.observations) {
-    observationClaims.set(observation.id, new Set([observation.predicate]));
+    observationFactIds.set(observation.id, new Set(observation.visibleFactIds));
   }
   if (proposal.clueCandidates.some((clue) => {
-    const observedClaims = new Set(clue.basedOnObservationIds.flatMap((id) => (
-      [...(observationClaims.get(id) ?? [])]
+    const observedFactIds = new Set(clue.basedOnObservationIds.flatMap((id) => (
+      [...(observationFactIds.get(id) ?? [])]
     )));
-    return clue.claims.some((claim) => !observedClaims.has(claim));
+    return clue.claims.some((claim) => !observedFactIds.has(claim));
   })) {
     reasons.add('clue_claim_not_observed');
   }
@@ -500,6 +500,35 @@ function validateProposal(
     observation.basedOnEffectIds.some((id) => !proposedEffectIds.has(id))
   ))) {
     reasons.add('observation_effect_reference_invalid');
+  }
+  const proposedEventsById = new Map(proposal.proposedEvents.map((event) => [event.id, event]));
+  if (proposal.observations.some((observation) => (
+    observation.basedOnEventIds.some((id) => !proposedEventIds.has(id))
+  ))) {
+    reasons.add('observation_event_reference_invalid');
+  }
+  if (proposal.observations.some((observation) => {
+    const sourceEvents = observation.basedOnEventIds
+      .map((id) => proposedEventsById.get(id))
+      .filter((event): event is ProposedEvent => Boolean(event));
+    if (sourceEvents.length !== observation.basedOnEventIds.length) return false;
+    if (sourceEvents.some((event) => (
+      !event.visibility.includes('player') && !event.visibility.includes('public')
+    ))) {
+      return true;
+    }
+    const sourceFactIds = new Set(sourceEvents.flatMap((event) => event.facts));
+    return observation.visibleFactIds.some((factId) => !sourceFactIds.has(factId));
+  })) {
+    reasons.add('observation_fact_reference_invalid');
+  }
+  if (proposal.clueCandidates.some((clue) => {
+    const observedFactIds = new Set(clue.basedOnObservationIds.flatMap((id) => (
+      [...(observationFactIds.get(id) ?? [])]
+    )));
+    return clue.visibleFactIds.some((factId) => !observedFactIds.has(factId));
+  })) {
+    reasons.add('clue_visible_fact_not_observed');
   }
   if (proposal.clueCandidates.some((clue) => (
     clue.visibleFactIds.some((id) => !authorizedFacts.has(id))

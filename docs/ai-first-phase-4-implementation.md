@@ -48,7 +48,7 @@
 
 ## Arbiter 加固
 
-Shadow Arbiter 除了检查 Clue 是否引用已知 Observation，现在还检查每个 claim 是否精确匹配被引用 Observation 的 predicate。`availableObservationClaims` 为历史 Observation 提供可验证 claim 集；没有可验证内容的 Observation ID 不能单独授权任意 claim。
+Shadow Arbiter 除了检查 Clue 是否引用已知 Observation，还要求每个 claim 引用被引用 Observation 暴露的规范事实 ID。`availableObservationFactIds` 为历史 Observation 提供可验证事实集合；没有可验证事实的 Observation ID 不能单独授权任意 claim。自然语言 predicate、subject 和 value 仅描述观察，不再充当事实外键。
 
 正式阶段四投影会再做一次独立确定性校验。Shadow 选中不等于正式生效，只有 Atomic Turn Commit 成功后才能称为 Confirmed Event / Knowledge / Observation / Clue。
 
