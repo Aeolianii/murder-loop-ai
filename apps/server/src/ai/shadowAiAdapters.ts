@@ -269,10 +269,11 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
         specialistId: sourceAgent,
       };
   const factAuthorizationRule = sourceAgent === 'main-world-model'
-    ? 'For each main-world-model candidate, derive its authority viewer from the proposal domain, without using story-specific names: player, clue, and recommendation use "player"; killer uses "killer"; npc uses candidate.actorId; environment uses "public"; world uses "system". A fact is authorized only when its knownBy or visibleTo contains that authority viewer, or its visibleTo contains "public".'
+    ? 'projection.proposalAuthority is the deterministic authority manifest derived from the proposal domain without story-specific names. For a Main player candidate, basedOnFactIds and fact-kind preconditions must use only projection.proposalAuthority.authorizedFactIds, and actor-controlled operations must use only projection.proposalAuthority.authorizedOperations.'
     : 'projection.factIds is the complete authorized fact set for this specialist. Cite only fact IDs from that set.';
   return [
     `You are ${sourceAgent}, generating Shadow Run candidates for domain ${domain}.`,
+    proposalRoleDirective(sourceAgent, domain),
     'The output is a proposal only. It has zero authority and must never claim that state was committed.',
     'Use only projection.facts, projection.conditionalSignals, conditional communications, and the TurnBrief fields present in this projection.',
     'Actor actions must cite basedOnFactIds that the actor is authorized to know. Candidate communications and handles remain conditional until their prerequisite events are confirmed.',
@@ -397,4 +398,34 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
       : `Return JSON {"candidates":[...]} with exactly one candidate object. sourceAgent and specialistId must both be "${sourceAgent}", candidateType must be "specialist", and domain must be "${domain}". Return one schema-valid no_op candidate with empty effect/event/display arrays when this domain has no grounded action; never return an empty candidates array.`,
     'Do not wrap JSON in markdown and do not add commentary.',
   ].join('\n');
+}
+
+function proposalRoleDirective(sourceAgent: string, domain: string): string {
+  if (sourceAgent === 'main-world-model') {
+    return [
+      'You are the Main World Model. Convert every compiled player action into a complete candidate event graph in TurnBrief order.',
+      'You know projection.facts only for world coherence. projection.proposalAuthority.authorizedFactIds is the exact fact allowlist for basedOnFactIds and fact preconditions, and authorizedOperations is the exact operation allowlist.',
+      'Facts outside that allowlist must not be exposed through assertions, observations, summaries, recommendations, or display text.',
+      'Follow the TurnBrief, proposal authority, capability, causality, visibility, and risk logic. Output proposed results of the player request; do not invent a different next action.',
+    ].join(' ');
+  }
+  if (domain === 'recommendation') {
+    return 'You are the Recommendation Specialist. Use only player-visible facts and confirmed visible event anchors to recommend useful player actions. Recommendations are non-authoritative and must never invent a world-state change.';
+  }
+  if (domain === 'player') {
+    return 'You are the Player Specialist. You know the compiled player request and player-visible fact projection. Resolve every ordered player action into grounded candidate events without inventing hidden knowledge.';
+  }
+  if (domain === 'killer') {
+    return 'You are the Killer Specialist. You know only the killer fact projection and observable conditional signals. Propose the actor next behavior from capabilities and causal constraints, never from hidden player intent.';
+  }
+  if (domain === 'npc') {
+    return 'You are an NPC Specialist. You know only this actor fact projection and delivered communications. Propose this actor next behavior from capabilities, knowledge, and visible signals.';
+  }
+  if (domain === 'environment') {
+    return 'You are the Environment Specialist. You know public environment facts and confirmed signals. Propose only grounded environmental transitions.';
+  }
+  if (domain === 'clue') {
+    return 'You are the Clue Specialist. You know only player-visible observations and assertions. Propose clues only when their assertion provenance is complete.';
+  }
+  return `You are the ${domain} Specialist. Use only the supplied projection and generic causal rules.`;
 }

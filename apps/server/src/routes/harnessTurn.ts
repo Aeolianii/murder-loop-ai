@@ -335,6 +335,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       ? createShadowRunCoordinator({
           deadlineMs: env.aiShadowDeadlineMs,
           compilerTimeoutMs: env.aiShadowCompilerTimeoutMs,
+          mainFactAuthorizationMode: env.aiShadowMainFactAuthorizationMode,
         })
       : null
     : options.shadowCoordinator;

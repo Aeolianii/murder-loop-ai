@@ -52,6 +52,9 @@ export const env = {
   aiLegacyMainPathExitEnabled: process.env.AI_LEGACY_MAIN_PATH_EXIT_ENABLED === 'true',
   aiShadowDeadlineMs: positiveInteger(process.env.AI_SHADOW_DEADLINE_MS, 6_000),
   aiShadowCompilerTimeoutMs: positiveInteger(process.env.AI_SHADOW_COMPILER_TIMEOUT_MS, 1_000),
+  aiShadowMainFactAuthorizationMode: process.env.AI_SHADOW_MAIN_FACT_AUTH_MODE === 'advisory_for_reversible_player'
+    ? 'advisory_for_reversible_player' as const
+    : 'strict' as const,
 };
 
 function positiveInteger(value: string | undefined, fallback: number): number {

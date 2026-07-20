@@ -27,6 +27,7 @@ import {
   type ShadowArbiterReport,
   type ShadowArbitrationMetrics,
   type ShadowDifferenceReport,
+  type ShadowFactAuthorizationMode,
   type ShadowSourcePolicy,
 } from './shadowArbiter';
 import type { SimulatedShadowCommit } from './shadowArbiter';
@@ -101,6 +102,7 @@ export interface RunShadowCandidateWaveInput {
   npcIds: string[];
   canonicalConstraints: string[];
   compilerTimeoutMs?: number;
+  mainFactAuthorizationMode?: ShadowFactAuthorizationMode;
 }
 
 export interface SemanticDifference {
@@ -240,6 +242,7 @@ export async function runShadowCandidateWave(
     knowledge,
     intentProjections,
     input.adapters.specialists,
+    input.mainFactAuthorizationMode ?? 'strict',
   );
   const arbitration = runShadowArbiter({
     envelope: input.envelope,
@@ -647,6 +650,7 @@ function buildSourcePolicies(
   knowledge: KnowledgeProjections,
   projections: IntentProjections,
   specialists: ShadowSpecialistRegistration[],
+  mainFactAuthorizationMode: ShadowFactAuthorizationMode,
 ): Record<string, ShadowSourcePolicy> {
   const authorizedFactIdsByActor: Record<string, string[]> = {};
   const authorizedOperationsByActor: Record<string, string[]> = {};
@@ -699,6 +703,7 @@ function buildSourcePolicies(
       authorizedFactIdsByActor,
       authorizedOperationsByActor,
       enforceCapabilityChecks: true,
+      factAuthorizationMode: mainFactAuthorizationMode,
     },
   };
   for (const registration of specialists) {

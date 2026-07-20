@@ -133,6 +133,12 @@ const projections = projectTurnIntent({
 
 assert.equal(projections.mainWorldModel.turnBrief, brief);
 assert.equal(projections.mainWorldModel.facts.length, facts.length);
+assert.deepEqual(projections.mainWorldModel.proposalAuthority, {
+  domain: 'player',
+  actorId: 'player',
+  authorizedFactIds: ['fact.player.has_phone', 'fact.weather.rain'],
+  authorizedOperations: [],
+});
 assert.deepEqual(
   projections.mainWorldModel.canonicalStoryMaterial.map((material) => material.id),
   ['material.handoff_2347'],

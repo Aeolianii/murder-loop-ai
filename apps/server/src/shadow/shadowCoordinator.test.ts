@@ -92,6 +92,7 @@ const report = {
 } as unknown as ShadowRunReport;
 
 let waveInputState = state;
+let waveInputFactAuthorizationMode: string | undefined;
 let finalizeInput: FinalizeShadowRunInput | undefined;
 const store = new ShadowReportStore(5);
 const coordinator = createShadowRunCoordinator({
@@ -103,10 +104,12 @@ const coordinator = createShadowRunCoordinator({
   store,
   deadlineMs: 6_000,
   compilerTimeoutMs: 800,
+  mainFactAuthorizationMode: 'advisory_for_reversible_player',
   now: () => new Date('2026-07-20T12:00:00.000Z'),
   createTurnId: () => 'shadow-turn-1',
   runCandidateWave: async (input) => {
     waveInputState = input.state;
+    waveInputFactAuthorizationMode = input.mainFactAuthorizationMode;
     return {
       status: 'completed',
       envelope: input.envelope,
@@ -125,6 +128,7 @@ const coordinator = createShadowRunCoordinator({
 
 const session = coordinator.start({ rawInput: 'wait', state });
 assert.notEqual(waveInputState, state, 'Shadow must run from a detached legacy-state snapshot');
+assert.equal(waveInputFactAuthorizationMode, 'advisory_for_reversible_player');
 assert.equal(session.envelope.loopId, `legacy-run-${state.run}`);
 assert.equal(session.envelope.turnId, 'shadow-turn-1');
 assert.equal(session.envelope.inputStateVersion, deriveLegacyShadowStateVersion(state));

@@ -195,6 +195,141 @@ assert(report.rejectedProposals.some((item) => (
 assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'event.shadow.photo'), true);
 
 {
+  const advisoryMain = proposal({
+    id: 'proposal.main.player.advisory-fact',
+    sourceAgent: 'main-world-model',
+    domain: 'player',
+    basedOnFactIds: ['fact.player.has_phone', 'fact.npc.private_location'],
+    events: [proposedEvent(
+      'event.shadow.advisory-photo',
+      'photograph',
+      'reversible',
+      ['fact.player.has_phone'],
+    )],
+  });
+  const advisoryReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [advisoryMain],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    requiredActionIdsByDomain: { player: ['action-1'] },
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: ['fact.player.has_phone'],
+        factAuthorizationMode: 'advisory_for_reversible_player',
+      },
+    },
+    availableEvidenceRefs: ['fact.player.has_phone'],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+
+  assert.deepEqual(advisoryReport.selectedProposalIds, [advisoryMain.id]);
+  assert.equal(advisoryReport.rejectedProposals.length, 0);
+  assert.deepEqual(advisoryReport.advisories, [{
+    proposalId: advisoryMain.id,
+    sourceAgent: advisoryMain.sourceAgent,
+    domain: advisoryMain.domain,
+    reasonCodes: ['unauthorized_fact_reference'],
+  }]);
+
+  const strictReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [advisoryMain],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    requiredActionIdsByDomain: { player: ['action-1'] },
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: ['fact.player.has_phone'],
+        factAuthorizationMode: 'strict',
+      },
+    },
+    availableEvidenceRefs: ['fact.player.has_phone'],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  assert(strictReport.rejectedProposals.some((item) => (
+    item.proposalId === advisoryMain.id
+    && item.reasonCodes.includes('unauthorized_fact_reference')
+  )));
+
+  const unauthorizedPreconditionMain = structuredClone(advisoryMain);
+  unauthorizedPreconditionMain.id = 'proposal.main.player.unauthorized-precondition';
+  unauthorizedPreconditionMain.basedOnFactIds = ['fact.player.has_phone'];
+  unauthorizedPreconditionMain.preconditions = [{
+    id: 'precondition.private-location',
+    kind: 'fact',
+    ref: 'fact.npc.private_location',
+  }];
+  const preconditionReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [unauthorizedPreconditionMain],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    requiredActionIdsByDomain: { player: ['action-1'] },
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: ['fact.player.has_phone'],
+        factAuthorizationMode: 'advisory_for_reversible_player',
+      },
+    },
+    availableEvidenceRefs: ['fact.player.has_phone'],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  assert(preconditionReport.rejectedProposals.some((item) => (
+    item.proposalId === unauthorizedPreconditionMain.id
+    && item.reasonCodes.includes('precondition_unauthorized')
+  )));
+
+  const unsafeMain = proposal({
+    id: 'proposal.main.player.unsafe-advisory-fact',
+    sourceAgent: 'main-world-model',
+    domain: 'player',
+    basedOnFactIds: ['fact.npc.private_location'],
+    events: [proposedEvent(
+      'event.shadow.unsafe-ending',
+      'resolve_ending',
+      'irreversible',
+      ['fact.player.has_phone'],
+    )],
+  });
+  const unsafeReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [unsafeMain],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    requiredActionIdsByDomain: { player: ['action-1'] },
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: ['fact.player.has_phone'],
+        factAuthorizationMode: 'advisory_for_reversible_player',
+      },
+    },
+    availableEvidenceRefs: ['fact.player.has_phone'],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+  assert(unsafeReport.rejectedProposals.some((item) => (
+    item.proposalId === unsafeMain.id
+    && item.reasonCodes.includes('unauthorized_fact_reference')
+  )));
+}
+
+{
   const incompletePlayerProposal = proposal({
     id: 'proposal.main.player.incomplete',
     sourceAgent: 'main-world-model',

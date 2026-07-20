@@ -8,6 +8,7 @@ import {
   type RunShadowCandidateWaveInput,
   type ShadowCandidateWave,
   type ShadowRunAdapters,
+  type ShadowFactAuthorizationMode,
   type ShadowRunReport,
 } from '@murder-loop-ai/game-core';
 import type { GameState, RuleEvent, TurnResolution, WorldEvent } from '@murder-loop-ai/shared';
@@ -46,6 +47,7 @@ export interface ShadowRunCoordinatorOptions {
   store?: ShadowReportStore;
   deadlineMs?: number;
   compilerTimeoutMs?: number;
+  mainFactAuthorizationMode?: ShadowFactAuthorizationMode;
   now?: () => Date;
   createTurnId?: () => string;
   runCandidateWave?: (input: RunShadowCandidateWaveInput) => Promise<ShadowCandidateWave>;
@@ -59,6 +61,7 @@ export function createShadowRunCoordinator(
   const store = options.store ?? shadowReportStore;
   const deadlineMs = positiveDuration(options.deadlineMs, 6_000);
   const compilerTimeoutMs = positiveDuration(options.compilerTimeoutMs, 1_000);
+  const mainFactAuthorizationMode = options.mainFactAuthorizationMode ?? 'strict';
   const now = options.now ?? (() => new Date());
   const createTurnId = options.createTurnId ?? (() => `shadow-${randomUUID()}`);
   const runCandidateWave = options.runCandidateWave ?? runShadowCandidateWave;
@@ -101,6 +104,7 @@ export function createShadowRunCoordinator(
         npcIds: SHADOW_NPC_IDS,
         canonicalConstraints: CANONICAL_SHADOW_CONSTRAINTS,
         compilerTimeoutMs,
+        mainFactAuthorizationMode,
       });
       return { envelope, wave };
     },

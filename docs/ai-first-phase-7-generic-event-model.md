@@ -84,6 +84,25 @@ from scenario character data. Capability ownership is indexed by the canonical
 actor subject, so viewer/communication aliases do not need story-specific
 branches in the Arbiter.
 
+## Development fact-authorization mode
+
+The Main World Model receives a deterministic `proposalAuthority` manifest with
+the exact player-authorized fact IDs and operations. Role prompts explain what
+each agent knows, which decision logic it follows, and what kind of candidate it
+must output.
+
+`AI_SHADOW_MAIN_FACT_AUTH_MODE` supports:
+
+- `strict` — reject every unauthorized fact reference;
+- `advisory_for_reversible_player` — allow Main's otherwise valid reversible
+  player proposal to continue while recording `unauthorized_fact_reference` in
+  `ShadowArbiterReport.advisories`.
+
+The advisory mode does not relax unauthorized fact preconditions, high-risk or
+irreversible events, Specialist isolation, actor ownership, capabilities,
+action coverage, causal chains, or evidence gates. It is a development switch,
+not the intended production policy.
+
 ## Compatibility boundary
 
 Legacy `DomainEvent.eventType` and `DomainEvent.facts` still exist behind the

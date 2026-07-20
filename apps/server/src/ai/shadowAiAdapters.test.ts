@@ -135,7 +135,16 @@ assert.equal(
 assert(calls[0].system.includes('resolvedReferences item:'));
 assert(calls[0].system.includes('orderedActions item:'));
 
-await adapters.mainWorldModel({ turnBrief: brief, facts: [] }, {
+await adapters.mainWorldModel({
+  turnBrief: brief,
+  facts: [],
+  proposalAuthority: {
+    domain: 'player',
+    actorId: 'player',
+    authorizedFactIds: ['fact.player.has_phone'],
+    authorizedOperations: ['wait'],
+  },
+}, {
   envelope: request,
   signal: controller.signal,
 });
@@ -143,9 +152,27 @@ assert.equal(calls.at(-1)?.role, 'world_model');
 assert(calls.at(-1)?.system.includes('"proposals"'));
 assert(
   calls.at(-1)?.system.includes(
-    'derive its authority viewer from the proposal domain, without using story-specific names',
+    'projection.proposalAuthority is the deterministic authority manifest derived from the proposal domain without story-specific names',
   ),
-  'Main World Model prompt must derive actor knowledge from generic domain authority.',
+  'Main World Model prompt must consume the deterministic generic authority manifest.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    'You are the Main World Model. Convert every compiled player action into a complete candidate event graph',
+  ),
+  'Main World Model prompt must state its concrete role and output responsibility.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    'projection.proposalAuthority.authorizedFactIds is the exact fact allowlist',
+  ),
+  'Main World Model prompt must point at an explicit local authority manifest.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    'Facts outside that allowlist must not be exposed through assertions, observations, summaries, recommendations, or display text.',
+  ),
+  'Main World Model prompt must forbid leaking non-authorized facts through output fields.',
 );
 
 assert.deepEqual(
@@ -256,6 +283,21 @@ assert.equal(
 );
 assert(calls.at(-1)?.system.includes('preconditions item:'));
 assert(calls.at(-1)?.system.includes('proposedEvents item:'));
+
+const recommendation = adapters.specialists.find(
+  (registration) => registration.id === 'recommendation-specialist',
+);
+await recommendation?.generate({ facts: [], factIds: [], conditionalSignals: [] }, {
+  envelope: request,
+  signal: controller.signal,
+});
+assert.equal(calls.at(-1)?.role, 'recommendation_specialist');
+assert(
+  calls.at(-1)?.system.includes(
+    'You are the Recommendation Specialist. Use only player-visible facts and confirmed visible event anchors',
+  ),
+  'Recommendation prompt must state what it knows and how it may recommend actions.',
+);
 
 const repairCalls: Array<{ system: string; user: unknown }> = [];
 const repairAdapters = createAiShadowAdapters(async (role, system, user) => {

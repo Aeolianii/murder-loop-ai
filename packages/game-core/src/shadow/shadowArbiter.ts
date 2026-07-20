@@ -13,6 +13,8 @@ import {
 } from '@murder-loop-ai/ai-contracts';
 import { evaluateTurnWorkFreshness, type TurnDiscardReason, type TurnFreshnessSnapshot } from '../commit/atomicTurnCommit';
 
+export type ShadowFactAuthorizationMode = 'strict' | 'advisory_for_reversible_player';
+
 export interface ShadowSourcePolicy {
   allowedDomains: ProposalDomain[];
   authorizedFactIds: string[];
@@ -22,6 +24,7 @@ export interface ShadowSourcePolicy {
   authorizedOperationsByDomain?: Partial<Record<ProposalDomain, string[]>>;
   authorizedOperationsByActor?: Record<string, string[]>;
   enforceCapabilityChecks?: boolean;
+  factAuthorizationMode?: ShadowFactAuthorizationMode;
 }
 
 export interface ShadowArbiterInput {
@@ -50,6 +53,7 @@ export interface ShadowArbiterReport {
   transition: StateTransitionResult;
   selectedProposalIds: string[];
   rejectedProposals: RejectedShadowProposal[];
+  advisories?: RejectedShadowProposal[];
   highRiskDecisions: HighRiskDecision[];
 }
 
@@ -100,12 +104,27 @@ export function runShadowArbiter(input: ShadowArbiterInput): ShadowArbiterReport
   const specialistCandidatesTried: string[] = [];
   const fallbackDomains: ProposalDomain[] = [];
   const selectedSourceByDomain: Record<string, string> = {};
+  const advisoryCodesByProposal = new Map<string, {
+    proposal: Proposal | SpecialistCandidate;
+    reasonCodes: Set<string>;
+  }>();
+  const addAdvisory = (
+    proposal: Proposal | SpecialistCandidate,
+    reasonCode: string,
+  ) => {
+    const existing = advisoryCodesByProposal.get(proposal.id) ?? {
+      proposal,
+      reasonCodes: new Set<string>(),
+    };
+    existing.reasonCodes.add(reasonCode);
+    advisoryCodesByProposal.set(proposal.id, existing);
+  };
 
   for (const domain of input.requiredDomains) {
     const mainCandidates = input.mainProposals
       .filter((proposal) => proposal.domain === domain)
       .sort(byCandidateRank);
-    const selectedMain = firstValid(mainCandidates, input, rejectedProposals);
+    const selectedMain = firstValid(mainCandidates, input, rejectedProposals, addAdvisory);
     if (selectedMain) {
       selected.push(selectedMain);
       selectedSourceByDomain[domain] = selectedMain.sourceAgent;
@@ -118,7 +137,12 @@ export function runShadowArbiter(input: ShadowArbiterInput): ShadowArbiterReport
     let selectedSpecialist: SpecialistCandidate | undefined;
     for (const candidate of specialists) {
       specialistCandidatesTried.push(candidate.id);
-      const reasons = validateProposal(candidate, input, true);
+      const reasons = validateProposal(
+        candidate,
+        input,
+        true,
+        (reasonCode) => addAdvisory(candidate, reasonCode),
+      );
       if (reasons.length === 0) {
         selectedSpecialist = candidate;
         break;
@@ -165,6 +189,9 @@ export function runShadowArbiter(input: ShadowArbiterInput): ShadowArbiterReport
     transition,
     selectedProposalIds: selected.map((proposal) => proposal.id),
     rejectedProposals,
+    advisories: [...advisoryCodesByProposal.values()].map(({ proposal, reasonCodes }) => (
+      rejected(proposal, [...reasonCodes])
+    )),
     highRiskDecisions: evaluateShadowHighRiskGate(
       acceptedEvents,
       new Set(input.availableEvidenceRefs),
@@ -405,7 +432,10 @@ export function buildShadowArbitrationMetrics(
   const highRiskDecisions = report.highRiskDecisions.filter((decision) => decision.riskClass !== 'reversible');
   return {
     schemaSuccessRate: schemaAttempts > 0 ? schemaSuccesses / schemaAttempts : 1,
-    permissionLeakCount: report.rejectedProposals.filter((proposal) => (
+    permissionLeakCount: [
+      ...report.rejectedProposals,
+      ...(report.advisories ?? []),
+    ].filter((proposal) => (
       proposal.reasonCodes.includes('unauthorized_fact_reference')
       || proposal.reasonCodes.includes('precondition_unauthorized')
       || proposal.reasonCodes.includes('source_domain_unauthorized')
@@ -424,9 +454,15 @@ function firstValid(
   candidates: Proposal[],
   input: ShadowArbiterInput,
   rejectedProposals: RejectedShadowProposal[],
+  addAdvisory: (proposal: Proposal, reasonCode: string) => void,
 ): Proposal | undefined {
   for (const candidate of candidates) {
-    const reasons = validateProposal(candidate, input, false);
+    const reasons = validateProposal(
+      candidate,
+      input,
+      false,
+      (reasonCode) => addAdvisory(candidate, reasonCode),
+    );
     if (reasons.length === 0) return candidate;
     rejectedProposals.push(rejected(candidate, reasons));
   }
@@ -437,6 +473,7 @@ function validateProposal(
   proposal: Proposal | SpecialistCandidate,
   input: ShadowArbiterInput,
   specialist: boolean,
+  addAdvisory: (reasonCode: string) => void = () => undefined,
 ): string[] {
   const schema = specialist ? SpecialistCandidateSchema : ProposalSchema;
   if (!schema.safeParse(proposal).success) return ['schema_invalid'];
@@ -490,7 +527,17 @@ function validateProposal(
     ?? [],
   );
   if (proposal.basedOnFactIds.some((factId) => !authorizedFacts.has(factId))) {
-    reasons.add('unauthorized_fact_reference');
+    if (
+      policy?.factAuthorizationMode === 'advisory_for_reversible_player'
+      && proposal.sourceAgent === 'main-world-model'
+      && proposal.domain === 'player'
+      && proposal.riskClass === 'reversible'
+      && proposal.proposedEvents.every((event) => event.riskClass === 'reversible')
+    ) {
+      addAdvisory('unauthorized_fact_reference');
+    } else {
+      reasons.add('unauthorized_fact_reference');
+    }
   }
   if (proposal.preconditions.some((condition) => (
     condition.kind === 'fact' && !authorizedFacts.has(condition.ref)

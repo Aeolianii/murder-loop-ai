@@ -54,6 +54,12 @@ export interface IntentProjections {
     turnBrief: TurnBrief;
     facts: Fact[];
     factIds: string[];
+    proposalAuthority: {
+      domain: 'player';
+      actorId: 'player';
+      authorizedFactIds: string[];
+      authorizedOperations: string[];
+    };
     canonicalConstraints: string[];
     canonicalStoryMaterial: CanonicalStoryMaterial[];
   };
@@ -75,6 +81,12 @@ export function projectTurnIntent(input: IntentProjectionInput): IntentProjectio
       turnBrief: input.brief,
       facts: input.knowledge.worldModel.facts,
       factIds: input.knowledge.worldModel.factIds,
+      proposalAuthority: {
+        domain: 'player',
+        actorId: 'player',
+        authorizedFactIds: [...input.knowledge.player.factIds],
+        authorizedOperations: capabilityOperations(input.knowledge.player.facts, 'player'),
+      },
       canonicalConstraints: [...input.canonicalConstraints],
       canonicalStoryMaterial: input.canonicalStoryMaterial.map((material) => ({
         ...material,
@@ -165,6 +177,16 @@ function specialistProjection(
 
 function projectionFromFacts(viewerId: string, facts: Fact[]): FactProjection {
   return { viewerId, facts, factIds: facts.map((fact) => fact.id) };
+}
+
+function capabilityOperations(facts: Fact[], actorId: string): string[] {
+  return [...new Set(facts.flatMap((fact) => (
+    fact.subject === actorId
+    && fact.predicate === 'capability'
+    && typeof fact.value === 'string'
+      ? [fact.value]
+      : []
+  )))];
 }
 
 function signalsFor(
