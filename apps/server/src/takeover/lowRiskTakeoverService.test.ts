@@ -203,7 +203,7 @@ function recommendationProposal(
       id: recommendationId,
       label,
       rationale: 'Grounded in a player-visible fact.',
-      basedOnFactIds: ['fact.player.has_phone'],
+      basedOnFactIds: ['fact.player.phone_functional'],
       basedOnEventIds: [],
     }],
     displayFragments: [],
@@ -246,6 +246,13 @@ const acceptedRecommendation = recommendationProposal(
   'recommendation.accepted',
   'Photograph the package label.',
 );
+acceptedRecommendation.recommendations.push({
+  id: 'recommendation.stale-after-turn',
+  label: 'Secure the already secured door.',
+  rationale: 'This is valid only while the door remains unlocked.',
+  basedOnFactIds: ['fact.object.front_door.locked'],
+  basedOnEventIds: [],
+});
 const unselectedRecommendation = recommendationProposal(
   'proposal.recommendation.unselected',
   'recommendation.unselected',
@@ -271,7 +278,8 @@ recommendationWave.arbitration!.rejectedProposals.push({
   domain: rejectedRecommendation.domain,
   reasonCodes: ['recommendation_fact_unauthorized'],
 });
-const recommendationPreparation = await createLowRiskTakeoverService().prepare(
+const recommendationService = createLowRiskTakeoverService();
+const recommendationPreparation = await recommendationService.prepare(
   session(recommendationWave),
   state,
 );
@@ -285,8 +293,27 @@ assert.deepEqual(
     id: 'recommendation.accepted',
     label: 'Photograph the package label.',
     rationale: 'Grounded in a player-visible fact.',
+  }, {
+    id: 'recommendation.stale-after-turn',
+    label: 'Secure the already secured door.',
+    rationale: 'This is valid only while the door remains unlocked.',
   }],
   'only recommendations from Arbiter-selected proposals may reach the turn response',
+);
+const recommendationCommit = await recommendationService.commit(
+  envelope.turnId,
+  recommendationPreparation.prepared.playerResult.state,
+);
+assert.deepEqual(
+  (recommendationCommit as {
+    recommendedActions?: Array<{ id: string; label: string; rationale: string }>;
+  }).recommendedActions,
+  [{
+    id: 'recommendation.accepted',
+    label: 'Photograph the package label.',
+    rationale: 'Grounded in a player-visible fact.',
+  }],
+  'recommendations whose cited fact values changed during the turn must not be published',
 );
 
 const specialistReplacementWave = wave();

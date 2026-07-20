@@ -172,3 +172,8 @@ assert.deepEqual(
   projections.recommendationSpecialist.conditionalSignals.map((signal) => signal.id),
   ['signal-visible-recommendation'],
 );
+assert.equal(
+  projections.recommendationSpecialist.turnBrief,
+  brief,
+  'Recommendation Specialist needs the current TurnBrief to avoid repeating in-flight actions.',
+);

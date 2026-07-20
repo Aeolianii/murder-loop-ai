@@ -68,7 +68,7 @@ export interface IntentProjections {
   npcSpecialists: Record<string, SpecialistProjection & { communications: ConditionalCommunication[] }>;
   environmentSpecialist: SpecialistProjection;
   clueSpecialist: SpecialistProjection;
-  recommendationSpecialist: SpecialistProjection;
+  recommendationSpecialist: SpecialistProjection & { turnBrief: TurnBrief };
 }
 
 export function projectTurnIntent(input: IntentProjectionInput): IntentProjections {
@@ -140,12 +140,15 @@ export function projectTurnIntent(input: IntentProjectionInput): IntentProjectio
       signalsFor(input.conditionalSignals, 'clue', 'clue'),
       input.canonicalConstraints,
     ),
-    recommendationSpecialist: specialistProjection(
-      metadata,
-      input.knowledge.player,
-      signalsFor(input.conditionalSignals, 'recommendation', 'recommendation'),
-      input.canonicalConstraints,
-    ),
+    recommendationSpecialist: {
+      ...specialistProjection(
+        metadata,
+        input.knowledge.player,
+        signalsFor(input.conditionalSignals, 'recommendation', 'recommendation'),
+        input.canonicalConstraints,
+      ),
+      turnBrief: input.brief,
+    },
   };
 }
 

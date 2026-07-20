@@ -331,6 +331,10 @@ function takeoverFixture(
             id: 'recommendation.accepted',
             label: 'Photograph the package label.',
             rationale: 'Preserve visible evidence before taking another action.',
+          }, {
+            id: 'recommendation.stale-after-commit',
+            label: 'Use stale pre-commit advice.',
+            rationale: 'This must be removed when its cited fact changes.',
           }]
         : [],
     }),
@@ -388,6 +392,13 @@ function takeoverFixture(
               : {}),
         },
         state: commitStatus === 'committed' ? committedState : undefined,
+        recommendedActions: commitStatus === 'committed' && withRecommendations
+          ? [{
+              id: 'recommendation.accepted',
+              label: 'Photograph the package label.',
+              rationale: 'Preserve visible evidence before taking another action.',
+            }]
+          : [],
         ...(commitStatus === 'committed' && withKnowledgeClueProjection ? {
           knowledgeClueProjection: {
             addedObservationIds: ['observation.route.package'],

@@ -415,6 +415,9 @@ function proposalRoleDirective(sourceAgent: string, domain: string): string {
     return [
       'You are the Recommendation Specialist. Use only player-visible facts and confirmed visible event anchors to recommend useful player actions.',
       'Recommendations are non-authoritative and must never invent a world-state change.',
+      'Recommendations are displayed after projection.turnBrief completes.',
+      'Do not recommend the same operation and targetIds already present in projection.turnBrief.orderedActions.',
+      'Do not use a fact about a current action target when that action may change the cited fact before the recommendation is displayed.',
       'For this role, recommendations is the only non-empty payload array.',
       'Keep proposedEffects, observations, proposedEvents, clueCandidates, and displayFragments empty.',
       'Also keep turnBriefActionIds, replacementFor, targetIds, basedOnFactIds, preconditions, forbiddenScopes, visibility, evidenceRefs, and causalParentIds empty.',

@@ -496,7 +496,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               state: committed.state,
               displayFragments: committed.outcome.displayFragments,
               publishedEventIds,
-              recommendedActions: preparation.recommendedActions,
+              recommendedActions: committed.recommendedActions,
             });
             legacyMainPathExitCoordination = {
               status: 'committed',
@@ -507,7 +507,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           } else {
             resolution = {
               ...resolution,
-              recommendedActions: preparation.recommendedActions,
+              recommendedActions: committed.recommendedActions,
               finalState: committed.state,
             };
           }

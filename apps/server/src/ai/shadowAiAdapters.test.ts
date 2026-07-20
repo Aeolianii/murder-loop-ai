@@ -322,6 +322,18 @@ assert(
   ),
   'Recommendation Specialist must not borrow event narration fields.',
 );
+assert(
+  calls.at(-1)?.system.includes(
+    'Recommendations are displayed after projection.turnBrief completes.',
+  ),
+  'Recommendation Specialist must reason about recommendations as post-turn actions.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    'Do not recommend the same operation and targetIds already present in projection.turnBrief.orderedActions.',
+  ),
+  'Recommendation Specialist must not repeat a current structured action.',
+);
 
 const repairCalls: Array<{ system: string; user: unknown }> = [];
 const repairAdapters = createAiShadowAdapters(async (role, system, user) => {

@@ -1,11 +1,14 @@
+import { isDeepStrictEqual } from 'node:util';
 import type {
   DisplayFragment,
+  Fact,
   HighRiskDecision,
   Proposal,
   SpecialistCandidate,
 } from '@murder-loop-ai/ai-contracts';
 import {
   InMemoryAtomicTurnStore,
+  buildFactLedgerFromGameState,
   commitPreparedLowRiskTurn,
   projectConfirmedKnowledgeAndClues,
   projectConfirmedHighRiskResults,
@@ -56,9 +59,18 @@ export interface HighRiskProjectionSummary {
 }
 
 export type LowRiskTakeoverServiceCommitResult = LowRiskTakeoverCommitResult & {
+  recommendedActions: RecommendedAction[];
   knowledgeClueProjection?: KnowledgeClueProjectionSummary;
   highRiskProjection?: HighRiskProjectionSummary;
 };
+
+interface AcceptedRecommendationSnapshot {
+  action: RecommendedAction;
+  factValues: Array<{
+    id: string;
+    value: Fact['value'];
+  }>;
+}
 
 export interface LowRiskTakeoverService {
   readonly highRiskTakeoverEnabled?: boolean;
@@ -97,6 +109,7 @@ export function createLowRiskTakeoverService(
     highRiskEventCandidates: CommitEventCandidate[];
     authorityRejectedEventIds: string[];
     authorityRejectionDecisions: HighRiskDecision[];
+    recommendationSnapshots: AcceptedRecommendationSnapshot[];
   }>();
 
   return {
@@ -131,7 +144,8 @@ export function createLowRiskTakeoverService(
       }
 
       const downstreamEvents = selectDownstreamEventCandidates(wave);
-      const recommendedActions = selectAcceptedRecommendations(wave);
+      const recommendationSnapshots = selectAcceptedRecommendations(wave, state);
+      const recommendedActions = recommendationSnapshots.map(({ action }) => action);
       pending.set(session.envelope.turnId, {
         prepared: preparation,
         store: createStore({
@@ -143,6 +157,7 @@ export function createLowRiskTakeoverService(
         highRiskEventCandidates: downstreamEvents.eventCandidates,
         authorityRejectedEventIds: downstreamEvents.rejectedEventIds,
         authorityRejectionDecisions: downstreamEvents.rejectionDecisions,
+        recommendationSnapshots,
       });
       return {
         status: 'prepared',
@@ -218,9 +233,20 @@ export function createLowRiskTakeoverService(
         additionalDisplayFragments,
         highRiskDecisions,
       });
-      return committed.outcome.result.commitStatus === 'committed'
-        ? { ...committed, knowledgeClueProjection, highRiskProjection }
-        : committed;
+      if (committed.outcome.result.commitStatus !== 'committed' || !committed.state) {
+        return { ...committed, recommendedActions: [] };
+      }
+      return {
+        ...committed,
+        recommendedActions: selectRecommendationsWithStableFacts(
+          entry.recommendationSnapshots,
+          committed.state,
+          entry.prepared.envelope,
+          committed.outcome.result.outputStateVersion,
+        ),
+        knowledgeClueProjection,
+        highRiskProjection,
+      };
     },
 
     discard(turnId) {
@@ -229,7 +255,10 @@ export function createLowRiskTakeoverService(
   };
 }
 
-function selectAcceptedRecommendations(wave: ShadowCandidateWave): RecommendedAction[] {
+function selectAcceptedRecommendations(
+  wave: ShadowCandidateWave,
+  state: GameState,
+): AcceptedRecommendationSnapshot[] {
   const selectedProposalIds = new Set(wave.arbitration?.selectedProposalIds ?? []);
   const rejectedProposalIds = new Set(
     wave.arbitration?.rejectedProposals.map((proposal) => proposal.proposalId) ?? [],
@@ -238,8 +267,15 @@ function selectAcceptedRecommendations(wave: ShadowCandidateWave): RecommendedAc
     ...wave.mainProposals,
     ...wave.specialistCandidates,
   ];
+  const factById = new Map(
+    buildFactLedgerFromGameState(state, {
+      loopId: wave.envelope.loopId,
+      turnId: wave.envelope.turnId,
+      stateVersion: wave.envelope.inputStateVersion,
+    }).activeFacts().map((fact) => [fact.id, fact]),
+  );
   const recommendationIds = new Set<string>();
-  const accepted: RecommendedAction[] = [];
+  const accepted: AcceptedRecommendationSnapshot[] = [];
 
   for (const proposal of proposals) {
     if (
@@ -251,16 +287,47 @@ function selectAcceptedRecommendations(wave: ShadowCandidateWave): RecommendedAc
     }
     for (const recommendation of proposal.recommendations) {
       if (recommendationIds.has(recommendation.id)) continue;
+      const factValues = recommendation.basedOnFactIds.flatMap((factId) => {
+        const fact = factById.get(factId);
+        return fact ? [{ id: factId, value: structuredClone(fact.value) }] : [];
+      });
+      if (factValues.length !== recommendation.basedOnFactIds.length) continue;
       recommendationIds.add(recommendation.id);
       accepted.push({
-        id: recommendation.id,
-        label: recommendation.label,
-        rationale: recommendation.rationale,
+        action: {
+          id: recommendation.id,
+          label: recommendation.label,
+          rationale: recommendation.rationale,
+        },
+        factValues,
       });
     }
   }
 
   return accepted;
+}
+
+function selectRecommendationsWithStableFacts(
+  snapshots: AcceptedRecommendationSnapshot[],
+  state: GameState,
+  envelope: PreparedLowRiskTurn['envelope'],
+  outputStateVersion: number | null,
+): RecommendedAction[] {
+  const finalFactById = new Map(
+    buildFactLedgerFromGameState(state, {
+      loopId: envelope.loopId,
+      turnId: envelope.turnId,
+      stateVersion: outputStateVersion ?? envelope.inputStateVersion,
+    }).activeFacts().map((fact) => [fact.id, fact]),
+  );
+
+  return snapshots
+    .filter((snapshot) => snapshot.factValues.every((before) => {
+      const after = finalFactById.get(before.id);
+      return after !== undefined
+        && isDeepStrictEqual(after.value, before.value);
+    }))
+    .map(({ action }) => action);
 }
 
 function selectDownstreamEventCandidates(wave: ShadowCandidateWave): {
