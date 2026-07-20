@@ -417,6 +417,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
                 state: preparation.prepared.playerResult.state,
                 displayFragments: [],
                 publishedEventIds: new Set(),
+                recommendedActions: preparation.recommendedActions,
               })
             : await resolveTurnHarnessFromPreparedPlayerTurn({
                 state,
@@ -495,6 +496,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               state: committed.state,
               displayFragments: committed.outcome.displayFragments,
               publishedEventIds,
+              recommendedActions: preparation.recommendedActions,
             });
             legacyMainPathExitCoordination = {
               status: 'committed',
@@ -503,7 +505,11 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               minimumPlayableFallback: 'ai_unavailable_only',
             };
           } else {
-            resolution = { ...resolution, finalState: committed.state };
+            resolution = {
+              ...resolution,
+              recommendedActions: preparation.recommendedActions,
+              finalState: committed.state,
+            };
           }
           lowRiskTakeoverCoordination = {
             status: 'committed',

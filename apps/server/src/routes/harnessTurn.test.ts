@@ -301,6 +301,7 @@ function takeoverFixture(
   withKnowledgeClueProjection = false,
   withHighRiskProjection = false,
   withLegacyMainPathExit = false,
+  withRecommendations = false,
 ) {
   const prepared = prepareLowRiskTurn({
     state: baseState,
@@ -322,7 +323,17 @@ function takeoverFixture(
     legacyMainPathExitEnabled: boolean;
   } = {
     legacyMainPathExitEnabled: withLegacyMainPathExit,
-    prepare: async () => ({ status: 'prepared', prepared }),
+    prepare: async () => ({
+      status: 'prepared',
+      prepared,
+      recommendedActions: withRecommendations
+        ? [{
+            id: 'recommendation.accepted',
+            label: 'Photograph the package label.',
+            rationale: 'Preserve visible evidence before taking another action.',
+          }]
+        : [],
+    }),
     commit: async (_turnId, candidateState) => {
       committedFinalState = candidateState;
       const committedState = withHighRiskProjection
@@ -622,6 +633,34 @@ async function testLegacyMainPathExitDoesNotExecuteLegacyStateOrNarrationStages(
   assert.equal(body.coordination.legacyMainPathExit.status, 'committed');
   assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'material_only');
   assert.equal(body.coordination.legacyMainPathExit.keywordFallbackAuthority, 'disabled');
+  await app.close();
+}
+
+async function testLegacyMainPathExitPublishesAcceptedRecommendations() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, false, true, true);
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const actionResult = body.storyLog.find(
+    (node: { type: string }) => node.type === 'action_result',
+  );
+  assert.deepEqual(actionResult?.recommendedActions, [{
+    id: 'recommendation.accepted',
+    label: 'Photograph the package label.',
+    rationale: 'Preserve visible evidence before taking another action.',
+  }]);
   await app.close();
 }
 
@@ -1469,6 +1508,7 @@ await testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory();
 await testKnowledgeClueTakeoverDisablesNarratorClueAuthority();
 await testHighRiskTakeoverPublishesOnlyConfirmedOutcome();
 await testLegacyMainPathExitDoesNotExecuteLegacyStateOrNarrationStages();
+await testLegacyMainPathExitPublishesAcceptedRecommendations();
 await testLegacyMainPathExitUsesMinimumFallbackOnlyWhenAiIsUnavailable();
 await testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallback();
 await testDefaultHarnessRouteReturnsDispatcherTrace();

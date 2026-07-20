@@ -16,7 +16,7 @@ import {
   type PreparedLowRiskTurn,
   type ShadowCandidateWave,
 } from '@murder-loop-ai/game-core';
-import type { GameState } from '@murder-loop-ai/shared';
+import type { GameState, RecommendedAction } from '@murder-loop-ai/shared';
 import type { ShadowRunSession } from '../shadow/shadowCoordinator';
 
 export type LowRiskTakeoverBypassReason =
@@ -32,6 +32,7 @@ export type LowRiskTakeoverBypassReason =
 export type LowRiskTakeoverPrepareResult = {
   status: 'prepared';
   prepared: PreparedLowRiskTurn;
+  recommendedActions: RecommendedAction[];
 } | {
   status: 'bypassed';
   reason: LowRiskTakeoverBypassReason;
@@ -130,6 +131,7 @@ export function createLowRiskTakeoverService(
       }
 
       const downstreamEvents = selectDownstreamEventCandidates(wave);
+      const recommendedActions = selectAcceptedRecommendations(wave);
       pending.set(session.envelope.turnId, {
         prepared: preparation,
         store: createStore({
@@ -142,7 +144,11 @@ export function createLowRiskTakeoverService(
         authorityRejectedEventIds: downstreamEvents.rejectedEventIds,
         authorityRejectionDecisions: downstreamEvents.rejectionDecisions,
       });
-      return { status: 'prepared', prepared: preparation };
+      return {
+        status: 'prepared',
+        prepared: preparation,
+        recommendedActions,
+      };
     },
 
     async commit(turnId, finalState) {
@@ -221,6 +227,40 @@ export function createLowRiskTakeoverService(
       pending.delete(turnId);
     },
   };
+}
+
+function selectAcceptedRecommendations(wave: ShadowCandidateWave): RecommendedAction[] {
+  const selectedProposalIds = new Set(wave.arbitration?.selectedProposalIds ?? []);
+  const rejectedProposalIds = new Set(
+    wave.arbitration?.rejectedProposals.map((proposal) => proposal.proposalId) ?? [],
+  );
+  const proposals: Array<Proposal | SpecialistCandidate> = [
+    ...wave.mainProposals,
+    ...wave.specialistCandidates,
+  ];
+  const recommendationIds = new Set<string>();
+  const accepted: RecommendedAction[] = [];
+
+  for (const proposal of proposals) {
+    if (
+      proposal.domain !== 'recommendation'
+      || !selectedProposalIds.has(proposal.id)
+      || rejectedProposalIds.has(proposal.id)
+    ) {
+      continue;
+    }
+    for (const recommendation of proposal.recommendations) {
+      if (recommendationIds.has(recommendation.id)) continue;
+      recommendationIds.add(recommendation.id);
+      accepted.push({
+        id: recommendation.id,
+        label: recommendation.label,
+        rationale: recommendation.rationale,
+      });
+    }
+  }
+
+  return accepted;
 }
 
 function selectDownstreamEventCandidates(wave: ShadowCandidateWave): {

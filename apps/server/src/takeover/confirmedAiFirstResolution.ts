@@ -3,6 +3,7 @@ import type { PreparedLowRiskTurn } from '@murder-loop-ai/game-core';
 import type {
   GameState,
   Narration,
+  RecommendedAction,
   TurnResolution,
 } from '@murder-loop-ai/shared';
 
@@ -11,6 +12,7 @@ export function buildConfirmedAiFirstResolution(input: {
   state: GameState;
   displayFragments: DisplayFragment[];
   publishedEventIds: Set<string>;
+  recommendedActions: RecommendedAction[];
 }): TurnResolution {
   const confirmedOutcomeText = input.displayFragments
     .filter((fragment) => fragment.eventRefs.some((eventId) => input.publishedEventIds.has(eventId)))
@@ -54,7 +56,7 @@ export function buildConfirmedAiFirstResolution(input: {
     actionNarration,
     ambientNarration,
     npcReply: null,
-    recommendedActions: [],
+    recommendedActions: input.recommendedActions,
     worldTickTrace: [],
     finalState: input.state,
   };

@@ -310,6 +310,18 @@ assert(
   ),
   'Recommendation contract example must demonstrate fact-grounded recommendations.',
 );
+assert(
+  calls.at(-1)?.system.includes(
+    'For this role, recommendations is the only non-empty payload array.',
+  ),
+  'Recommendation Specialist must be told to emit recommendations only.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    'Keep proposedEffects, observations, proposedEvents, clueCandidates, and displayFragments empty.',
+  ),
+  'Recommendation Specialist must not borrow event narration fields.',
+);
 
 const repairCalls: Array<{ system: string; user: unknown }> = [];
 const repairAdapters = createAiShadowAdapters(async (role, system, user) => {

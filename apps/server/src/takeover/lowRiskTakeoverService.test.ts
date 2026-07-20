@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type {
   Proposal,
   ProposedEvent,
+  SpecialistCandidate,
   TurnBrief,
   TurnEnvelope,
 } from '@murder-loop-ai/ai-contracts';
@@ -168,6 +169,49 @@ function killerProposal(events: ProposedEvent[]): Proposal {
   };
 }
 
+function recommendationProposal(
+  id: string,
+  recommendationId: string,
+  label: string,
+): SpecialistCandidate {
+  return {
+    ...envelope,
+    id,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    sourceAgent: 'recommendation-specialist',
+    domain: 'recommendation',
+    candidateRank: 0,
+    turnBriefActionIds: [],
+    replacementFor: [],
+    actorId: 'player',
+    operation: 'recommend',
+    targetIds: [],
+    basedOnFactIds: [],
+    preconditions: [],
+    forbiddenScopes: [],
+    proposedEffects: [],
+    observations: [],
+    visibility: ['player'],
+    confidence: 1,
+    riskClass: 'reversible',
+    evidenceRefs: [],
+    causalParentIds: [],
+    proposedEvents: [],
+    clueCandidates: [],
+    recommendations: [{
+      id: recommendationId,
+      label,
+      rationale: 'Grounded in a player-visible fact.',
+      basedOnFactIds: ['fact.player.has_phone'],
+      basedOnEventIds: [],
+    }],
+    displayFragments: [],
+    candidateType: 'specialist',
+    specialistId: 'recommendation-specialist',
+  };
+}
+
 function phaseFiveWave(
   turnBrief: TurnBrief,
   events: ProposedEvent[],
@@ -195,6 +239,55 @@ assert.equal(prepared.status, 'prepared');
 if (prepared.status !== 'prepared') throw new Error('expected takeover preparation');
 assert.equal(prepared.prepared.sourceProposalId, 'proposal.player.selected');
 assert.equal(prepared.prepared.playerResult.state.room.front_door.state.chainLocked, true);
+
+const recommendationWave = wave();
+const acceptedRecommendation = recommendationProposal(
+  'proposal.recommendation.accepted',
+  'recommendation.accepted',
+  'Photograph the package label.',
+);
+const unselectedRecommendation = recommendationProposal(
+  'proposal.recommendation.unselected',
+  'recommendation.unselected',
+  'This recommendation must stay hidden.',
+);
+const rejectedRecommendation = recommendationProposal(
+  'proposal.recommendation.rejected',
+  'recommendation.rejected',
+  'This rejected recommendation must stay hidden.',
+);
+recommendationWave.specialistCandidates.push(
+  acceptedRecommendation,
+  unselectedRecommendation,
+  rejectedRecommendation,
+);
+recommendationWave.arbitration!.selectedProposalIds.push(
+  acceptedRecommendation.id,
+  rejectedRecommendation.id,
+);
+recommendationWave.arbitration!.rejectedProposals.push({
+  proposalId: rejectedRecommendation.id,
+  sourceAgent: rejectedRecommendation.sourceAgent,
+  domain: rejectedRecommendation.domain,
+  reasonCodes: ['recommendation_fact_unauthorized'],
+});
+const recommendationPreparation = await createLowRiskTakeoverService().prepare(
+  session(recommendationWave),
+  state,
+);
+assert.equal(recommendationPreparation.status, 'prepared');
+if (recommendationPreparation.status !== 'prepared') {
+  throw new Error('expected recommendation preparation');
+}
+assert.deepEqual(
+  recommendationPreparation.recommendedActions,
+  [{
+    id: 'recommendation.accepted',
+    label: 'Photograph the package label.',
+    rationale: 'Grounded in a player-visible fact.',
+  }],
+  'only recommendations from Arbiter-selected proposals may reach the turn response',
+);
 
 const specialistReplacementWave = wave();
 const rejectedMainProposal = {

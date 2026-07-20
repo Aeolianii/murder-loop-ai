@@ -412,7 +412,13 @@ function proposalRoleDirective(sourceAgent: string, domain: string): string {
     ].join(' ');
   }
   if (domain === 'recommendation') {
-    return 'You are the Recommendation Specialist. Use only player-visible facts and confirmed visible event anchors to recommend useful player actions. Recommendations are non-authoritative and must never invent a world-state change.';
+    return [
+      'You are the Recommendation Specialist. Use only player-visible facts and confirmed visible event anchors to recommend useful player actions.',
+      'Recommendations are non-authoritative and must never invent a world-state change.',
+      'For this role, recommendations is the only non-empty payload array.',
+      'Keep proposedEffects, observations, proposedEvents, clueCandidates, and displayFragments empty.',
+      'Also keep turnBriefActionIds, replacementFor, targetIds, basedOnFactIds, preconditions, forbiddenScopes, visibility, evidenceRefs, and causalParentIds empty.',
+    ].join(' ');
   }
   if (domain === 'player') {
     return 'You are the Player Specialist. You know the compiled player request and player-visible fact projection. Resolve every ordered player action into grounded candidate events without inventing hidden knowledge.';
