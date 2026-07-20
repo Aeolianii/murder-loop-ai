@@ -299,16 +299,58 @@ function takeoverBrief(): TurnBrief {
   };
 }
 
+function takeoverPhotoShareBrief(): TurnBrief {
+  const brief = takeoverBrief();
+  brief.turnId = 'takeover-photo-share-turn';
+  brief.orderedActions = [{
+    actionId: 'photo-package',
+    actorId: 'player',
+    operation: 'photograph',
+    targetIds: ['package'],
+    dependsOnActionIds: [],
+    inputHandleIds: [],
+    outputHandleIds: ['handle-package-photo'],
+    originalSpan: { start: 0, end: 7, text: '给包裹拍张照片' },
+  }, {
+    actionId: 'message-linyue',
+    actorId: 'player',
+    operation: 'communicate',
+    targetIds: ['lin_yue'],
+    dependsOnActionIds: ['photo-package'],
+    inputHandleIds: ['handle-package-photo'],
+    outputHandleIds: [],
+    originalSpan: { start: 8, end: 28, text: '发给林越，询问这个包裹是不是他的' },
+  }];
+  brief.communications = [{
+    id: 'communication-linyue-photo',
+    actionId: 'message-linyue',
+    senderId: 'player',
+    recipientIds: ['lin_yue'],
+    channel: 'phone',
+    contentSummary: '询问这个包裹是不是林越的',
+    attachmentHandleIds: ['handle-package-photo'],
+    intendedAudience: ['lin_yue'],
+  }];
+  brief.candidateHandles = [{
+    id: 'handle-package-photo',
+    kind: 'photograph',
+    producedByActionId: 'photo-package',
+    dependsOnActionIds: ['photo-package'],
+  }];
+  return brief;
+}
+
 function takeoverFixture(
   commitStatus: 'committed' | 'conflict' | 'failed' = 'committed',
   withKnowledgeClueProjection = false,
   withHighRiskProjection = false,
   withLegacyMainPathExit = false,
   withRecommendations = false,
+  brief = takeoverBrief(),
 ) {
   const prepared = prepareLowRiskTurn({
     state: baseState,
-    brief: takeoverBrief(),
+    brief,
     sourceProposalId: 'proposal.player.route',
   });
   if (prepared.status !== 'prepared') throw new Error('expected route takeover fixture');
@@ -748,6 +790,89 @@ async function testLegacyMainPathExitRendersReadOnlyPostCommitNarration() {
     body.coordination.warnings.some((warning: string) => warning.includes('authority fields ignored')),
   );
   assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'confirmed_facts_narrator');
+  await app.close();
+}
+
+async function testLegacyMainPathExitRejectsUngroundedActionNarration() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, false, true);
+  fixture.aiAdapters.narrateAction = async () => ({
+    title: '错误的包裹动作',
+    text: '我撕开封口，翻开包裹里的旧书和药板。',
+  });
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const actionResult = body.storyLog.find((node: { type: string }) => node.type === 'action_result');
+  assert.match(actionResult?.content ?? '', /Locked, chained, and barricaded/);
+  assert.doesNotMatch(actionResult?.content ?? '', /撕开封口|翻开包裹/);
+  assert.ok(
+    body.coordination.warnings.some((warning: string) => warning.includes('not grounded')),
+  );
+  await app.close();
+}
+
+async function testLegacyMainPathExitPublishesConfirmedNpcReply() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture(
+    'committed',
+    false,
+    false,
+    true,
+    false,
+    takeoverPhotoShareBrief(),
+  );
+  let npcReplyCalls = 0;
+  fixture.aiAdapters.narrateAction = async () => ({
+    title: '照片已发送',
+    text: '你拍下包裹的照片，通过手机发送给林越。',
+  });
+  fixture.aiAdapters.npcReply = async (speaker, input) => {
+    npcReplyCalls += 1;
+    assert.equal(speaker, 'linyue');
+    assert.match(input, /林越|包裹/);
+    return {
+      speaker: 'linyue',
+      text: '这不是我的包裹。你别开门，把照片留好。',
+      intent: 'deny_package_and_assist',
+      riskWarning: '不要让林越上楼。',
+      suggestedExternalAction: '让林越在楼下报警。',
+    };
+  };
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: '给包裹拍张照片，并发给林越，询问这个包裹是不是他的',
+      state: baseState,
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(npcReplyCalls, 1);
+  assert.equal(body.turn.npcReply?.speaker, 'linyue');
+  assert.match(body.turn.npcReply?.text ?? '', /不是我的包裹/);
+  const actionResult = body.storyLog.find((node: { type: string }) => node.type === 'action_result');
+  assert.match(actionResult?.content ?? '', /拍下包裹的照片/);
+  assert.match(actionResult?.content ?? '', /林越回复|不是我的包裹/);
   await app.close();
 }
 
@@ -1641,6 +1766,8 @@ await testHighRiskTakeoverPublishesOnlyConfirmedOutcome();
 await testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarration();
 await testLegacyMainPathExitPublishesAcceptedRecommendations();
 await testLegacyMainPathExitRendersReadOnlyPostCommitNarration();
+await testLegacyMainPathExitRejectsUngroundedActionNarration();
+await testLegacyMainPathExitPublishesConfirmedNpcReply();
 await testLegacyMainPathExitKeepsConfirmedMaterialWhenNarratorFails();
 await testLegacyMainPathExitUsesMinimumFallbackOnlyWhenAiIsUnavailable();
 await testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallback();

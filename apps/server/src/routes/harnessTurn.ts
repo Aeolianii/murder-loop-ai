@@ -702,7 +702,11 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     if (legacyMainPathExitCoordination?.status === 'committed') {
       confirmedTurnNarration = await narrateConfirmedTurn(resolution, aiAdapters);
       routeWarnings.push(...confirmedTurnNarration.warnings);
-      if (confirmedTurnNarration.actionNarration || confirmedTurnNarration.ambientNarration) {
+      if (
+        confirmedTurnNarration.actionNarration
+        || confirmedTurnNarration.ambientNarration
+        || confirmedTurnNarration.npcReply
+      ) {
         resolution = {
           ...resolution,
           narration: confirmedTurnNarration.actionNarration ?? resolution.narration,
@@ -711,6 +715,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
             ?? resolution.narration,
           ambientNarration: confirmedTurnNarration.ambientNarration
             ?? resolution.ambientNarration,
+          npcReply: confirmedTurnNarration.npcReply ?? resolution.npcReply,
         };
         legacyMainPathExitCoordination.storyNodeAuthority = 'confirmed_facts_narrator';
       }
