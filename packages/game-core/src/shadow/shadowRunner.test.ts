@@ -302,12 +302,12 @@ function registrations(
   const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
   const fallbackRawInput = 'fallback-secret-raw-input';
   let mainProjection: unknown;
-  const specialistProjections: unknown[] = [];
+  const specialistProjections: Array<{ id: string; projection: unknown }> = [];
   const specialists = registrations(async (_id, _domain, _context) => ({}));
   for (const registration of specialists) {
     const generate = registration.generate;
     registration.generate = async (projection, context) => {
-      specialistProjections.push(projection);
+      specialistProjections.push({ id: registration.id, projection });
       return generate(projection, context);
     };
   }
@@ -350,14 +350,21 @@ function registrations(
   );
   assert.equal(specialistProjections.length, 7, 'all Specialists still run on conservative projections');
   assert.equal(
-    specialistProjections.some((projection) => JSON.stringify(projection).includes(fallbackRawInput)),
+    specialistProjections.some(({ projection }) => JSON.stringify(projection).includes(fallbackRawInput)),
     false,
     'no Specialist may receive raw input during compiler fallback',
   );
   assert.equal(
-    specialistProjections.some((projection) => JSON.stringify(projection).includes('material.handoff_2347')),
+    specialistProjections.some(({ projection }) => JSON.stringify(projection).includes('material.handoff_2347')),
     false,
     'authored story material must remain scoped to the Main World Model',
+  );
+  assert.deepEqual(
+    (specialistProjections.find(({ id }) => id === 'clue-specialist')?.projection as {
+      clueDefinitions?: Array<{ id: string }>;
+    }).clueDefinitions?.map((definition) => definition.id),
+    ['wrong_package', 'package_photo', 'linyue_has_photo'],
+    'Clue Specialist must receive the deterministic clue registry it is allowed to propose.',
   );
   assert.ok(wave.turnBrief?.compilerVersion.includes('fallback'));
 }

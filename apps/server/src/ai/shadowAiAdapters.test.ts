@@ -404,6 +404,31 @@ assert.equal(
 assert(calls.at(-1)?.system.includes('preconditions item:'));
 assert(calls.at(-1)?.system.includes('proposedEvents item:'));
 
+const clue = adapters.specialists.find(
+  (registration) => registration.id === 'clue-specialist',
+);
+await clue?.generate({
+  facts: [],
+  factIds: [],
+  conditionalSignals: [],
+  clueDefinitions: [{
+    id: 'package_photo',
+    allowedAssertions: [{ subject: 'package', predicate: 'exterior.photo_captured', value: true }],
+  }],
+}, {
+  envelope: request,
+  signal: controller.signal,
+});
+assert.equal(calls.at(-1)?.role, 'clue_specialist');
+assert(
+  calls.at(-1)?.system.includes('Use only a canonical clue id from projection.clueDefinitions'),
+  'Clue Specialist must be constrained to the deterministic clue registry.',
+);
+assert(
+  calls.at(-1)?.system.includes('The proposal must be observation-only'),
+  'Clue Specialist must not receive state-mutation authority.',
+);
+
 const recommendation = adapters.specialists.find(
   (registration) => registration.id === 'recommendation-specialist',
 );

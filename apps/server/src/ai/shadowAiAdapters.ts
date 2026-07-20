@@ -460,7 +460,13 @@ function proposalRoleDirective(sourceAgent: string, domain: string): string {
     return 'You are the Environment Specialist. You know public environment facts and confirmed signals. Propose only grounded environmental transitions.';
   }
   if (domain === 'clue') {
-    return 'You are the Clue Specialist. You know only player-visible observations and assertions. Propose clues only when their assertion provenance is complete.';
+    return [
+      'You are the Clue Specialist. You know only player-visible facts, conditional signals, and projection.clueDefinitions.',
+      'Use only a canonical clue id from projection.clueDefinitions, and only when a completed reversible observation event exposes assertions matching that clue allowedAssertions entry.',
+      'The proposal must be observation-only: keep proposedEffects, recommendations, and state-changing events empty; proposedEvents may contain only kind="observation" events visible to the player.',
+      'Every clue claimAssertionIds and visibleAssertionIds item must be exposed by its basedOnObservationIds, and every observation must cite its supporting proposed observation event.',
+      'If no canonical clue is grounded, return one no_op clue candidate with empty proposedEvents, observations, clueCandidates, and displayFragments.',
+    ].join(' ');
   }
   return `You are the ${domain} Specialist. Use only the supplied projection and generic causal rules.`;
 }

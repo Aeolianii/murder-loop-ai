@@ -17,6 +17,7 @@ import type { TurnFreshnessSnapshot } from '../commit/atomicTurnCommit';
 import { buildFactLedgerFromGameState, buildKnowledgeProjections, type KnowledgeProjections } from '../facts/knowledgeProjection';
 import { projectTurnIntent, type ConditionalIntentSignal, type IntentProjections } from '../intent/IntentProjector';
 import { canonicalStoryMaterial } from '../storyMaterial/canonicalStoryMaterial';
+import { supportedSpecialistClueDefinitions } from '../takeover/knowledgeClueTakeover';
 import { validateTurnBrief, type SemanticCompiler } from '../intent/turnBriefValidator';
 import {
   buildShadowArbitrationMetrics,
@@ -641,7 +642,12 @@ function projectionFor(
     return registration.npcId ? projections.npcSpecialists[registration.npcId] : undefined;
   }
   if (registration.domain === 'environment') return projections.environmentSpecialist;
-  if (registration.domain === 'clue') return projections.clueSpecialist;
+  if (registration.domain === 'clue') {
+    return {
+      ...projections.clueSpecialist,
+      clueDefinitions: supportedSpecialistClueDefinitions(),
+    };
+  }
   if (registration.domain === 'recommendation') return projections.recommendationSpecialist;
   return projections.mainWorldModel;
 }

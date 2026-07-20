@@ -12,12 +12,14 @@ import {
   commitPreparedLowRiskTurn,
   projectConfirmedKnowledgeAndClues,
   projectConfirmedHighRiskResults,
+  prepareSpecialistClueProjection,
   prepareLowRiskTurn,
   type AtomicTurnStore,
   type CommitEventCandidate,
   type LowRiskTakeoverPreparation,
   type PreparedLowRiskTurn,
   type ShadowCandidateWave,
+  type SpecialistClueProjectionBundle,
 } from '@murder-loop-ai/game-core';
 import type { GameState, RecommendedAction } from '@murder-loop-ai/shared';
 import type { ShadowRunSession } from '../shadow/shadowCoordinator';
@@ -43,6 +45,8 @@ export interface KnowledgeClueProjectionSummary {
   addedObservationIds: string[];
   addedKnowledgeFactIds: string[];
   addedClueIds: string[];
+  acceptedSpecialistClueIds?: string[];
+  rejectedSpecialistClueIds?: string[];
 }
 
 export interface HighRiskProjectionSummary {
@@ -109,6 +113,8 @@ export function createLowRiskTakeoverService(
     authorityRejectedEventIds: string[];
     authorityRejectionDecisions: HighRiskDecision[];
     recommendationSnapshots: AcceptedRecommendationSnapshot[];
+    specialistClueBundles: SpecialistClueProjectionBundle[];
+    rejectedSpecialistClueIds: string[];
   }>();
 
   return {
@@ -148,6 +154,14 @@ export function createLowRiskTakeoverService(
       const recommendationSnapshots = publishAiDownstream
         ? selectAcceptedRecommendations(wave, state)
         : [];
+      const specialistClues = publishAiDownstream
+        ? selectSpecialistClueProjectionBundles(
+            wave,
+            preparation,
+            state,
+            downstreamEvents.eventCandidates,
+          )
+        : { bundles: [], rejectedClueIds: [] };
       const recommendedActions = recommendationSnapshots.map(({ action }) => action);
       pending.set(session.envelope.turnId, {
         prepared: preparation,
@@ -161,6 +175,8 @@ export function createLowRiskTakeoverService(
         authorityRejectedEventIds: downstreamEvents.rejectedEventIds,
         authorityRejectionDecisions: downstreamEvents.rejectionDecisions,
         recommendationSnapshots,
+        specialistClueBundles: specialistClues.bundles,
+        rejectedSpecialistClueIds: specialistClues.rejectedClueIds,
       });
       return {
         status: 'prepared',
@@ -207,23 +223,50 @@ export function createLowRiskTakeoverService(
       }
 
       if (knowledgeClueTakeoverEnabled) {
+        const projectionEventCandidates = [
+          ...entry.prepared.eventCandidates,
+          ...additionalEventCandidates,
+        ];
         const projection = projectConfirmedKnowledgeAndClues({
           baselineState: entry.baselineState,
           candidateState,
-          eventCandidates: [
-            ...entry.prepared.eventCandidates,
-            ...additionalEventCandidates,
-          ],
+          eventCandidates: projectionEventCandidates,
           candidates: entry.prepared.knowledgeClueCandidates,
         });
         if (projection.status === 'rejected') {
           throw new Error(`Knowledge/Clue projection rejected: ${projection.reason}`);
         }
         candidateState = projection.state;
+        const acceptedSpecialistClueIds: string[] = [];
+        const rejectedSpecialistClueIds = [...entry.rejectedSpecialistClueIds];
+        for (const bundle of entry.specialistClueBundles) {
+          const specialistProjection = projectConfirmedKnowledgeAndClues({
+            baselineState: candidateState,
+            candidateState,
+            eventCandidates: [
+              ...projectionEventCandidates,
+              ...bundle.eventCandidates,
+            ],
+            candidates: bundle.candidates,
+          });
+          if (specialistProjection.status === 'rejected') {
+            rejectedSpecialistClueIds.push(...bundle.clueIds);
+            continue;
+          }
+          candidateState = specialistProjection.state;
+          projectionEventCandidates.push(...bundle.eventCandidates);
+          additionalEventCandidates.push(...bundle.eventCandidates);
+          acceptedSpecialistClueIds.push(...bundle.clueIds);
+          projection.addedObservationIds.push(...specialistProjection.addedObservationIds);
+          projection.addedKnowledgeFactIds.push(...specialistProjection.addedKnowledgeFactIds);
+          projection.addedClueIds.push(...specialistProjection.addedClueIds);
+        }
         knowledgeClueProjection = {
-          addedObservationIds: projection.addedObservationIds,
-          addedKnowledgeFactIds: projection.addedKnowledgeFactIds,
-          addedClueIds: projection.addedClueIds,
+          addedObservationIds: [...new Set(projection.addedObservationIds)],
+          addedKnowledgeFactIds: [...new Set(projection.addedKnowledgeFactIds)],
+          addedClueIds: [...new Set(projection.addedClueIds)],
+          acceptedSpecialistClueIds: [...new Set(acceptedSpecialistClueIds)],
+          rejectedSpecialistClueIds: [...new Set(rejectedSpecialistClueIds)],
         };
       }
 
@@ -308,6 +351,69 @@ function selectAcceptedRecommendations(
   }
 
   return accepted;
+}
+
+function selectSpecialistClueProjectionBundles(
+  wave: ShadowCandidateWave,
+  preparation: PreparedLowRiskTurn,
+  state: GameState,
+  downstreamEventCandidates: CommitEventCandidate[],
+): { bundles: SpecialistClueProjectionBundle[]; rejectedClueIds: string[] } {
+  const selectedProposalIds = new Set(wave.arbitration?.selectedProposalIds ?? []);
+  const rejectedProposalIds = new Set(
+    wave.arbitration?.rejectedProposals.map((proposal) => proposal.proposalId) ?? [],
+  );
+  const proposals: Array<Proposal | SpecialistCandidate> = [
+    ...wave.mainProposals,
+    ...wave.specialistCandidates,
+  ];
+  const reservedEventIds = new Set(
+    [
+      ...preparation.eventCandidates,
+      ...downstreamEventCandidates,
+    ].map(({ event }) => event.id),
+  );
+  const reservedObservationIds = new Set([
+    ...state.observations.map((observation) => observation.id),
+    ...preparation.knowledgeClueCandidates.observations.map((observation) => observation.id),
+  ]);
+  const reservedClueIds = new Set([
+    ...state.clues.map((clue) => clue.id),
+    ...preparation.knowledgeClueCandidates.clues.map((clue) => clue.id),
+  ]);
+  const bundles: SpecialistClueProjectionBundle[] = [];
+  const rejectedClueIds: string[] = [];
+
+  for (const proposal of proposals) {
+    if (
+      proposal.domain !== 'clue'
+      || !selectedProposalIds.has(proposal.id)
+      || rejectedProposalIds.has(proposal.id)
+    ) {
+      continue;
+    }
+    const prepared = prepareSpecialistClueProjection({
+      proposal,
+      observedAt: {
+        run: preparation.playerResult.state.run,
+        minute: preparation.playerResult.state.minute,
+      },
+      reservedEventIds,
+      reservedObservationIds,
+      reservedClueIds,
+    });
+    if (prepared.status === 'rejected') {
+      rejectedClueIds.push(...prepared.clueIds);
+      continue;
+    }
+    bundles.push(prepared.bundle);
+    for (const { event } of prepared.bundle.eventCandidates) reservedEventIds.add(event.id);
+    for (const observation of prepared.bundle.candidates.observations) {
+      reservedObservationIds.add(observation.id);
+    }
+    for (const clue of prepared.bundle.candidates.clues) reservedClueIds.add(clue.id);
+  }
+  return { bundles, rejectedClueIds };
 }
 
 function selectRecommendationsWithStableFacts(

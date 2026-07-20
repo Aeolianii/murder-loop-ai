@@ -1,4 +1,9 @@
-import type { Fact, ProposedEvent } from '@murder-loop-ai/ai-contracts';
+import type {
+  Fact,
+  Proposal,
+  ProposedEvent,
+  SpecialistCandidate,
+} from '@murder-loop-ai/ai-contracts';
 import type {
   CharacterId,
   ClueRecord,
@@ -34,6 +39,23 @@ export interface KnowledgeClueProjectionCandidates {
   knowledgeUpdates: KnowledgeUpdateCandidate[];
   clues: ClueProjectionCandidate[];
 }
+
+export interface SpecialistClueProjectionBundle {
+  proposalId: string;
+  eventCandidates: CommitEventCandidate[];
+  candidates: KnowledgeClueProjectionCandidates;
+  clueIds: string[];
+}
+
+export type SpecialistClueProjectionPreparation = {
+  status: 'prepared';
+  bundle: SpecialistClueProjectionBundle;
+} | {
+  status: 'rejected';
+  proposalId: string;
+  clueIds: string[];
+  reason: string;
+};
 
 export function buildLowRiskKnowledgeClueCandidates(
   events: ProposedEvent[],
@@ -226,6 +248,162 @@ const PHASE_FOUR_CLUE_DEFINITIONS: Record<string, {
     allowedAssertions: [{ subject: 'lin_yue', predicate: 'package_photo_received', value: true }],
   },
 };
+
+export function prepareSpecialistClueProjection(input: {
+  proposal: Proposal | SpecialistCandidate;
+  observedAt: { run: number; minute: number };
+  reservedEventIds?: Iterable<string>;
+  reservedObservationIds?: Iterable<string>;
+  reservedClueIds?: Iterable<string>;
+}): SpecialistClueProjectionPreparation {
+  const { proposal } = input;
+  const clueIds = proposal.clueCandidates.map((clue) => clue.id);
+  const reject = (reason: string): SpecialistClueProjectionPreparation => ({
+    status: 'rejected',
+    proposalId: proposal.id,
+    clueIds,
+    reason,
+  });
+  if (
+    proposal.domain !== 'clue'
+    || proposal.riskClass !== 'reversible'
+    || proposal.proposedEffects.length > 0
+    || proposal.clueCandidates.length === 0
+  ) {
+    return reject('clue_proposal_not_observation_only');
+  }
+
+  const reservedEventIds = new Set(input.reservedEventIds ?? []);
+  const reservedObservationIds = new Set(input.reservedObservationIds ?? []);
+  const reservedClueIds = new Set(input.reservedClueIds ?? []);
+  const eventsById = new Map(proposal.proposedEvents.map((event) => [event.id, event]));
+  if (
+    eventsById.size !== proposal.proposedEvents.length
+    || proposal.proposedEvents.some((event) => (
+      reservedEventIds.has(event.id)
+      || event.kind !== 'observation'
+      || event.status !== 'completed'
+      || event.riskClass !== 'reversible'
+      || event.actorId !== proposal.actorId
+      || !isPlayerVisible(event)
+    ))
+  ) {
+    return reject('clue_event_not_safe');
+  }
+
+  const observationsById = new Map(proposal.observations.map((observation) => [
+    observation.id,
+    observation,
+  ]));
+  if (
+    observationsById.size !== proposal.observations.length
+    || proposal.observations.some((observation) => (
+      reservedObservationIds.has(observation.id)
+      || observation.basedOnEffectIds.length > 0
+      || observation.basedOnEventIds.some((eventId) => !eventsById.has(eventId))
+    ))
+  ) {
+    return reject('clue_observation_source_invalid');
+  }
+
+  const factIdByAssertionId = new Map<string, string>();
+  for (const event of proposal.proposedEvents) {
+    for (const assertion of playerVisibleAssertions(event)) {
+      if (factIdByAssertionId.has(assertion.id)) return reject('clue_assertion_id_duplicate');
+      factIdByAssertionId.set(
+        assertion.id,
+        canonicalFactIdForAssertion(event.id, assertion.id),
+      );
+    }
+  }
+
+  const observations: ObservationRecord[] = [];
+  for (const observation of proposal.observations) {
+    if (
+      observation.value !== null
+      && typeof observation.value !== 'string'
+      && typeof observation.value !== 'number'
+      && typeof observation.value !== 'boolean'
+    ) {
+      return reject('clue_observation_value_invalid');
+    }
+    const sourceAssertionIds = new Set(observation.basedOnEventIds.flatMap((eventId) => (
+      playerVisibleAssertions(eventsById.get(eventId)!).map((assertion) => assertion.id)
+    )));
+    if (observation.visibleAssertionIds.some((assertionId) => !sourceAssertionIds.has(assertionId))) {
+      return reject('clue_observation_assertion_invalid');
+    }
+    const visibleFactIds = observation.visibleAssertionIds.map((assertionId) => (
+      factIdByAssertionId.get(assertionId)
+    ));
+    if (visibleFactIds.some((factId) => !factId)) {
+      return reject('clue_observation_assertion_invalid');
+    }
+    observations.push({
+      id: observation.id,
+      subject: observation.subject,
+      predicate: observation.predicate,
+      value: observation.value,
+      scope: observation.scope,
+      visibleFactIds: visibleFactIds as string[],
+      sourceEventIds: [...observation.basedOnEventIds],
+      observedAt: { ...input.observedAt },
+    });
+  }
+
+  const clues: ClueProjectionCandidate[] = [];
+  if (new Set(clueIds).size !== clueIds.length) return reject('clue_id_duplicate');
+  for (const clue of proposal.clueCandidates) {
+    if (
+      !PHASE_FOUR_CLUE_DEFINITIONS[clue.id]
+      || reservedClueIds.has(clue.id)
+      || clue.basedOnObservationIds.some((observationId) => !observationsById.has(observationId))
+    ) {
+      return reject('clue_definition_or_observation_unsupported');
+    }
+    const observedAssertionIds = new Set(clue.basedOnObservationIds.flatMap((observationId) => (
+      observationsById.get(observationId)?.visibleAssertionIds ?? []
+    )));
+    if (
+      clue.claimAssertionIds.some((assertionId) => !observedAssertionIds.has(assertionId))
+      || clue.visibleAssertionIds.some((assertionId) => !observedAssertionIds.has(assertionId))
+    ) {
+      return reject('clue_claim_not_observed');
+    }
+    const claims = clue.claimAssertionIds.map((assertionId) => (
+      factIdByAssertionId.get(assertionId)
+    ));
+    if (claims.some((factId) => !factId)) return reject('clue_claim_assertion_invalid');
+    clues.push({
+      id: clue.id,
+      claims: claims as string[],
+      basedOnObservationIds: [...clue.basedOnObservationIds],
+    });
+  }
+
+  const usedEventIds = new Set(observations.flatMap((observation) => observation.sourceEventIds));
+  return {
+    status: 'prepared',
+    bundle: {
+      proposalId: proposal.id,
+      eventCandidates: proposal.proposedEvents
+        .filter((event) => usedEventIds.has(event.id))
+        .map((event) => ({ event, sourceProposalId: proposal.id })),
+      candidates: { observations, knowledgeUpdates: [], clues },
+      clueIds,
+    },
+  };
+}
+
+export function supportedSpecialistClueDefinitions(): Array<{
+  id: string;
+  allowedAssertions: Array<Pick<Fact, 'subject' | 'predicate' | 'value'>>;
+}> {
+  return Object.entries(PHASE_FOUR_CLUE_DEFINITIONS).map(([id, definition]) => ({
+    id,
+    allowedAssertions: definition.allowedAssertions.map((assertion) => ({ ...assertion })),
+  }));
+}
 
 export type KnowledgeClueProjection = {
   status: 'projected';

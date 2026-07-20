@@ -255,6 +255,83 @@ assert.equal(
 if (deterministicOnly.status !== 'prepared') {
   throw new Error('expected deterministic TurnBrief preparation');
 }
+
+function clueProposal(
+  proposalId: string,
+  clueId: 'package_photo' | 'wrong_package',
+): SpecialistCandidate {
+  const eventId = `event.${proposalId}`;
+  const assertionId = `assertion.${proposalId}`;
+  const observationId = `observation.${proposalId}`;
+  const packagePhoto = clueId === 'package_photo';
+  return {
+    ...envelope,
+    id: proposalId,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    sourceAgent: 'clue-specialist',
+    domain: 'clue',
+    candidateRank: 0,
+    turnBriefActionIds: [],
+    replacementFor: [],
+    actorId: 'player',
+    operation: 'observe',
+    targetIds: ['package'],
+    basedOnFactIds: [],
+    preconditions: [],
+    forbiddenScopes: [],
+    proposedEffects: [],
+    observations: [{
+      id: observationId,
+      subject: 'package',
+      predicate: packagePhoto ? 'exterior_photo' : 'exterior_label',
+      value: packagePhoto ? 'captured' : 'ambiguous',
+      scope: packagePhoto ? 'exterior' : 'exterior.label',
+      basedOnEffectIds: [],
+      basedOnEventIds: [eventId],
+      visibleAssertionIds: [assertionId],
+    }],
+    visibility: ['player'],
+    confidence: 1,
+    riskClass: 'reversible',
+    evidenceRefs: [],
+    causalParentIds: [],
+    proposedEvents: [{
+      id: eventId,
+      kind: 'observation',
+      sourceActionIds: [],
+      actorId: 'player',
+      operation: 'observe',
+      targetIds: ['package'],
+      status: 'completed',
+      summary: packagePhoto
+        ? 'The already captured package exterior photo is visible.'
+        : 'The package exterior label is visibly ambiguous.',
+      assertions: [{
+        id: assertionId,
+        subject: 'package',
+        predicate: packagePhoto ? 'exterior.photo_captured' : 'exterior.label_ambiguous',
+        value: true,
+        visibleTo: ['player'],
+      }],
+      visibility: ['player'],
+      riskClass: 'reversible',
+      evidenceRefs: [],
+      causalParentIds: [],
+    }],
+    clueCandidates: [{
+      id: clueId,
+      claimAssertionIds: [assertionId],
+      basedOnObservationIds: [observationId],
+      visibleAssertionIds: [assertionId],
+      confidence: 1,
+    }],
+    recommendations: [],
+    displayFragments: [],
+    candidateType: 'specialist',
+    specialistId: 'clue-specialist',
+  };
+}
 assert.equal(
   deterministicOnly.prepared.executionAuthorityId,
   `deterministic.turn-brief-reducer.${envelope.turnId}`,
@@ -572,6 +649,79 @@ const phaseFourConflict = await phaseFourConflictService.commit(
 assert.equal(phaseFourConflict.outcome.result.commitStatus, 'conflict');
 assert.equal(phaseFourConflict.state, undefined);
 assert.equal(phaseFourConflict.knowledgeClueProjection, undefined);
+
+{
+  const clueState = createInitialGameState();
+  clueState.room.package.state.photographed = true;
+  clueState.world = createInitialWorldState();
+  const selectedClue = clueProposal('proposal.clue.selected-photo', 'package_photo');
+  const unselectedClue = clueProposal('proposal.clue.unselected-label', 'wrong_package');
+  const clueWave = wave(brief('wait', ['player']));
+  clueWave.specialistCandidates.push(selectedClue, unselectedClue);
+  clueWave.arbitration!.selectedProposalIds.push(selectedClue.id);
+  clueWave.arbitration!.transition.acceptedEvents.push(...selectedClue.proposedEvents);
+  clueWave.arbitration!.transition.selectedSourceByDomain.clue = selectedClue.sourceAgent;
+
+  const clueService = createLowRiskTakeoverService({ knowledgeClueTakeoverEnabled: true });
+  const cluePrepared = await clueService.prepare(session(clueWave), clueState);
+  assert.equal(cluePrepared.status, 'prepared');
+  if (cluePrepared.status !== 'prepared') throw new Error('expected clue-specialist preparation');
+  const clueCommitted = await clueService.commit(
+    envelope.turnId,
+    cluePrepared.prepared.playerResult.state,
+  );
+  assert.equal(clueCommitted.outcome.result.commitStatus, 'committed');
+  assert.equal(
+    clueCommitted.state?.clues.some((clue) => clue.id === 'package_photo'),
+    true,
+    'an Arbiter-selected and deterministically validated Clue Specialist candidate must be formalized',
+  );
+  assert.equal(
+    clueCommitted.state?.clues.some((clue) => clue.id === 'wrong_package'),
+    false,
+    'an unselected Clue Specialist candidate must not enter formal state',
+  );
+  assert.equal(
+    clueCommitted.outcome.confirmedEvents.some((event) => event.id === selectedClue.proposedEvents[0].id),
+    true,
+    'the observation event supporting a formal clue must be committed atomically',
+  );
+  assert.deepEqual(
+    clueCommitted.knowledgeClueProjection?.acceptedSpecialistClueIds,
+    ['package_photo'],
+  );
+
+  const unsafeClue = clueProposal('proposal.clue.unsafe-photo', 'package_photo');
+  unsafeClue.riskClass = 'high_impact';
+  unsafeClue.proposedEvents[0].riskClass = 'high_impact';
+  const unsafeClueWave = wave(brief('wait', ['player']));
+  unsafeClueWave.specialistCandidates.push(unsafeClue);
+  unsafeClueWave.arbitration!.selectedProposalIds.push(unsafeClue.id);
+  unsafeClueWave.arbitration!.transition.acceptedEvents.push(...unsafeClue.proposedEvents);
+  const unsafeClueService = createLowRiskTakeoverService({ knowledgeClueTakeoverEnabled: true });
+  const unsafeCluePrepared = await unsafeClueService.prepare(session(unsafeClueWave), clueState);
+  assert.equal(unsafeCluePrepared.status, 'prepared');
+  if (unsafeCluePrepared.status !== 'prepared') throw new Error('expected safe low-risk preparation');
+  const unsafeClueCommitted = await unsafeClueService.commit(
+    envelope.turnId,
+    unsafeCluePrepared.prepared.playerResult.state,
+  );
+  assert.equal(unsafeClueCommitted.outcome.result.commitStatus, 'committed');
+  assert.equal(
+    unsafeClueCommitted.state?.clues.some((clue) => clue.id === 'package_photo'),
+    false,
+    'an unsafe Clue Specialist candidate must not enter formal state',
+  );
+  assert.equal(
+    unsafeClueCommitted.outcome.confirmedEvents.some((event) => event.id === unsafeClue.proposedEvents[0].id),
+    false,
+    'an unsafe clue observation event must not be committed',
+  );
+  assert.deepEqual(
+    unsafeClueCommitted.knowledgeClueProjection?.rejectedSpecialistClueIds,
+    ['package_photo'],
+  );
+}
 
 {
   const phaseFiveState = createInitialGameState();

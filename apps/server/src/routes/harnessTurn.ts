@@ -606,6 +606,10 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               observationCount: committed.knowledgeClueProjection.addedObservationIds.length,
               knowledgeUpdateCount: committed.knowledgeClueProjection.addedKnowledgeFactIds.length,
               clueCount: committed.knowledgeClueProjection.addedClueIds.length,
+              acceptedSpecialistClueCount:
+                committed.knowledgeClueProjection.acceptedSpecialistClueIds?.length ?? 0,
+              rejectedSpecialistClueCount:
+                committed.knowledgeClueProjection.rejectedSpecialistClueIds?.length ?? 0,
               narratorClueAuthority: 'disabled',
             };
           }
