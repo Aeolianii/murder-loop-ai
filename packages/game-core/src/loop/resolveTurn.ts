@@ -969,4 +969,4 @@ export async function resolveAmbientTurn(
   return { ambientResult, killerStrategy, killerResult, narration, finalState };
 }
 
-export { rewindAfterDeath } from './rewind';
+export { prepareDeathLoopReset, rewindAfterDeath } from './rewind';

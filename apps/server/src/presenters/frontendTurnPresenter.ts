@@ -25,7 +25,9 @@ export function toFrontendClues(state: GameState) {
     id: clue.id,
     name: clue.title,
     description: clue.detail,
-    status: (i === state.clues.length - 1 ? 'new' : 'known') as 'new' | 'known',
+    status: (
+      clue.discoveredAt.run === state.run && i === state.clues.length - 1 ? 'new' : 'known'
+    ) as 'new' | 'known',
     source: clue.source,
   }));
 }

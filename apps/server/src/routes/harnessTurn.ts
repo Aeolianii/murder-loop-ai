@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
-  createHarness, normalizeLoopMemory, resolveLegacyTurnHarness, resolveMinimumPlayableTurn,
+  atomicLoopReset, createHarness, normalizeLoopMemory, prepareDeathLoopReset,
+  resolveLegacyTurnHarness, resolveMinimumPlayableTurn,
   resolveTurnHarnessFromPreparedPlayerTurn,
   type AiAdapters,
   type HarnessOptions,
@@ -363,11 +364,16 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
 
   app.post('/api/harness/turn', async (request, reply) => {
     const body = request.body as {
+      operation?: 'turn' | 'reset_loop';
       input?: string;
       state?: GameState;
       gameSessionId?: string;
       inputStateVersion?: number;
     };
+    const operation = body.operation ?? 'turn';
+    if (operation !== 'turn' && operation !== 'reset_loop') {
+      return reply.code(400).send({ error: 'invalid_operation' });
+    }
     const input = body.input?.trim() ?? '';
     const bootstrapState = coerceGameState(body.state);
     const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
@@ -400,30 +406,83 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       worldTick: 'enabled',
     };
 
-    // 死亡状态自动回退——无论有没有输入，先复活
     let state = openedSession.state;
-    if (state.phase === 'death' || (state.ending && state.phase !== 'loop_started')) {
-      const { rewindAfterDeath } = await import('@murder-loop-ai/game-core');
-      const rewoundState = rewindAfterDeath(state);
-      const nextLoopId = gameSessionLoopId(gameSessionId, rewoundState.run);
-      const resetStatus = await openedSession.store.resetLoop({
-        expectedLoopId: sessionLoopId,
-        expectedStateVersion: sessionStateVersion,
+    const isDeathState = state.phase === 'death' || state.ending === 'death';
+    if (operation === 'reset_loop') {
+      if (!isDeathState) {
+        return reply.code(409).send({
+          error: 'loop_reset_not_allowed',
+          gameSessionId,
+          inputStateVersion: sessionStateVersion,
+          authoritativeLoopId: sessionLoopId,
+          authoritativeStateVersion: sessionStateVersion,
+        });
+      }
+
+      const nextLoopId = gameSessionLoopId(gameSessionId, state.run + 1);
+      const preparedReset = prepareDeathLoopReset(state, {
+        previousLoopId: sessionLoopId,
         nextLoopId,
         startingStateVersion: 0,
-        candidateState: rewoundState,
+        nextRun: state.run + 1,
       });
-      if (resetStatus !== 'reset') {
-        return reply.code(resetStatus === 'conflict' ? 409 : 503).send({
-          error: resetStatus === 'conflict' ? 'state_version_conflict' : 'session_persistence_failed',
+      const resetOutcome = await atomicLoopReset({
+        expectedLoopId: sessionLoopId,
+        expectedStateVersion: sessionStateVersion,
+        reset: preparedReset,
+      }, openedSession.store);
+      if (resetOutcome.status !== 'reset') {
+        return reply.code(resetOutcome.status === 'conflict' ? 409 : 503).send({
+          error: resetOutcome.status === 'conflict' ? 'state_version_conflict' : 'session_persistence_failed',
           gameSessionId,
           inputStateVersion: sessionStateVersion,
         });
       }
-      state = rewoundState;
+
+      state = preparedReset.state;
       sessionLoopId = nextLoopId;
       sessionStateVersion = 0;
       outputStateVersion = 0;
+
+      const sidebar = await buildSidebarPayload(createAiHarness(harnessOptions), state);
+      return {
+        gameSessionId,
+        inputStateVersion: requestedStateVersion,
+        outputStateVersion,
+        coreState: state,
+        time: minuteLabel(state.minute),
+        location: '青荷公寓 503 室',
+        phase: state.phase,
+        clues: toFrontendClues(state),
+        audioCue: null,
+        ending: state.ending,
+        worldTickTrace: [],
+        deathTitle: null,
+        deathSummary: null,
+        deathMethod: null,
+        recap: generateRecap(state),
+        sidebar,
+        storyLog: [] satisfies FrontendStoryNode[],
+        agentTrace: [],
+        coordination: { warnings: [], trace: [], agentTiming: buildAgentTimingSummary([]), judgements: {} },
+        loopReset: {
+          status: resetOutcome.status,
+          previousLoopId: resetOutcome.previousLoopId,
+          nextLoopId: resetOutcome.nextLoopId,
+          rebuildProjections: preparedReset.rebuildProjections,
+          invalidatedWork: preparedReset.invalidatedWork,
+        },
+      };
+    }
+
+    if (isDeathState && input) {
+      return reply.code(409).send({
+        error: 'loop_reset_required',
+        gameSessionId,
+        inputStateVersion: sessionStateVersion,
+        authoritativeLoopId: sessionLoopId,
+        authoritativeStateVersion: sessionStateVersion,
+      });
     }
 
     if (!input) {

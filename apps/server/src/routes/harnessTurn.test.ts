@@ -1807,16 +1807,85 @@ async function testGameSessionRewindAtomicallySwitchesLoop() {
   await registerTestHarnessRoute(app, {});
   const gameSessionId = 'route-session-rewind';
   const deadState: GameState = {
-    ...baseState,
+    ...structuredClone(baseState),
+    minute: baseState.minute + 31,
     phase: 'death',
     ending: 'death',
     endingReason: 'forced_entry',
+    phoneBattery: 7,
+    threat: 96,
+    linYuePhase: 'received_photo',
+    clues: [
+      {
+        id: 'persistent-package-photo',
+        title: 'Package photo',
+        detail: 'A remembered photo of the package label.',
+        source: 'player_discovered',
+        weight: 5,
+        discoveredAt: { run: baseState.run, minute: baseState.minute + 4 },
+        isPersistent: true,
+        basedOnObservationIds: ['observation.package-photo'],
+      },
+      {
+        id: 'temporary-hallway-sound',
+        title: 'Hallway sound',
+        detail: 'A sound that only belonged to the previous loop.',
+        source: 'player_discovered',
+        weight: 2,
+        discoveredAt: { run: baseState.run, minute: baseState.minute + 9 },
+        isPersistent: false,
+        basedOnObservationIds: ['observation.hallway-sound'],
+      },
+    ],
+    observations: [
+      {
+        id: 'observation.package-photo',
+        subject: 'package',
+        predicate: 'photographed',
+        value: true,
+        scope: 'phone.gallery',
+        visibleFactIds: ['fact.package.photographed'],
+        sourceEventIds: ['event.package.photographed'],
+        observedAt: { run: baseState.run, minute: baseState.minute + 4 },
+      },
+      {
+        id: 'observation.hallway-sound',
+        subject: 'hallway',
+        predicate: 'sound',
+        value: 'footsteps',
+        scope: 'auditory',
+        visibleFactIds: ['fact.hallway.footsteps'],
+        sourceEventIds: ['event.hallway.footsteps'],
+        observedAt: { run: baseState.run, minute: baseState.minute + 9 },
+      },
+    ],
   };
+  deadState.room.front_door.state.locked = true;
+  deadState.room.front_door.state.barricaded = true;
+
+  const heldAtDeath = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: '',
+      state: deadState,
+      gameSessionId,
+      inputStateVersion: 0,
+    },
+  });
+  assert.equal(heldAtDeath.statusCode, 200);
+  assert.equal(heldAtDeath.json().coreState.phase, 'death');
+  assert.equal(
+    heldAtDeath.json().coreState.run,
+    deadState.run,
+    'reading a dead session must not implicitly reset the loop',
+  );
 
   const rewound = await app.inject({
     method: 'POST',
     url: '/api/harness/turn',
     payload: {
+      operation: 'reset_loop',
       input: '',
       state: deadState,
       gameSessionId,
@@ -1826,23 +1895,53 @@ async function testGameSessionRewindAtomicallySwitchesLoop() {
   assert.equal(rewound.statusCode, 200);
   const rewoundBody = rewound.json();
   assert.equal(rewoundBody.coreState.run, deadState.run + 1);
+  assert.equal(rewoundBody.coreState.phase, 'loop_started');
+  assert.equal(rewoundBody.coreState.ending, null);
+  assert.equal(rewoundBody.coreState.minute, baseState.minute);
+  assert.equal(rewoundBody.coreState.phoneBattery, baseState.phoneBattery);
+  assert.equal(rewoundBody.coreState.threat, baseState.threat);
+  assert.equal(rewoundBody.coreState.linYuePhase, baseState.linYuePhase);
+  assert.deepEqual(rewoundBody.coreState.room.front_door.state, baseState.room.front_door.state);
+  assert.deepEqual(
+    rewoundBody.coreState.clues.map((clue: { id: string }) => clue.id),
+    ['persistent-package-photo'],
+  );
+  assert.equal(
+    rewoundBody.clues[0].status,
+    'known',
+    'a retained clue belongs to player memory, not this loop',
+  );
+  assert.deepEqual(
+    rewoundBody.coreState.observations.map((observation: { id: string }) => observation.id),
+    ['observation.package-photo'],
+  );
+  assert.equal(rewoundBody.coreState.memory.crossRun.length, 1, 'the player should retain a death memory');
+  assert.equal(rewoundBody.coreState.memory.characters.player.length, 1);
+  assert.equal(rewoundBody.coreState.memory.characters.killer.length, 0);
+  assert.deepEqual(rewoundBody.storyLog, [], 'a reset response must not restore the previous dialogue');
   assert.equal(rewoundBody.outputStateVersion, 0);
+  assert.deepEqual(
+    rewoundBody.loopReset.rebuildProjections,
+    ['facts', 'player', 'killer', 'npc', 'clue', 'recommendation'],
+  );
+  assert.ok(rewoundBody.loopReset.invalidatedWork.includes('late_results'));
 
   const repeated = await app.inject({
     method: 'POST',
     url: '/api/harness/turn',
     payload: {
+      operation: 'reset_loop',
       input: '',
       state: deadState,
       gameSessionId,
       inputStateVersion: 0,
     },
   });
-  assert.equal(repeated.statusCode, 200);
+  assert.equal(repeated.statusCode, 409);
   assert.equal(
-    repeated.json().coreState.run,
-    deadState.run + 1,
-    'the authoritative rewound state must prevent a second reset from stale client state',
+    repeated.json().error,
+    'loop_reset_not_allowed',
+    'the authoritative rewound state must reject a second reset from stale client state',
   );
 
   await app.close();

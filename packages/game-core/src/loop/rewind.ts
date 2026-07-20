@@ -1,19 +1,25 @@
 import { firstDeathMemory } from '@murder-loop-ai/content';
 import { START_MINUTE, type GameState } from '@murder-loop-ai/shared';
+import {
+  prepareGameLoopReset,
+  type PrepareGameLoopResetOptions,
+  type PreparedGameLoopReset,
+} from '../commit/loopResetPolicy';
 import { getConversationCheckpoint, normalizeLoopMemory, rewindMemoryAfterDeath } from '../memory/loopMemory';
 import { createInitialGameState } from '../state/createInitialState';
 import { grantReviveProtection } from './reviveProtection';
 
-export function rewindAfterDeath(state: GameState): GameState {
+export function prepareDeathLoopReset(
+  state: GameState,
+  options: PrepareGameLoopResetOptions,
+): PreparedGameLoopReset {
   const sourceMemory = normalizeLoopMemory(state.memory);
   const conversationCheckpoint = getConversationCheckpoint(sourceMemory);
-  const next = createInitialGameState();
+  const currentWithDeathMemory = structuredClone(state) as GameState;
+  currentWithDeathMemory.memory = rewindMemoryAfterDeath({ ...state, memory: sourceMemory });
+  const prepared = prepareGameLoopReset(currentWithDeathMemory, createInitialGameState(), options);
+  const next = prepared.state;
 
-  next.run = state.run + 1;
-  next.memory = rewindMemoryAfterDeath({ ...state, memory: sourceMemory });
-  next.clues = state.clues.filter((clue) => clue.isPersistent);
-  const retainedObservationIds = new Set(next.clues.flatMap((clue) => clue.basedOnObservationIds ?? []));
-  next.observations = state.observations.filter((observation) => retainedObservationIds.has(observation.id));
   grantReviveProtection(next);
 
   next.log = [
@@ -40,5 +46,15 @@ export function rewindAfterDeath(state: GameState): GameState {
         },
   ];
 
-  return next;
+  return prepared;
+}
+
+/** @deprecated Prefer prepareDeathLoopReset + atomicLoopReset for persisted sessions. */
+export function rewindAfterDeath(state: GameState): GameState {
+  return prepareDeathLoopReset(state, {
+    previousLoopId: `legacy.run.${state.run}`,
+    nextLoopId: `legacy.run.${state.run + 1}`,
+    startingStateVersion: 0,
+    nextRun: state.run + 1,
+  }).state;
 }
