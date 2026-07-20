@@ -186,7 +186,11 @@ export default function App() {
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Main Content Area */}
         <main className="relative flex min-w-0 flex-1 flex-col bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-zinc-900/10 via-[#08080a] to-[#08080a] lg:border-r lg:border-white/5">
-          <StoryPanel log={state.storyLog} />
+          <StoryPanel
+            log={state.storyLog}
+            onRecommendedAction={handleActionSubmit}
+            recommendationsDisabled={state.isParsing || Boolean(state.ending)}
+          />
 
           <div className="relative">
             {/* Soft gradient fade for text going behind input */}

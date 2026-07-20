@@ -4,10 +4,20 @@ import { StoryNode } from '../types';
 
 interface StoryPanelProps {
   log: StoryNode[];
+  onRecommendedAction: (label: string) => void;
+  recommendationsDisabled: boolean;
 }
 
-export function StoryPanel({ log }: StoryPanelProps) {
+export function StoryPanel({
+  log,
+  onRecommendedAction,
+  recommendationsDisabled,
+}: StoryPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const latestActionResultIndex = log.reduce(
+    (latest, node, index) => node.type === 'action_result' ? index : latest,
+    -1,
+  );
 
   useEffect(() => {
     if (containerRef.current) {
@@ -58,10 +68,17 @@ export function StoryPanel({ log }: StoryPanelProps) {
                       <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">下一步建议</div>
                       <div className="space-y-2">
                         {node.recommendedActions.map((action) => (
-                          <div key={action.id} className="rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                          <button
+                            key={action.id}
+                            type="button"
+                            aria-label={`执行建议：${action.label}`}
+                            disabled={recommendationsDisabled || index !== latestActionResultIndex}
+                            onClick={() => onRecommendedAction(action.label)}
+                            className="block w-full rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-900/70 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
                             <div className="text-xs leading-relaxed text-zinc-300 md:text-sm">{action.label}</div>
                             <div className="mt-1 text-[11px] leading-relaxed text-zinc-500 md:text-xs">{action.rationale}</div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>

@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
+    "test": "tsx src/components/StoryPanel.test.tsx && tsx src/clueRevealState.test.ts && tsx src/frontendState.test.ts && tsx src/turnViewModel.test.ts && tsx src/store/gameStore.test.ts",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
@@ -34,6 +35,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "fluent-ffmpeg": "^2.1.3",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }
