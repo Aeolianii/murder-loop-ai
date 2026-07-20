@@ -99,6 +99,7 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
   assert.equal(projection.state.player.injury, 'none');
   assert.equal(projection.state.evidencePhase, 'package_unnoticed');
   assert.equal(projection.state.room.package.state.destroyed, undefined);
+  assert.equal(projection.state.threat, state.threat + 5);
   assert.equal(projection.acceptedEventCandidates.some(({ event: item }) => item.id === entered.id), false);
   assert.equal(projection.correctedEventIds.includes(`${entered.id}.blocked`), true);
   assert.equal(projection.rejectedEventIds.includes(entered.id), true);
@@ -110,6 +111,8 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
   const state = createInitialGameState();
   state.world = createInitialWorldState();
   state.world.characters.chen_huaimin.location = 'corridor_5f';
+  state.room.package.state.photographed = true;
+  state.room.phone.state.recording = true;
   const attemptedEntry = event({
     id: 'event.valid.entry-attempted',
     eventType: 'entry_attempted',
@@ -187,7 +190,19 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
     eventType: 'ending_reached',
     subject: 'death',
     riskClass: 'irreversible',
-    facts: ['ending:death', 'reason:forced_entry'],
+    facts: ['ending:death', 'reason:forced_entry', 'invented_secret:must_not_commit'],
+    evidenceRefs: [
+      killed.id,
+      'invariant.ending.requires_terminal_cause',
+    ],
+    causalParentIds: [killed.id],
+  });
+  const falseEscape = event({
+    id: 'event.invalid.escape-after-player-death',
+    eventType: 'ending_reached',
+    subject: 'escaped_with_evidence',
+    riskClass: 'irreversible',
+    facts: ['ending:escaped_with_evidence', 'reason:killer_dead_with_evidence'],
     evidenceRefs: [
       killed.id,
       'invariant.ending.requires_terminal_cause',
@@ -205,6 +220,7 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
       injured,
       killed,
       ending,
+      falseEscape,
     ].map((candidate) => ({
       event: candidate,
       sourceProposalId: 'proposal.killer.selected',
@@ -219,9 +235,26 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
   assert.equal(projection.state.endingReason, 'forced_entry');
   assert.equal(projection.state.phase, 'death');
   assert(projection.state.score);
-  assert.deepEqual(projection.rejectedEventIds, []);
-  assert.equal(projection.highRiskDecisions.every((decision) => decision.decision === 'pass'), true);
+  assert.deepEqual(projection.rejectedEventIds, [falseEscape.id]);
+  assert.equal(
+    projection.highRiskDecisions
+      .find((decision) => decision.eventId === falseEscape.id)
+      ?.decision,
+    'reject',
+  );
+  assert.equal(
+    projection.highRiskDecisions
+      .filter((decision) => decision.eventId !== falseEscape.id)
+      .every((decision) => decision.decision === 'pass'),
+    true,
+  );
   assert.equal(projection.acceptedEventCandidates.length, 7);
+  assert.equal(
+    projection.acceptedEventCandidates
+      .find(({ event: item }) => item.id === ending.id)
+      ?.event.facts.includes('invented_secret:must_not_commit'),
+    false,
+  );
 }
 
 {
@@ -257,6 +290,42 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
   assert.equal(projection.state.evidencePhase, 'evidence_destroyed');
   assert.equal(projection.state.room.package.state.destroyed, true);
   assert.equal(projection.state.world?.objects.package.flags.destroyed, true);
+}
+
+{
+  const state = createInitialGameState();
+  state.world = createInitialWorldState();
+  state.world.characters.chen_huaimin.location = 'room_503';
+  state.room.package.state.hiddenAt = 'closet';
+  state.killerKnowledge.knowsEvidenceLocation = null;
+  const attempted = event({
+    id: 'event.hidden.destroy-attempted',
+    eventType: 'evidence_destruction_attempted',
+    subject: 'package',
+    facts: ['actor:chen_huaimin'],
+  });
+  const destroyed = event({
+    id: 'event.hidden.destroyed',
+    eventType: 'evidence_destroyed',
+    subject: 'package',
+    riskClass: 'irreversible',
+    facts: ['actor:chen_huaimin', 'evidence:package'],
+    evidenceRefs: [
+      attempted.id,
+      'fact.object.package.location',
+      'invariant.evidence_destroy.requires_access',
+    ],
+    causalParentIds: [attempted.id],
+  });
+  const projection = projectConfirmedHighRiskResults({
+    baselineState: state,
+    eventCandidates: [attempted, destroyed].map((candidate) => ({
+      event: candidate,
+      sourceProposalId: 'proposal.killer.selected',
+    })),
+  });
+  assert.equal(projection.state.room.package.state.destroyed, undefined);
+  assert.equal(projection.rejectedEventIds.includes(destroyed.id), true);
 }
 
 {
@@ -415,4 +484,19 @@ function project(events: ProposedEvent[]): HighRiskTakeoverProjection {
   });
   assert.equal(projection.state.world?.characters.lin_yue.location, 'parking_lot');
   assert.equal(projection.rejectedEventIds.includes(entered.id), true);
+}
+
+{
+  const falseBlocked = event({
+    id: 'event.invalid.false-entry-block',
+    eventType: 'entry_blocked',
+    subject: 'chen_huaimin',
+    facts: ['entry_route:front_door', 'blocked_by:door_chain'],
+  });
+  const projection = project([falseBlocked]);
+  assert.equal(projection.rejectedEventIds.includes(falseBlocked.id), true);
+  assert.equal(
+    projection.acceptedEventCandidates.some(({ event: item }) => item.id === falseBlocked.id),
+    false,
+  );
 }

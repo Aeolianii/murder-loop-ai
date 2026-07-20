@@ -204,18 +204,18 @@ export function projectConfirmedHighRiskResults(input: {
           event: result.correctedEvent,
           sourceProposalId: candidate.sourceProposalId,
         };
-        acceptCandidate(state, correctedCandidate, acceptedEventCandidates, displayFragments);
-        acceptedEventIds.add(result.correctedEvent.id);
-        correctedEventIds.add(result.correctedEvent.id);
+        const correctedResult = applyConfirmedEvent(state, result.correctedEvent, eventsById);
+        if (correctedResult.status === 'applied') {
+          acceptCandidate(state, correctedCandidate, acceptedEventCandidates, displayFragments);
+          acceptedEventIds.add(result.correctedEvent.id);
+          correctedEventIds.add(result.correctedEvent.id);
+        }
       }
       continue;
     }
 
     const safeCandidate = {
-      event: {
-        ...event,
-        summary: deterministicSummary(event),
-      },
+      event: sanitizeConfirmedEvent(event),
       sourceProposalId: candidate.sourceProposalId,
     };
     acceptCandidate(state, safeCandidate, acceptedEventCandidates, displayFragments);
@@ -258,12 +258,16 @@ function applyConfirmedEvent(
         ? { status: 'applied' }
         : { status: 'rejected', reason: 'killer_action_actor_invalid' };
     case 'npc_action_attempted':
-    case 'attack_blocked':
       return { status: 'applied' };
+    case 'attack_blocked':
+      return { status: 'rejected', reason: 'attack_block_capability_unmodeled' };
     case 'actor_moved':
       return applyActorMoved(state, event);
     case 'entry_attempted':
-      if (event.subject !== 'chen_huaimin') {
+      if (
+        event.subject !== 'chen_huaimin'
+        || !['front_door', 'window'].includes(factValue(event, 'entry_route') ?? '')
+      ) {
         return { status: 'rejected', reason: 'entry_actor_invalid' };
       }
       state.killerPhase = 'forced_entry';
@@ -272,8 +276,8 @@ function applyConfirmedEvent(
       state.world!.threat = state.threat;
       return { status: 'applied' };
     case 'entry_blocked':
-      if (event.subject !== 'chen_huaimin') {
-        return { status: 'rejected', reason: 'entry_actor_invalid' };
+      if (!entryBlockIsConfirmed(state, event)) {
+        return { status: 'rejected', reason: 'entry_block_not_confirmed' };
       }
       state.threat = Math.min(100, state.threat + 3);
       state.world!.threat = state.threat;
@@ -297,7 +301,7 @@ function applyConfirmedEvent(
     case 'character_fled':
       return applyCharacterFled(state, event, eventsById);
     case 'evidence_destruction_attempted':
-      return factValue(event, 'actor') === 'chen_huaimin'
+      return event.subject === 'package' && factValue(event, 'actor') === 'chen_huaimin'
         ? { status: 'applied' }
         : { status: 'rejected', reason: 'evidence_destruction_actor_invalid' };
     case 'evidence_destroyed':
@@ -309,6 +313,19 @@ function applyConfirmedEvent(
     default:
       return { status: 'rejected', reason: 'high_risk_event_type_unsupported' };
   }
+}
+
+function entryBlockIsConfirmed(state: GameState, event: ProposedEvent): boolean {
+  if (event.subject !== 'chen_huaimin') return false;
+  const route = factValue(event, 'entry_route');
+  const blockedBy = factValue(event, 'blocked_by');
+  if (route === 'front_door') {
+    return (blockedBy === 'barricade' && state.room.front_door.state.barricaded === true)
+      || (blockedBy === 'door_chain' && state.room.front_door.state.chainLocked === true);
+  }
+  return route === 'window'
+    && blockedBy === 'window_lock'
+    && state.room.window.state.locked === true;
 }
 
 function applyActorMoved(state: GameState, event: ProposedEvent): ApplyResult {
@@ -385,6 +402,9 @@ function applyActorEntered(
         reason: 'capability_precondition_failed',
         correctedEvent: correctedBlockedEntry(event, 'window_lock'),
       };
+    }
+    if (state.world!.characters[actorId].location !== 'corridor_5f') {
+      return { status: 'rejected', reason: 'entry_route_not_reached' };
     }
   } else {
     return { status: 'rejected', reason: 'entry_route_invalid' };
@@ -630,7 +650,19 @@ function applyEvidenceDestroyed(
   ) {
     return { status: 'rejected', reason: 'evidence_access_invalid' };
   }
-  state.evidencePhase = 'evidence_destroyed';
+  const hiddenAt = state.room.package.state.hiddenAt;
+  if (
+    typeof hiddenAt === 'string'
+    && hiddenAt.length > 0
+    && state.killerKnowledge.knowsEvidenceLocation !== hiddenAt
+  ) {
+    return { status: 'rejected', reason: 'hidden_evidence_location_unknown' };
+  }
+  const hasExternalCopy = state.room.package.state.photographed === true
+    || state.room.package.state.backedUp === true
+    || state.world!.objects.package_photo.flags.exists === true
+    || state.world!.objects.package_photo.flags.backedUp === true;
+  if (!hasExternalCopy) state.evidencePhase = 'evidence_destroyed';
   state.room.package.state.destroyed = true;
   state.world!.objects.package.flags.destroyed = true;
   return { status: 'applied' };
@@ -676,10 +708,22 @@ function applyEnding(
       return { status: 'rejected', reason: 'ending_reason_mismatch' };
     }
   } else {
-    const terminalCause = parentTypes.has('character_arrested')
-      || parentTypes.has('character_killed')
-      || parentTypes.has('deadline_reached');
-    if (!terminalCause) return { status: 'rejected', reason: 'survival_terminal_cause_missing' };
+    const parentEvents = event.causalParentIds
+      .map((id) => eventsById.get(id))
+      .filter((parent): parent is ProposedEvent => Boolean(parent));
+    const killerKilled = parentEvents.some((parent) => (
+      parent.eventType === 'character_killed' && parent.subject === 'chen_huaimin'
+    ));
+    const killerArrested = parentEvents.some((parent) => (
+      parent.eventType === 'character_arrested' && parent.subject === 'chen_huaimin'
+    ));
+    const killerFled = parentEvents.some((parent) => (
+      parent.eventType === 'character_fled' && parent.subject === 'chen_huaimin'
+    ));
+    const deadlineReached = parentTypes.has('deadline_reached');
+    if (!killerKilled && !killerArrested && !killerFled && !deadlineReached) {
+      return { status: 'rejected', reason: 'survival_terminal_cause_missing' };
+    }
     const hasEvidence = hasConvictingEvidence(state);
     if (ending === 'escaped_with_evidence' && !hasEvidence) {
       return { status: 'rejected', reason: 'convicting_evidence_missing' };
@@ -688,16 +732,12 @@ function applyEnding(
       return { status: 'rejected', reason: 'ending_evidence_classification_invalid' };
     }
     const validReason = ending === 'escaped_with_evidence'
-      ? [
-          'killer_dead_with_evidence',
-          'deadline_survived_with_evidence',
-          'police_arrived_with_evidence',
-        ].includes(reason)
-      : [
-          'killer_dead_no_evidence',
-          'police_arrived_without_evidence',
-          'escaped_without_evidence',
-        ].includes(reason);
+      ? (reason === 'killer_dead_with_evidence' && killerKilled)
+        || (reason === 'deadline_survived_with_evidence' && deadlineReached)
+        || (reason === 'police_arrived_with_evidence' && killerArrested)
+      : (reason === 'killer_dead_no_evidence' && killerKilled)
+        || (reason === 'police_arrived_without_evidence' && killerArrested)
+        || (reason === 'escaped_without_evidence' && killerFled);
     if (!validReason) return { status: 'rejected', reason: 'ending_reason_mismatch' };
   }
 
@@ -771,6 +811,42 @@ function correctedBlockedEntry(event: ProposedEvent, blockedBy: string): Propose
     riskClass: 'reversible',
     evidenceRefs: event.evidenceRefs.filter((ref) => !ref.startsWith('event.')),
     causalParentIds: [...event.causalParentIds],
+  };
+}
+
+function sanitizeConfirmedEvent(event: ProposedEvent): ProposedEvent {
+  const keysByType: Record<string, string[]> = {
+    actor_moved: ['location'],
+    entry_attempted: ['entry_route'],
+    entry_blocked: ['entry_route', 'blocked_by'],
+    actor_entered: ['entry_route', 'location'],
+    attack_attempted: ['attacker', 'target'],
+    attack_landed: ['attacker', 'target'],
+    attack_blocked: ['attacker', 'target', 'blocked_by'],
+    character_injured: ['injury'],
+    police_intervention_confirmed: ['actor', 'target'],
+    evidence_destruction_attempted: ['actor'],
+    evidence_destroyed: ['actor', 'evidence'],
+    ending_reached: ['ending', 'reason'],
+  };
+  const fixedFactsByType: Record<string, string[]> = {
+    character_incapacitated: ['status:incapacitated'],
+    character_killed: ['status:dead'],
+    character_arrested: ['status:arrested'],
+    character_fled: ['status:fled'],
+  };
+  const facts = fixedFactsByType[event.eventType]
+    ?? (keysByType[event.eventType] ?? []).flatMap((key) => {
+      const value = factValue(event, key);
+      return value === undefined ? [] : [`${key}:${value}`];
+    });
+  return {
+    ...event,
+    summary: deterministicSummary(event),
+    facts,
+    visibility: [...new Set(event.visibility.filter((value) => (
+      ['player', 'public', 'killer', 'system', 'hidden'].includes(value)
+    )))],
   };
 }
 

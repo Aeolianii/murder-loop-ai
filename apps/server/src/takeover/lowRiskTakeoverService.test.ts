@@ -387,3 +387,63 @@ assert.equal(phaseFourConflict.knowledgeClueProjection, undefined);
     false,
   );
 }
+
+{
+  const authorityState = createInitialGameState();
+  authorityState.world = createInitialWorldState();
+  const unauthorizedMove: ProposedEvent = {
+    id: 'event.phase5.unauthorized-killer-move',
+    eventType: 'actor_moved',
+    subject: 'chen_huaimin',
+    summary: 'Lin Yue must not control the killer.',
+    facts: ['location:corridor_5f'],
+    visibility: ['player'],
+    riskClass: 'high_impact',
+    evidenceRefs: ['fact.world.character.chen_huaimin.location'],
+    causalParentIds: [],
+  };
+  const player = playerProposal();
+  const npc = {
+    ...killerProposal([unauthorizedMove]),
+    id: 'proposal.npc.unauthorized',
+    domain: 'npc' as const,
+    actorId: 'lin_yue',
+    operation: 'move',
+  };
+  const authorityWave = wave(brief('inspect', ['package']), player);
+  authorityWave.mainProposals = [npc];
+  authorityWave.arbitration!.selectedProposalIds = [player.id, npc.id];
+  authorityWave.arbitration!.transition.acceptedEvents = [
+    ...player.proposedEvents,
+    unauthorizedMove,
+  ];
+  authorityWave.arbitration!.transition.selectedSourceByDomain.npc = npc.sourceAgent;
+
+  const authorityService = createLowRiskTakeoverService({
+    highRiskTakeoverEnabled: true,
+  });
+  const authorityPrepared = await authorityService.prepare(
+    session(authorityWave),
+    authorityState,
+  );
+  assert.equal(authorityPrepared.status, 'prepared');
+  if (authorityPrepared.status !== 'prepared') throw new Error('expected authority preparation');
+  const authorityCommitted = await authorityService.commit(
+    envelope.turnId,
+    authorityPrepared.prepared.playerResult.state,
+  );
+  assert.equal(
+    authorityCommitted.state?.world?.characters.chen_huaimin.location,
+    'room_501',
+  );
+  assert.equal(
+    authorityCommitted.highRiskProjection?.rejectedEventIds.includes(unauthorizedMove.id),
+    true,
+  );
+  assert.equal(
+    authorityCommitted.highRiskProjection?.highRiskDecisions
+      .find((decision) => decision.eventId === unauthorizedMove.id)
+      ?.reasonCodes.includes('proposal_actor_not_authorized'),
+    true,
+  );
+}

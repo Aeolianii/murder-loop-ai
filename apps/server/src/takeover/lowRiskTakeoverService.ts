@@ -89,6 +89,8 @@ export function createLowRiskTakeoverService(
     store: AtomicTurnStore<GameState>;
     baselineState: GameState;
     highRiskEventCandidates: CommitEventCandidate[];
+    authorityRejectedEventIds: string[];
+    authorityRejectionDecisions: HighRiskDecision[];
   }>();
 
   return {
@@ -113,6 +115,7 @@ export function createLowRiskTakeoverService(
         return { status: 'bypassed', reason: preparation.reason };
       }
 
+      const downstreamEvents = selectDownstreamEventCandidates(wave);
       pending.set(session.envelope.turnId, {
         prepared: preparation,
         store: createStore({
@@ -121,7 +124,9 @@ export function createLowRiskTakeoverService(
           state,
         }),
         baselineState: structuredClone(state) as GameState,
-        highRiskEventCandidates: selectedDownstreamEventCandidates(wave),
+        highRiskEventCandidates: downstreamEvents.eventCandidates,
+        authorityRejectedEventIds: downstreamEvents.rejectedEventIds,
+        authorityRejectionDecisions: downstreamEvents.rejectionDecisions,
       });
       return { status: 'prepared', prepared: preparation };
     },
@@ -147,13 +152,19 @@ export function createLowRiskTakeoverService(
         candidateState = projection.state;
         additionalEventCandidates = projection.acceptedEventCandidates;
         additionalDisplayFragments = projection.displayFragments;
-        highRiskDecisions = projection.highRiskDecisions;
+        highRiskDecisions = [
+          ...projection.highRiskDecisions,
+          ...entry.authorityRejectionDecisions,
+        ];
         highRiskProjection = {
           acceptedEventIds: projection.acceptedEventIds,
           correctedEventIds: projection.correctedEventIds,
           deferredEventIds: projection.deferredEventIds,
-          rejectedEventIds: projection.rejectedEventIds,
-          highRiskDecisions: projection.highRiskDecisions,
+          rejectedEventIds: [
+            ...projection.rejectedEventIds,
+            ...entry.authorityRejectedEventIds,
+          ],
+          highRiskDecisions,
         };
       }
 
@@ -198,21 +209,103 @@ export function createLowRiskTakeoverService(
   };
 }
 
-function selectedDownstreamEventCandidates(wave: ShadowCandidateWave): CommitEventCandidate[] {
+function selectDownstreamEventCandidates(wave: ShadowCandidateWave): {
+  eventCandidates: CommitEventCandidate[];
+  rejectedEventIds: string[];
+  rejectionDecisions: HighRiskDecision[];
+} {
   const selectedProposalIds = new Set(wave.arbitration?.selectedProposalIds ?? []);
   const proposals: Array<Proposal | SpecialistCandidate> = [
     ...wave.mainProposals,
     ...wave.specialistCandidates,
   ];
-  return proposals
+  const eventCandidates: CommitEventCandidate[] = [];
+  const rejectedEventIds: string[] = [];
+  const rejectionDecisions: HighRiskDecision[] = [];
+  const selected = proposals
     .filter((proposal) => (
       selectedProposalIds.has(proposal.id)
       && ['killer', 'npc', 'environment', 'world'].includes(proposal.domain)
-    ))
-    .flatMap((proposal) => proposal.proposedEvents.map((event) => ({
-      event,
-      sourceProposalId: proposal.id,
-    })));
+    ));
+  for (const proposal of selected) {
+    for (const event of proposal.proposedEvents) {
+      if (proposalCanAuthorEvent(proposal, event)) {
+        eventCandidates.push({ event, sourceProposalId: proposal.id });
+        continue;
+      }
+      rejectedEventIds.push(event.id);
+      if (event.riskClass !== 'reversible') {
+        rejectionDecisions.push({
+          eventId: event.id,
+          riskClass: event.riskClass,
+          evidenceRefs: [...event.evidenceRefs],
+          decision: 'reject',
+          reasonCodes: ['proposal_actor_not_authorized'],
+        });
+      }
+    }
+  }
+  return { eventCandidates, rejectedEventIds, rejectionDecisions };
+}
+
+const KILLER_AUTHORIZED_EVENT_TYPES = new Set([
+  'actor_entered',
+  'actor_moved',
+  'attack_attempted',
+  'attack_blocked',
+  'attack_landed',
+  'character_fled',
+  'character_incapacitated',
+  'character_injured',
+  'character_killed',
+  'ending_reached',
+  'entry_attempted',
+  'entry_blocked',
+  'evidence_destroyed',
+  'evidence_destruction_attempted',
+  'killer_action_attempted',
+]);
+
+function proposalCanAuthorEvent(
+  proposal: Proposal | SpecialistCandidate,
+  event: Proposal['proposedEvents'][number],
+): boolean {
+  const actorFact = eventFact(event, 'actor');
+  const attackerFact = eventFact(event, 'attacker');
+  if (proposal.domain === 'killer') {
+    return proposal.actorId === 'chen_huaimin'
+      && KILLER_AUTHORIZED_EVENT_TYPES.has(event.eventType)
+      && (!actorFact || actorFact === 'chen_huaimin')
+      && (!attackerFact || attackerFact === 'chen_huaimin');
+  }
+  if (proposal.domain === 'environment') {
+    return ['deadline_reached', 'ending_reached'].includes(event.eventType);
+  }
+  if (proposal.domain !== 'npc') return false;
+
+  const actorId = proposal.actorId === 'police_dispatch'
+    ? 'real_police'
+    : proposal.actorId === 'linyue'
+      ? 'lin_yue'
+      : proposal.actorId;
+  if (actorFact && actorFact !== actorId) return false;
+  if (attackerFact && attackerFact !== actorId) return false;
+  if (event.eventType === 'actor_moved' || event.eventType === 'npc_action_attempted') {
+    return event.subject === actorId;
+  }
+  if (actorId === 'real_police') {
+    return ['police_intervention_confirmed', 'character_arrested', 'ending_reached']
+      .includes(event.eventType);
+  }
+  return actorId === 'lin_yue'
+    && event.subject === 'lin_yue'
+    && ['character_injured', 'character_incapacitated', 'character_killed']
+      .includes(event.eventType);
+}
+
+function eventFact(event: Proposal['proposedEvents'][number], key: string): string | undefined {
+  const prefix = `${key}:`;
+  return event.facts.find((fact) => fact.startsWith(prefix))?.slice(prefix.length);
 }
 
 function validateShadowTakeoverGate(
