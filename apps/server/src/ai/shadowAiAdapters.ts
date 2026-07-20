@@ -9,6 +9,7 @@ import type {
   ShadowRunAdapters,
   ShadowSpecialistRegistration,
 } from '@murder-loop-ai/game-core';
+import { validateTurnBriefTargetContract } from '@murder-loop-ai/game-core';
 import { completeRoleJson, type CompletionOptions } from './openaiClient';
 import type { AiRole } from './roleConfig';
 
@@ -43,11 +44,15 @@ export function createAiShadowAdapters(
       );
       if (!raw) throw new Error('Semantic Compiler returned no JSON.');
       let parsed = SemanticCompilerResultSchema.safeParse(raw);
-      if (!parsed.success) {
-        const validationIssues = parsed.error.issues.map((issue) => ({
+      const validationIssues = parsed.success
+        ? parsed.data.status === 'compiled'
+          ? validateTurnBriefTargetContract(parsed.data.brief, request.playerContext)
+          : []
+        : parsed.error.issues.map((issue) => ({
           path: issue.path.join('.'),
           message: issue.message,
         }));
+      if (validationIssues.length > 0) {
         raw = await complete(
           'semantic_compiler',
           semanticCompilerRepairPrompt(system),
@@ -64,6 +69,17 @@ export function createAiShadowAdapters(
         parsed = SemanticCompilerResultSchema.safeParse(raw);
       }
       if (!parsed.success) throw new Error(`Semantic Compiler schema: ${parsed.error.message}`);
+      if (parsed.data.status === 'compiled') {
+        const remainingIssues = validateTurnBriefTargetContract(
+          parsed.data.brief,
+          request.playerContext,
+        );
+        if (remainingIssues.length > 0) {
+          throw new Error(`Semantic Compiler target contract: ${remainingIssues
+            .map((issue) => `${issue.path}: ${issue.message}`)
+            .join('; ')}`);
+        }
+      }
       return parsed.data;
     },
   };
@@ -140,6 +156,10 @@ function semanticCompilerPrompt(): string {
     'An unknown answer or future outcome is not an input ambiguity. Preserve it as communication content or desiredOutcome; do not ask the player to supply the answer that another actor is being asked to provide.',
     'Canonical executable operation IDs: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait. Use a canonical ID whenever its meaning matches the requested action; otherwise preserve the unsupported intent with a concise snake_case operation instead of forcing it into an incorrect capability.',
     'All outgoing speech, questions, replies, calls, and messages use operation="communicate"; use operation="photograph" for image capture. A question carried by a message is communication content, not a separate action. Put its recipients, channel, attachments, audience, and contentSummary in one communications item tied to that actionId.',
+    'targetIds must contain every accessible entity whose state or location the action changes. Physical target IDs must come from playerContext.accessibleEntityIds; communication recipients must come from playerContext.activeCommunicationActorIds.',
+    'method describes technique only and must never be the only place where a state-changing entity appears.',
+    'Every secure_entry action must include "front_door" in targetIds. Barricading with chair must use operation="secure_entry" and targetIds=["front_door","chair"]. Never encode furniture barricading as use_item.',
+    'For sequential "lock, then barricade" input, emit two secure_entry actions in source order. The barricade action depends on the lock action and includes both front_door and the furniture entity in targetIds.',
     `Echo loopId, turnId, inputStateVersion, and deadlineAt exactly. Use compilerVersion="semantic-compiler-v1" and schemaVersion="${WORLD_MODEL_SCHEMA_VERSION}".`,
     'Return valid json only.',
     'Every object is strict. Every key shown below is required unless explicitly marked optional. Use [] for every array field that has no grounded items. Do not add keys that are not shown in the contract.',
@@ -255,8 +275,9 @@ function semanticCompilerPrompt(): string {
 function semanticCompilerRepairPrompt(basePrompt: string): string {
   return [
     basePrompt,
-    'REPAIR MODE: the previous output failed structural validation.',
-    'Use repair.validationIssues only to locate contract violations. Preserve the original request meaning, action order, references, communication content, envelope, and versions.',
+    'REPAIR MODE: the previous output failed schema or target-contract validation.',
+    'Use repair.validationIssues only to locate contract violations. Fix only the invalid structure; do not add, remove, merge, split, or reorder player actions.',
+    'Preserve the original request meaning, exact source spans, references, communication content, envelope, and versions. For target-contract issues, change only operation, targetIds, and dependencies required by the listed violation.',
     'Return one complete replacement json object, not a patch. Add every required key, including required arrays when empty. Omit absent optional keys instead of using null. Do not add any key outside the documented contract.',
   ].join('\n');
 }

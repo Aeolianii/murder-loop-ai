@@ -3,6 +3,7 @@ import {
   WORLD_MODEL_SCHEMA_VERSION,
   type SemanticCompilerRequest,
 } from '@murder-loop-ai/ai-contracts';
+import { createInitialGameState, prepareLowRiskTurn } from '@murder-loop-ai/game-core';
 import { createAiShadowAdapters, type ShadowCompletion } from './shadowAiAdapters';
 
 const request: SemanticCompilerRequest = {
@@ -106,6 +107,24 @@ assert(
 );
 assert(
   calls[0].system.includes(
+    'targetIds must contain every accessible entity whose state or location the action changes.',
+  ),
+  'Semantic Compiler prompt must require state-changing entities in targetIds.',
+);
+assert(
+  calls[0].system.includes(
+    'Barricading with chair must use operation="secure_entry" and targetIds=["front_door","chair"].',
+  ),
+  'Semantic Compiler prompt must define the canonical chair barricade representation.',
+);
+assert(
+  calls[0].system.includes(
+    'method describes technique only and must never be the only place where a state-changing entity appears.',
+  ),
+  'Semantic Compiler prompt must not let method hide state-changing entities.',
+);
+assert(
+  calls[0].system.includes(
     'scope, method, and desiredOutcome are optional; when absent, omit the key entirely and never output null.',
   ),
   'Semantic Compiler prompt must distinguish omitted optional fields from null values.',
@@ -134,6 +153,96 @@ assert.equal(
 );
 assert(calls[0].system.includes('resolvedReferences item:'));
 assert(calls[0].system.includes('orderedActions item:'));
+
+const repairRequest: SemanticCompilerRequest = {
+  ...request,
+  rawInput: 'lock the door and barricade it with the chair',
+  playerContext: {
+    ...request.playerContext,
+    accessibleEntityIds: ['player', 'front_door', 'chair'],
+    capabilities: ['secure_entry'],
+    entityAliasIndex: {
+      front_door: ['front_door'],
+      chair: ['chair'],
+    },
+  },
+};
+const invalidBarrierBrief = {
+  ...brief,
+  loopId: repairRequest.loopId,
+  turnId: repairRequest.turnId,
+  inputStateVersion: repairRequest.inputStateVersion,
+  deadlineAt: repairRequest.deadlineAt,
+  orderedActions: [{
+    actionId: 'action-1',
+    actorId: 'player',
+    operation: 'secure_entry',
+    targetIds: ['front_door'],
+    method: 'block_with_chair',
+    dependsOnActionIds: [],
+    inputHandleIds: [],
+    outputHandleIds: [],
+    originalSpan: {
+      start: 0,
+      end: repairRequest.rawInput.length,
+      text: repairRequest.rawInput,
+    },
+  }],
+};
+const repairedBarrierBrief = structuredClone(invalidBarrierBrief);
+repairedBarrierBrief.orderedActions[0].targetIds.push('chair');
+const targetRepairCalls: Array<{ system: string; user: unknown }> = [];
+const targetRepairCompletion: ShadowCompletion = async (_role, system, user) => {
+  targetRepairCalls.push({ system, user });
+  return targetRepairCalls.length === 1
+    ? { status: 'compiled', brief: invalidBarrierBrief }
+    : { status: 'compiled', brief: repairedBarrierBrief };
+};
+const targetRepairedSemantic = await createAiShadowAdapters(targetRepairCompletion)
+  .semanticCompiler.compile(repairRequest, { signal: controller.signal });
+assert.equal(targetRepairedSemantic.status, 'compiled');
+assert.equal(targetRepairCalls.length, 2);
+assert.deepEqual(
+  targetRepairedSemantic.status === 'compiled'
+    ? targetRepairedSemantic.brief.orderedActions[0].targetIds
+    : [],
+  ['front_door', 'chair'],
+);
+if (targetRepairedSemantic.status === 'compiled') {
+  const preparation = prepareLowRiskTurn({
+    state: createInitialGameState(),
+    brief: targetRepairedSemantic.brief,
+    sourceProposalId: 'proposal.repaired-target-contract',
+  });
+  assert.equal(preparation.status, 'prepared');
+  if (preparation.status === 'prepared') {
+    assert.equal(preparation.playerResult.state.room.front_door.state.barricaded, true);
+    assert.equal(preparation.playerResult.state.room.chair.state.movedToDoor, true);
+  }
+}
+assert(targetRepairCalls[1].system.includes('REPAIR MODE'));
+const targetRepairPayload = targetRepairCalls[1].user as {
+  repair?: { validationIssues?: Array<{ path: string; message: string }> };
+};
+assert(
+  targetRepairPayload.repair?.validationIssues?.some((issue) => (
+    issue.path === 'brief.orderedActions.0.targetIds'
+    && issue.message.includes('chair')
+  )),
+  'Repair request must explain the missing chair target.',
+);
+
+let repeatedInvalidCalls = 0;
+const repeatedInvalidCompletion: ShadowCompletion = async () => {
+  repeatedInvalidCalls += 1;
+  return { status: 'compiled', brief: invalidBarrierBrief };
+};
+await assert.rejects(
+  createAiShadowAdapters(repeatedInvalidCompletion)
+    .semanticCompiler.compile(repairRequest, { signal: controller.signal }),
+  /target contract/i,
+);
+assert.equal(repeatedInvalidCalls, 2, 'Semantic Compiler target repair must run at most once.');
 
 await adapters.mainWorldModel({
   turnBrief: brief,
