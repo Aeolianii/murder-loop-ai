@@ -93,8 +93,10 @@ assert(rewound?.time === rewindResponse.time, 'rewind should return the harness 
 assert((rewindRequests[0] as { debug?: unknown }).debug === undefined, 'rewind should not send debug controls');
 assert((rewindRequests[0] as { gameSessionId?: unknown }).gameSessionId === gameSessionId, 'rewind should keep the same game session id');
 assert((rewindRequests[0] as { inputStateVersion?: unknown }).inputStateVersion === 1, 'rewind should send the last committed state version');
+assert((rewindRequests[0] as { operation?: unknown }).operation === 'reset_loop', 'rewind should explicitly request a loop reset');
 assert(afterRewind.frontendState.phase === 'loop_started', 'rewind should merge the rewound phase');
 assert(afterRewind.frontendState.stateVersion === 0, 'rewind should accept the reset loop version');
+assert(afterRewind.frontendState.storyLog.length === 0, 'rewind should clear the previous loop dialogue');
 assert(afterRewind.frontendState.ending === null, 'rewind should clear ending state');
 assert(afterRewind.frontendState.deathTitle === null, 'rewind should clear death title');
 

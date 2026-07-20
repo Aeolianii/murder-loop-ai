@@ -75,6 +75,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         current.coreState,
         current.gameSessionId,
         current.stateVersion,
+        'reset_loop',
       ));
       const nextState = rewindFrontendStateFromResponse(current, result);
       setAndPersist(set, nextState);

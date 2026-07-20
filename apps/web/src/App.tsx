@@ -117,6 +117,17 @@ export default function App() {
     setFrontendState({ ...state, actionConfirmation: null });
   };
 
+  const handleLoopRestart = async () => {
+    const result = await rewind();
+    if (!result) return false;
+
+    setEndingCinematic(null);
+    setShowCinematic(false);
+    setMobileMenuOpen(false);
+    setActiveClueId(null);
+    return true;
+  };
+
   const handleRestart = () => {
     reset();
     setShowCinematic(true);
@@ -154,7 +165,14 @@ export default function App() {
             title={endingCinematic.title}
             summary={endingCinematic.summary}
             method={endingCinematic.method}
-            onComplete={() => { setEndingCinematic(null); setShowCinematic(false); }}
+            onComplete={async () => {
+              if (endingCinematic.kind === 'death') {
+                await handleLoopRestart();
+                return;
+              }
+              setEndingCinematic(null);
+              setShowCinematic(false);
+            }}
           />
         )}
       </AnimatePresence>
@@ -202,15 +220,10 @@ export default function App() {
                     {state.phase === 'death' ? '你死了。' : '这一轮结束了。'}
                   </p>
                   <button
-                    onClick={async () => {
-                      const result = await rewind();
-                      if (result) {
-                        setShowCinematic(false);
-                      }
-                    }}
+                    onClick={() => { void handleLoopRestart(); }}
                     className="px-6 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 hover:bg-red-500/20 transition-colors font-serif text-base"
                   >
-                    再次醒来（保留记忆与线索）
+                    重启循环（保留记忆与线索）
                   </button>
                   <p className="text-zinc-600 text-xs mt-1">上一次循环中发现的线索会被保留。</p>
                 </div>

@@ -65,6 +65,7 @@ const rewindState = rewindFrontendStateFromResponse({
   ...next,
   ending: 'death',
   phase: 'death',
+  actionConfirmation: '确认执行上一轮动作',
   deathTitle: '23:47',
   deathSummary: '黑暗落下。',
   deathMethod: 'spare_key_entry',
@@ -78,6 +79,9 @@ const rewindState = rewindFrontendStateFromResponse({
 });
 
 assert(rewindState.isParsing === false, 'rewindFrontendStateFromResponse should clear parsing state');
+assert(rewindState.isParsingAction === false, 'rewindFrontendStateFromResponse should clear action parsing state');
+assert(rewindState.actionConfirmation === null, 'rewindFrontendStateFromResponse should clear pending confirmation');
+assert(rewindState.storyLog.length === 0, 'rewindFrontendStateFromResponse should clear the previous loop dialogue');
 assert(rewindState.ending === null, 'rewindFrontendStateFromResponse should clear ending');
 assert(rewindState.deathTitle === null, 'rewindFrontendStateFromResponse should clear death title');
 assert(rewindState.recap === '第 2 次循环。', 'rewindFrontendStateFromResponse should merge recap');

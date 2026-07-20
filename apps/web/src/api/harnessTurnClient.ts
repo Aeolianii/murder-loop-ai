@@ -14,16 +14,20 @@ export interface HarnessTurnResponse extends Partial<FrontendGameState> {
   };
 }
 
+export type HarnessTurnOperation = 'turn' | 'reset_loop';
+
 export async function postHarnessTurn(
   input: string,
   state: unknown,
   gameSessionId: string,
   inputStateVersion: number,
+  operation: HarnessTurnOperation = 'turn',
 ): Promise<HarnessTurnResponse> {
   const response = await fetch('/api/harness/turn', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      operation,
       input,
       state,
       gameSessionId,

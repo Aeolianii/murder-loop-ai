@@ -6,7 +6,7 @@ interface CinematicTransitionProps {
   title: string;
   summary: string;
   method?: string | null;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
 }
 
 function splitSummary(summary: string) {
@@ -23,6 +23,7 @@ function splitSummary(summary: string) {
 
 export function CinematicTransition({ kind, title, summary, method, onComplete }: CinematicTransitionProps) {
   const [step, setStep] = useState(0);
+  const [actionPending, setActionPending] = useState(false);
   const lines = splitSummary(summary);
   const isDeath = kind === 'death';
 
@@ -50,7 +51,17 @@ export function CinematicTransition({ kind, title, summary, method, onComplete }
     return () => {
       cancelled = true;
     };
-  }, [onComplete]);
+  }, []);
+
+  const handleComplete = async () => {
+    if (actionPending) return;
+    setActionPending(true);
+    try {
+      await onComplete();
+    } finally {
+      setActionPending(false);
+    }
+  };
 
   return (
     <motion.div
@@ -117,10 +128,11 @@ export function CinematicTransition({ kind, title, summary, method, onComplete }
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 1.5, duration: 1 }}
-                onClick={(e) => { e.stopPropagation(); onComplete(); }}
-                className="pointer-events-auto px-8 py-3 border border-white/10 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-zinc-300 font-serif text-lg tracking-[0.15em]"
+                onClick={(e) => { e.stopPropagation(); void handleComplete(); }}
+                disabled={actionPending}
+                className="pointer-events-auto px-8 py-3 border border-white/10 rounded-lg bg-white/5 hover:bg-white/10 disabled:cursor-wait disabled:opacity-60 transition-colors text-zinc-300 font-serif text-lg tracking-[0.15em]"
               >
-                {isDeath ? '再次醒来' : '继续'}
+                {actionPending ? '循环重置中…' : isDeath ? '重启循环' : '继续'}
               </motion.button>
             </motion.div>
           )}

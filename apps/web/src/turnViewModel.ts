@@ -46,6 +46,7 @@ export function applyHarnessTurnResponse(
     gameSessionId: response.gameSessionId ?? state.gameSessionId,
     stateVersion: response.outputStateVersion ?? state.stateVersion,
     isParsing: false,
+    isParsingAction: false,
     actionConfirmation: null,
     time: response.time ?? state.time,
     location: response.location ?? state.location,
@@ -69,6 +70,8 @@ export function rewindFrontendStateFromResponse(state: GameState, response: Harn
     gameSessionId: response.gameSessionId ?? state.gameSessionId,
     stateVersion: response.outputStateVersion ?? state.stateVersion,
     isParsing: false,
+    isParsingAction: false,
+    actionConfirmation: null,
     time: response.time ?? state.time,
     location: response.location ?? state.location,
     phase: response.phase ?? state.phase,
@@ -81,5 +84,6 @@ export function rewindFrontendStateFromResponse(state: GameState, response: Harn
     coordination: response.coordination ?? state.coordination,
     recap: response.recap ?? state.recap,
     sidebar: response.sidebar ?? state.sidebar,
+    storyLog: [],
   };
 }
