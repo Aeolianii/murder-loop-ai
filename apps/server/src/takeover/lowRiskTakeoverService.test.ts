@@ -210,6 +210,47 @@ const mismatchedDeadline = await service.prepare(session(wave(mismatchedDeadline
 assert.equal(mismatchedDeadline.status, 'bypassed');
 if (mismatchedDeadline.status === 'bypassed') assert.equal(mismatchedDeadline.reason, 'envelope_mismatch');
 
+const unavailableWave = wave();
+unavailableWave.semantic = {
+  status: 'failed',
+  durationMs: 1,
+  issues: ['semantic compiler unavailable'],
+};
+unavailableWave.callRecords = [{
+  sourceAgent: 'main-world-model',
+  domain: 'world_model',
+  status: 'failed',
+  durationMs: 1,
+  receivedCount: 0,
+  schemaValidCount: 0,
+  errors: ['provider unavailable'],
+}];
+const unavailable = await service.prepare(session(unavailableWave), state);
+assert.equal(unavailable.status, 'bypassed');
+if (unavailable.status === 'bypassed') {
+  assert.equal(unavailable.reason, 'shadow_incomplete');
+  assert.equal(unavailable.fallbackMode, 'ai_unavailable');
+}
+
+const clarificationWave = wave();
+clarificationWave.status = 'compiler_unavailable';
+clarificationWave.semantic = {
+  status: 'clarification_required',
+  durationMs: 1,
+  issues: ['Which door?'],
+};
+clarificationWave.turnBrief = undefined;
+clarificationWave.arbitration = undefined;
+const clarification = await service.prepare(session(clarificationWave), state);
+assert.equal(clarification.status, 'bypassed');
+if (clarification.status === 'bypassed') {
+  assert.equal(clarification.fallbackMode, 'clarification_required');
+}
+
+const phaseSixService = createLowRiskTakeoverService({ legacyMainPathExitEnabled: true });
+assert.equal(phaseSixService.legacyMainPathExitEnabled, true);
+assert.equal(phaseSixService.highRiskTakeoverEnabled, true);
+
 const conflictService = createLowRiskTakeoverService({
   createStore: (initial) => new InMemoryAtomicTurnStore<GameState>({
     ...initial,

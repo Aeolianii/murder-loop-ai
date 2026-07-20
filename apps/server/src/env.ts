@@ -49,6 +49,7 @@ export const env = {
   aiLowRiskTakeoverEnabled: process.env.AI_LOW_RISK_TAKEOVER_ENABLED === 'true',
   aiKnowledgeClueTakeoverEnabled: process.env.AI_KNOWLEDGE_CLUE_TAKEOVER_ENABLED === 'true',
   aiHighRiskTakeoverEnabled: process.env.AI_HIGH_RISK_TAKEOVER_ENABLED === 'true',
+  aiLegacyMainPathExitEnabled: process.env.AI_LEGACY_MAIN_PATH_EXIT_ENABLED === 'true',
   aiShadowDeadlineMs: positiveInteger(process.env.AI_SHADOW_DEADLINE_MS, 6_000),
   aiShadowCompilerTimeoutMs: positiveInteger(process.env.AI_SHADOW_COMPILER_TIMEOUT_MS, 1_000),
 };

@@ -35,6 +35,7 @@ export type LowRiskTakeoverPrepareResult = {
 } | {
   status: 'bypassed';
   reason: LowRiskTakeoverBypassReason;
+  fallbackMode: 'ai_unavailable' | 'clarification_required' | 'formal_rejection';
 };
 
 export type LowRiskTakeoverCommitResult = Awaited<ReturnType<typeof commitPreparedLowRiskTurn>>;
@@ -60,6 +61,7 @@ export type LowRiskTakeoverServiceCommitResult = LowRiskTakeoverCommitResult & {
 
 export interface LowRiskTakeoverService {
   readonly highRiskTakeoverEnabled?: boolean;
+  readonly legacyMainPathExitEnabled?: boolean;
   prepare(session: ShadowRunSession, state: GameState): Promise<LowRiskTakeoverPrepareResult>;
   commit(turnId: string, finalState: GameState): Promise<LowRiskTakeoverServiceCommitResult>;
   discard(turnId: string): void;
@@ -74,6 +76,7 @@ export interface LowRiskTakeoverServiceOptions {
   now?: () => Date;
   knowledgeClueTakeoverEnabled?: boolean;
   highRiskTakeoverEnabled?: boolean;
+  legacyMainPathExitEnabled?: boolean;
 }
 
 export function createLowRiskTakeoverService(
@@ -81,7 +84,9 @@ export function createLowRiskTakeoverService(
 ): LowRiskTakeoverService {
   const createStore = options.createStore ?? ((initial) => new InMemoryAtomicTurnStore(initial));
   const now = options.now ?? (() => new Date());
-  const highRiskTakeoverEnabled = options.highRiskTakeoverEnabled ?? false;
+  const legacyMainPathExitEnabled = options.legacyMainPathExitEnabled ?? false;
+  const highRiskTakeoverEnabled = (options.highRiskTakeoverEnabled ?? false)
+    || legacyMainPathExitEnabled;
   const knowledgeClueTakeoverEnabled = (options.knowledgeClueTakeoverEnabled ?? false)
     || highRiskTakeoverEnabled;
   const pending = new Map<string, {
@@ -95,12 +100,17 @@ export function createLowRiskTakeoverService(
 
   return {
     highRiskTakeoverEnabled,
+    legacyMainPathExitEnabled,
     async prepare(session, state) {
       let wave: ShadowCandidateWave;
       try {
         wave = await session.wave;
       } catch {
-        return { status: 'bypassed', reason: 'shadow_incomplete' };
+        return {
+          status: 'bypassed',
+          reason: 'shadow_incomplete',
+          fallbackMode: 'ai_unavailable',
+        };
       }
       const gate = validateShadowTakeoverGate(session, wave);
       if (gate.status === 'bypassed') return gate;
@@ -112,7 +122,11 @@ export function createLowRiskTakeoverService(
         allowHighRiskContinuation: highRiskTakeoverEnabled,
       });
       if (preparation.status === 'not_eligible') {
-        return { status: 'bypassed', reason: preparation.reason };
+        return {
+          status: 'bypassed',
+          reason: preparation.reason,
+          fallbackMode: 'formal_rejection',
+        };
       }
 
       const downstreamEvents = selectDownstreamEventCandidates(wave);
@@ -314,9 +328,14 @@ function validateShadowTakeoverGate(
 ): { status: 'eligible'; proposal: Proposal | SpecialistCandidate } | {
   status: 'bypassed';
   reason: LowRiskTakeoverBypassReason;
+  fallbackMode: 'ai_unavailable' | 'clarification_required' | 'formal_rejection';
 } {
   if (wave.status !== 'completed' || wave.semantic.status !== 'compiled' || !wave.turnBrief) {
-    return { status: 'bypassed', reason: 'shadow_incomplete' };
+    return {
+      status: 'bypassed',
+      reason: 'shadow_incomplete',
+      fallbackMode: classifyIncompleteWave(wave),
+    };
   }
   if (
     wave.envelope.loopId !== session.envelope.loopId
@@ -328,17 +347,17 @@ function validateShadowTakeoverGate(
     || wave.turnBrief.inputStateVersion !== session.envelope.inputStateVersion
     || wave.turnBrief.deadlineAt !== session.envelope.deadlineAt
   ) {
-    return { status: 'bypassed', reason: 'envelope_mismatch' };
+    return bypass('envelope_mismatch');
   }
   const arbitration = wave.arbitration;
-  if (!arbitration) return { status: 'bypassed', reason: 'arbitration_unavailable' };
+  if (!arbitration) return bypass('arbitration_unavailable');
   if (
     arbitration.transition.requiresRepair
     || arbitration.transition.requiresPlayerClarification
     || arbitration.transition.violations.length > 0
     || arbitration.transition.fallbackDomains.includes('player')
   ) {
-    return { status: 'bypassed', reason: 'arbitration_not_clean' };
+    return bypass('arbitration_not_clean');
   }
 
   const proposals: Array<Proposal | SpecialistCandidate> = [
@@ -349,15 +368,38 @@ function validateShadowTakeoverGate(
     candidate.domain === 'player'
     && arbitration.selectedProposalIds.includes(candidate.id)
   ));
-  if (!proposal) return { status: 'bypassed', reason: 'selected_player_proposal_missing' };
+  if (!proposal) return bypass('selected_player_proposal_missing');
   if (
     proposal.riskClass !== 'reversible'
     || proposal.proposedEvents.some((event) => event.riskClass !== 'reversible')
   ) {
-    return { status: 'bypassed', reason: 'selected_proposal_not_reversible' };
+    return bypass('selected_proposal_not_reversible');
   }
   if (!wave.turnBrief.orderedActions.every((action) => proposal.turnBriefActionIds.includes(action.actionId))) {
-    return { status: 'bypassed', reason: 'selected_proposal_does_not_cover_turn' };
+    return bypass('selected_proposal_does_not_cover_turn');
   }
   return { status: 'eligible', proposal };
+}
+
+function bypass(reason: LowRiskTakeoverBypassReason): Extract<
+  LowRiskTakeoverPrepareResult,
+  { status: 'bypassed' }
+> {
+  return { status: 'bypassed', reason, fallbackMode: 'formal_rejection' };
+}
+
+function classifyIncompleteWave(
+  wave: ShadowCandidateWave,
+): Extract<LowRiskTakeoverPrepareResult, { status: 'bypassed' }>['fallbackMode'] {
+  if (wave.semantic.status === 'clarification_required') return 'clarification_required';
+  const semanticUnavailable = ['failed', 'timed_out', 'schema_invalid']
+    .includes(wave.semantic.status);
+  const candidatesUnavailable = wave.callRecords.length === 0
+    || wave.callRecords.every((record) => (
+      record.schemaValidCount === 0
+      && ['failed', 'timed_out', 'schema_invalid'].includes(record.status)
+    ));
+  return semanticUnavailable && candidatesUnavailable
+    ? 'ai_unavailable'
+    : 'formal_rejection';
 }
