@@ -54,6 +54,12 @@ export function buildLowRiskKnowledgeClueCandidates(
       const recipientId = event.targetIds[0];
       const characterId = canonicalCharacterId(recipientId);
       if (characterId) {
+        const packagePhotoAssertion = event.assertions.find((assertion) => (
+          characterId === 'lin_yue'
+          && assertion.subject === 'lin_yue'
+          && assertion.predicate === 'package_photo_received'
+          && assertion.value === true
+        ));
         candidates.knowledgeUpdates.push({
           characterId,
           factId: 'player_message_received',
@@ -64,6 +70,33 @@ export function buildLowRiskKnowledgeClueCandidates(
             canonicalFactIdForAssertion(event.id, assertion.id)
           )),
         });
+        if (packagePhotoAssertion) {
+          const packagePhotoFactId = canonicalFactIdForAssertion(event.id, packagePhotoAssertion.id);
+          const observationId = `observation.${event.id}.package-photo-delivery`;
+          candidates.observations.push({
+            id: observationId,
+            subject: 'lin_yue',
+            predicate: 'package_photo_received',
+            value: true,
+            scope: 'message.attachment',
+            visibleFactIds: [packagePhotoFactId],
+            sourceEventIds: [event.id],
+            observedAt,
+          });
+          candidates.knowledgeUpdates.push({
+            characterId: 'lin_yue',
+            factId: 'package_photo',
+            confidence: 1,
+            source: 'message',
+            sourceEventId: event.id,
+            basedOnFactIds: [packagePhotoFactId],
+          });
+          candidates.clues.push({
+            id: 'linyue_has_photo',
+            claims: [packagePhotoFactId],
+            basedOnObservationIds: [observationId],
+          });
+        }
       }
       continue;
     }
@@ -185,6 +218,13 @@ const PHASE_FOUR_CLUE_DEFINITIONS: Record<string, {
     isPersistent: true,
     allowedAssertions: [{ subject: 'package', predicate: 'exterior.photo_captured', value: true }],
   },
+  linyue_has_photo: {
+    title: '林越收到照片',
+    detail: '包裹照片已通过手机发送给林越，他成为这份证据的外部知情人。',
+    weight: 18,
+    isPersistent: true,
+    allowedAssertions: [{ subject: 'lin_yue', predicate: 'package_photo_received', value: true }],
+  },
 };
 
 export type KnowledgeClueProjection = {
@@ -274,6 +314,25 @@ export function projectConfirmedKnowledgeAndClues(input: {
     };
     state.clues.push(clue);
     addedClueIds.add(candidate.id);
+  }
+
+  const packagePhotoCaptured = state.clues.some((clue) => clue.id === 'package_photo');
+  const linYueReceivedPackagePhoto = input.candidates.knowledgeUpdates.some((update) => (
+    update.characterId === 'lin_yue' && update.factId === 'package_photo'
+  ));
+  if (packagePhotoCaptured && state.evidencePhase === 'package_unnoticed') {
+    state.evidencePhase = 'package_photographed';
+  }
+  if (packagePhotoCaptured && state.world) {
+    state.world.objects.package_photo.flags.exists = true;
+  }
+  if (linYueReceivedPackagePhoto) {
+    state.linYuePhase = 'received_photo';
+    state.evidencePhase = 'evidence_shared';
+    if (state.world) {
+      state.world.objects.package_photo.flags.exists = true;
+      state.world.objects.package_photo.flags.sharedWithLinYue = true;
+    }
   }
 
   return {

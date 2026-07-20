@@ -112,6 +112,18 @@ export function prepareLowRiskTurn(input: {
   const plan = buildActionPlan(input.brief);
   const actionEvents: AppliedLowRiskAction[] = [];
   const eventIdByActionId = new Map<string, string>();
+  const actionById = new Map(input.brief.orderedActions.map((action) => [action.actionId, action]));
+  const packagePhotoHandleIds = new Set(input.brief.candidateHandles.flatMap((handle) => {
+    const producer = actionById.get(handle.producedByActionId);
+    return producer
+      && LOW_RISK_OPERATIONS.get(producer.operation) === 'preserve_evidence'
+      && producer.targetIds.includes('package')
+      ? [handle.id]
+      : [];
+  }));
+  const communicationByActionId = new Map(
+    input.brief.communications.map((communication) => [communication.actionId, communication]),
+  );
   let chargerUsed = false;
 
   for (const action of input.brief.orderedActions) {
@@ -120,6 +132,11 @@ export function prepareLowRiskTurn(input: {
     const causalParentIds = action.dependsOnActionIds
       .map((actionId) => eventIdByActionId.get(actionId))
       .filter((id): id is string => Boolean(id));
+    const communication = communicationByActionId.get(action.actionId);
+    const attachmentHandleIds = new Set([
+      ...action.inputHandleIds,
+      ...(communication?.attachmentHandleIds ?? []),
+    ]);
     const applied = applyLowRiskAction({
       state,
       action,
@@ -127,6 +144,8 @@ export function prepareLowRiskTurn(input: {
       eventId,
       causalParentIds,
       envelope: input.brief,
+      sharesPackagePhoto: state.room.package.state.photographed === true
+        && [...attachmentHandleIds].some((handleId) => packagePhotoHandleIds.has(handleId)),
     });
     actionEvents.push(applied);
     eventIdByActionId.set(action.actionId, eventId);
@@ -372,6 +391,7 @@ function applyLowRiskAction(input: {
   eventId: string;
   causalParentIds: string[];
   envelope: TurnEnvelope;
+  sharesPackagePhoto: boolean;
 }): AppliedLowRiskAction {
   const { state, action, operation } = input;
   let eventType = 'low_risk_action_confirmed';
@@ -411,8 +431,15 @@ function applyLowRiskAction(input: {
     ruleKind = 'message';
     if (state.phoneFunctional) {
       eventType = 'message_delivered';
-      summary = `Delivered a message to ${subject}.`;
-      facts = [`message_delivered:${subject}`];
+      summary = input.sharesPackagePhoto
+        ? `Delivered the package photo and message to ${subject}.`
+        : `Delivered a message to ${subject}.`;
+      facts = [
+        `message_delivered:${subject}`,
+        ...(input.sharesPackagePhoto && subject === 'linyue'
+          ? ['fact.lin_yue.package_photo_received']
+          : []),
+      ];
     } else {
       eventType = 'message_delivery_failed';
       status = 'failed';

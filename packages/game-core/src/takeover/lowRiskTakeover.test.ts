@@ -7,6 +7,7 @@ import {
   commitPreparedLowRiskTurn,
   prepareLowRiskTurn,
 } from './lowRiskTakeover';
+import { projectConfirmedKnowledgeAndClues } from './knowledgeClueTakeover';
 
 const deadlineAt = new Date(Date.now() + 10_000).toISOString();
 
@@ -84,6 +85,63 @@ assert.equal(prepared.playerResult.domainEvents[0].createdAt.run, before.run);
 assert.equal(prepared.playerResult.domainEvents[0].createdAt.minute, before.minute);
 assert(prepared.eventCandidates.every(({ event }) => event.riskClass === 'reversible'));
 assert.equal(JSON.stringify(state), JSON.stringify(before), 'preparation must not mutate input state');
+
+const photoShareBrief = brief([
+  {
+    ...action('photo-package-share', 'photograph', ['package']),
+    outputHandleIds: ['handle-package-photo'],
+  },
+  {
+    ...action('message-linyue-photo', 'communicate', ['lin_yue']),
+    dependsOnActionIds: ['photo-package-share'],
+    inputHandleIds: ['handle-package-photo'],
+  },
+]);
+photoShareBrief.communications = [{
+  id: 'communication-package-photo',
+  actionId: 'message-linyue-photo',
+  senderId: 'player',
+  recipientIds: ['lin_yue'],
+  channel: 'phone',
+  contentSummary: '询问这个包裹是不是林越的',
+  attachmentHandleIds: ['handle-package-photo'],
+  intendedAudience: ['lin_yue'],
+}];
+photoShareBrief.candidateHandles = [{
+  id: 'handle-package-photo',
+  kind: 'photograph',
+  producedByActionId: 'photo-package-share',
+  dependsOnActionIds: ['photo-package-share'],
+}];
+
+const preparedPhotoShare = prepareLowRiskTurn({
+  state,
+  brief: photoShareBrief,
+  sourceProposalId: 'proposal.photo-share',
+});
+assert.equal(preparedPhotoShare.status, 'prepared');
+if (preparedPhotoShare.status !== 'prepared') throw new Error('expected photo sharing to be prepared');
+const deliveredPhotoEvent = preparedPhotoShare.playerResult.domainEvents.find((event) => (
+  event.eventType === 'message_delivered'
+));
+assert(deliveredPhotoEvent?.facts.includes('fact.lin_yue.package_photo_received'));
+assert(preparedPhotoShare.knowledgeClueCandidates.knowledgeUpdates.some((update) => (
+  update.characterId === 'lin_yue' && update.factId === 'package_photo'
+)));
+
+const projectedPhotoShare = projectConfirmedKnowledgeAndClues({
+  baselineState: state,
+  candidateState: preparedPhotoShare.playerResult.state,
+  eventCandidates: preparedPhotoShare.eventCandidates,
+  candidates: preparedPhotoShare.knowledgeClueCandidates,
+});
+assert.equal(projectedPhotoShare.status, 'projected');
+if (projectedPhotoShare.status !== 'projected') throw new Error('expected photo sharing knowledge projection');
+assert.equal(projectedPhotoShare.state.linYuePhase, 'received_photo');
+assert.equal(projectedPhotoShare.state.evidencePhase, 'evidence_shared');
+assert.equal(projectedPhotoShare.state.world?.objects.package_photo.flags.sharedWithLinYue, true);
+assert.equal(projectedPhotoShare.state.world?.knowledge.lin_yue.facts.package_photo.source, 'message');
+assert(projectedPhotoShare.state.clues.some((clue) => clue.id === 'linyue_has_photo'));
 
 const unsupportedAttack = prepareLowRiskTurn({
   state,
