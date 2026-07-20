@@ -9,6 +9,7 @@ export interface CompletionOptions {
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  thinking?: 'enabled' | 'disabled';
 }
 
 const pickApiKey = createKeyPicker(env.deepseekApiKeys);
@@ -33,7 +34,7 @@ export async function completeJson<T>(provider: AiProvider, system: string, user
   if (!config.apiKey) return null;
 
   const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
-  const completion = await client.chat.completions.create({
+  const request = {
     model: config.model,
     messages: [
       { role: 'system', content: system },
@@ -42,7 +43,12 @@ export async function completeJson<T>(provider: AiProvider, system: string, user
     response_format: { type: 'json_object' },
     temperature: options.temperature ?? defaultTemperature(provider),
     max_tokens: options.maxTokens,
-  }, options.signal ? { signal: options.signal } : undefined);
+    ...(options.thinking ? { thinking: { type: options.thinking } } : {}),
+  } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+  const completion = await client.chat.completions.create(
+    request,
+    options.signal ? { signal: options.signal } : undefined,
+  );
 
   const content = completion.choices[0]?.message?.content;
   if (!content) return null;
