@@ -320,15 +320,73 @@ assert.equal(factMismatch.items.length, 2, 'same event shell with different fact
     'event.shadow.death',
     'ending_reached',
     'irreversible',
+    ['event.shadow.attack', 'invariant.death_requires_lethal_attack'],
     ['event.shadow.attack'],
-    ['event.shadow.attack'],
+  );
+  const decisions = evaluateShadowHighRiskGate(
+    [attack, death],
+    new Set([
+      'invariant.attack_requires_reach',
+      'invariant.death_requires_lethal_attack',
+    ]),
+  );
+  assert.equal(decisions.find((item) => item.eventId === attack.id)?.decision, 'pass');
+  assert.equal(decisions.find((item) => item.eventId === death.id)?.decision, 'pass');
+}
+
+{
+  const attack = proposedEvent(
+    'event.shadow.parent-only-attack',
+    'attack_confirmed',
+    'high_impact',
+    ['invariant.attack_requires_reach'],
+  );
+  const death = proposedEvent(
+    'event.shadow.parent-only-death',
+    'ending_reached',
+    'irreversible',
+    [attack.id],
+    [attack.id],
   );
   const decisions = evaluateShadowHighRiskGate(
     [attack, death],
     new Set(['invariant.attack_requires_reach']),
   );
-  assert.equal(decisions.find((item) => item.eventId === attack.id)?.decision, 'pass');
-  assert.equal(decisions.find((item) => item.eventId === death.id)?.decision, 'pass');
+  const deathDecision = decisions.find((item) => item.eventId === death.id);
+  assert.equal(deathDecision?.decision, 'defer');
+  assert(deathDecision?.reasonCodes.includes('independent_deterministic_evidence_missing'));
+}
+
+{
+  const firstAttack = proposedEvent(
+    'event.shadow.first-attack',
+    'attack_confirmed',
+    'high_impact',
+    ['invariant.attack_requires_reach'],
+  );
+  const unrelatedAttack = proposedEvent(
+    'event.shadow.unrelated-attack',
+    'attack_confirmed',
+    'high_impact',
+    ['invariant.attack_requires_reach'],
+  );
+  const death = proposedEvent(
+    'event.shadow.sibling-backed-death',
+    'ending_reached',
+    'irreversible',
+    [unrelatedAttack.id, 'invariant.death_requires_lethal_attack'],
+    [firstAttack.id],
+  );
+  const decisions = evaluateShadowHighRiskGate(
+    [firstAttack, unrelatedAttack, death],
+    new Set([
+      'invariant.attack_requires_reach',
+      'invariant.death_requires_lethal_attack',
+    ]),
+  );
+  const deathDecision = decisions.find((item) => item.eventId === death.id);
+  assert.equal(deathDecision?.decision, 'reject');
+  assert(deathDecision?.reasonCodes.includes('evidence_reference_not_causal'));
 }
 
 {

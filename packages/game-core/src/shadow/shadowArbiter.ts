@@ -174,6 +174,18 @@ export function evaluateShadowHighRiskGate(
   const eventsById = new Map(events.map((event) => [event.id, event]));
   const decisions = new Map<string, HighRiskDecision>();
   const evaluating = new Set<string>();
+  const collectCausalAncestorIds = (event: ProposedEvent): Set<string> => {
+    const ancestors = new Set<string>();
+    const pending = [...event.causalParentIds];
+    while (pending.length > 0) {
+      const parentId = pending.pop()!;
+      if (ancestors.has(parentId)) continue;
+      ancestors.add(parentId);
+      const parent = eventsById.get(parentId);
+      if (parent) pending.push(...parent.causalParentIds);
+    }
+    return ancestors;
+  };
 
   const decide = (event: ProposedEvent): HighRiskDecision => {
     const existing = decisions.get(event.id);
@@ -253,17 +265,38 @@ export function evaluateShadowHighRiskGate(
       return decision;
     }
 
-    const invalidEvidence = event.evidenceRefs.filter((ref) => (
-      !availableEvidenceRefs.has(ref)
-      && (!eventsById.has(ref) || decide(eventsById.get(ref)!).decision !== 'pass')
-    ));
+    const causalAncestorIds = collectCausalAncestorIds(event);
+    const invalidEvidence = event.evidenceRefs.filter((ref) => {
+      if (availableEvidenceRefs.has(ref)) return false;
+      const referencedEvent = eventsById.get(ref);
+      return !referencedEvent
+        || !causalAncestorIds.has(ref)
+        || decide(referencedEvent).decision !== 'pass';
+    });
     if (invalidEvidence.length > 0) {
       const decision: HighRiskDecision = {
         eventId: event.id,
         riskClass: event.riskClass,
         evidenceRefs: event.evidenceRefs,
         decision: 'reject',
-        reasonCodes: ['evidence_reference_invalid'],
+        reasonCodes: invalidEvidence.some((ref) => (
+          eventsById.has(ref) && !causalAncestorIds.has(ref)
+        ))
+          ? ['evidence_reference_not_causal']
+          : ['evidence_reference_invalid'],
+      };
+      evaluating.delete(event.id);
+      decisions.set(event.id, decision);
+      return decision;
+    }
+
+    if (!event.evidenceRefs.some((ref) => availableEvidenceRefs.has(ref))) {
+      const decision: HighRiskDecision = {
+        eventId: event.id,
+        riskClass: event.riskClass,
+        evidenceRefs: event.evidenceRefs,
+        decision: 'defer',
+        reasonCodes: ['independent_deterministic_evidence_missing'],
       };
       evaluating.delete(event.id);
       decisions.set(event.id, decision);
