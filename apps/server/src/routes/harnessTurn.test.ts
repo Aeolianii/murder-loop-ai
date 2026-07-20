@@ -19,6 +19,8 @@ function registerTestHarnessRoute(
 ) {
   return app.register(harnessTurnRoute, {
     selectActionAudioCue: async () => null,
+    shadowCoordinator: null,
+    lowRiskTakeoverService: null,
     ...options,
   });
 }

@@ -344,10 +344,14 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         })
       : null
     : options.shadowCoordinator;
-  const highRiskTakeoverActive = lowRiskTakeoverService?.highRiskTakeoverEnabled
-    ?? (env.aiHighRiskTakeoverEnabled || env.aiLegacyMainPathExitEnabled);
-  const legacyMainPathExitActive = lowRiskTakeoverService?.legacyMainPathExitEnabled
-    ?? env.aiLegacyMainPathExitEnabled;
+  const highRiskTakeoverActive = lowRiskTakeoverService === null
+    ? false
+    : lowRiskTakeoverService?.highRiskTakeoverEnabled
+      ?? (env.aiHighRiskTakeoverEnabled || env.aiLegacyMainPathExitEnabled);
+  const legacyMainPathExitActive = lowRiskTakeoverService === null
+    ? false
+    : lowRiskTakeoverService?.legacyMainPathExitEnabled
+      ?? env.aiLegacyMainPathExitEnabled;
 
   app.post('/api/harness/turn', async (request, reply) => {
     const body = request.body as { input?: string; state?: GameState };
