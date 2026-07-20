@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import {
-  createHarness, normalizeLoopMemory, resolveTurnHarness, resolveTurnHarnessFromPreparedPlayerTurn,
+  createHarness, normalizeLoopMemory, resolveMinimumPlayableTurn, resolveTurnHarness,
+  resolveTurnHarnessFromPreparedPlayerTurn,
   type AiAdapters,
   type HarnessOptions,
 } from '@murder-loop-ai/game-core';
@@ -29,6 +30,7 @@ import {
   createLowRiskTakeoverService,
   type LowRiskTakeoverService,
 } from '../takeover/lowRiskTakeoverService';
+import { buildConfirmedAiFirstResolution } from '../takeover/confirmedAiFirstResolution';
 
 export interface HarnessTurnRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -314,13 +316,17 @@ function attachRecommendedActions(
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
   const anyStateTakeoverEnabled = env.aiLowRiskTakeoverEnabled
     || env.aiKnowledgeClueTakeoverEnabled
-    || env.aiHighRiskTakeoverEnabled;
+    || env.aiHighRiskTakeoverEnabled
+    || env.aiLegacyMainPathExitEnabled;
   const lowRiskTakeoverService = options.lowRiskTakeoverService === undefined
     ? anyStateTakeoverEnabled
       ? createLowRiskTakeoverService({
           knowledgeClueTakeoverEnabled: env.aiKnowledgeClueTakeoverEnabled
-            || env.aiHighRiskTakeoverEnabled,
-          highRiskTakeoverEnabled: env.aiHighRiskTakeoverEnabled,
+            || env.aiHighRiskTakeoverEnabled
+            || env.aiLegacyMainPathExitEnabled,
+          highRiskTakeoverEnabled: env.aiHighRiskTakeoverEnabled
+            || env.aiLegacyMainPathExitEnabled,
+          legacyMainPathExitEnabled: env.aiLegacyMainPathExitEnabled,
         })
       : null
     : options.lowRiskTakeoverService;
@@ -333,7 +339,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       : null
     : options.shadowCoordinator;
   const highRiskTakeoverActive = lowRiskTakeoverService?.highRiskTakeoverEnabled
-    ?? env.aiHighRiskTakeoverEnabled;
+    ?? (env.aiHighRiskTakeoverEnabled || env.aiLegacyMainPathExitEnabled);
+  const legacyMainPathExitActive = lowRiskTakeoverService?.legacyMainPathExitEnabled
+    ?? env.aiLegacyMainPathExitEnabled;
 
   app.post('/api/harness/turn', async (request, reply) => {
     const body = request.body as { input?: string; state?: GameState };
@@ -391,23 +399,38 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     let lowRiskTakeoverCoordination: Record<string, unknown> | undefined;
     let knowledgeClueTakeoverCoordination: Record<string, unknown> | undefined;
     let highRiskTakeoverCoordination: Record<string, unknown> | undefined;
+    let legacyMainPathExitCoordination: Record<string, unknown> | undefined;
+    let minimumFallbackReason: string | undefined;
+    let phaseSixBlockingFailure: {
+      reason: string;
+      fallbackMode: 'clarification_required' | 'formal_rejection';
+    } | undefined;
     let resolution: TurnResolution | undefined;
     if (lowRiskTakeoverService && shadowSession) {
       try {
         const preparation = await lowRiskTakeoverService.prepare(shadowSession, state);
         if (preparation.status === 'prepared') {
-          resolution = await resolveTurnHarnessFromPreparedPlayerTurn({
-            state,
-            input,
-            plan: preparation.prepared.plan,
-            playerResult: preparation.prepared.playerResult,
-          }, harness);
+          resolution = legacyMainPathExitActive
+            ? buildConfirmedAiFirstResolution({
+                prepared: preparation.prepared,
+                state: preparation.prepared.playerResult.state,
+                displayFragments: [],
+                publishedEventIds: new Set(),
+              })
+            : await resolveTurnHarnessFromPreparedPlayerTurn({
+                state,
+                input,
+                plan: preparation.prepared.plan,
+                playerResult: preparation.prepared.playerResult,
+              }, harness);
 
           let committed: Awaited<ReturnType<LowRiskTakeoverService['commit']>>;
           try {
             committed = await lowRiskTakeoverService.commit(
               shadowSession.envelope.turnId,
-              resolution.finalState,
+              legacyMainPathExitActive
+                ? preparation.prepared.playerResult.state
+                : resolution.finalState,
             );
           } catch (error) {
             lowRiskTakeoverService.discard(shadowSession.envelope.turnId);
@@ -457,7 +480,30 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
             });
           }
 
-          resolution = { ...resolution, finalState: committed.state };
+          if (legacyMainPathExitActive) {
+            const publishedEventIds = new Set(
+              committed.highRiskProjection
+                ? [
+                    ...committed.highRiskProjection.acceptedEventIds,
+                    ...committed.highRiskProjection.correctedEventIds,
+                  ]
+                : committed.outcome.result.confirmedEventIds,
+            );
+            resolution = buildConfirmedAiFirstResolution({
+              prepared: preparation.prepared,
+              state: committed.state,
+              displayFragments: committed.outcome.displayFragments,
+              publishedEventIds,
+            });
+            legacyMainPathExitCoordination = {
+              status: 'committed',
+              storyNodeAuthority: 'material_only',
+              keywordFallbackAuthority: 'disabled',
+              minimumPlayableFallback: 'ai_unavailable_only',
+            };
+          } else {
+            resolution = { ...resolution, finalState: committed.state };
+          }
           lowRiskTakeoverCoordination = {
             status: 'committed',
             turnId: shadowSession.envelope.turnId,
@@ -492,40 +538,42 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               title: confirmedOutcomeText ? 'Confirmed world outcome' : 'No high-risk outcome confirmed',
               text: confirmedOutcomeText || 'No high-risk state change passed the deterministic gate.',
             };
-            resolution = {
-              ...resolution,
-              finalState: committed.state,
-              killerStrategy: {
-                id: `phase5.${shadowSession.envelope.turnId}`,
-                type: 'confirmed_shadow_result',
-                title: ambientNarration.title,
-                rationale: 'Only events accepted by the phase-five deterministic reducer are authoritative.',
-                visibleToPlayer: confirmedOutcomeText.length > 0,
-                risk: committed.highRiskProjection.highRiskDecisions.some((decision) => (
-                  decision.decision === 'pass'
-                )) ? 'high' : 'low',
-              },
-              killerResult: {
-                title: ambientNarration.title,
-                text: ambientNarration.text,
-                tone: committed.state.ending === 'death'
-                  ? 'death'
-                  : confirmedOutcomeText
-                    ? 'threat'
-                    : 'neutral',
-                addedClues: [],
-                timePassed: 0,
-                threatDelta: 0,
-                events: [],
-                state: committed.state,
-              },
-              narration: actionNarration,
-              actionNarration,
-              ambientNarration,
-              npcReply: null,
-              recommendedActions: [],
-              worldTickTrace: [],
-            };
+            if (!legacyMainPathExitActive) {
+              resolution = {
+                ...resolution,
+                finalState: committed.state,
+                killerStrategy: {
+                  id: `phase5.${shadowSession.envelope.turnId}`,
+                  type: 'confirmed_shadow_result',
+                  title: ambientNarration.title,
+                  rationale: 'Only events accepted by the phase-five deterministic reducer are authoritative.',
+                  visibleToPlayer: confirmedOutcomeText.length > 0,
+                  risk: committed.highRiskProjection.highRiskDecisions.some((decision) => (
+                    decision.decision === 'pass'
+                  )) ? 'high' : 'low',
+                },
+                killerResult: {
+                  title: ambientNarration.title,
+                  text: ambientNarration.text,
+                  tone: committed.state.ending === 'death'
+                    ? 'death'
+                    : confirmedOutcomeText
+                      ? 'threat'
+                      : 'neutral',
+                  addedClues: [],
+                  timePassed: 0,
+                  threatDelta: 0,
+                  events: [],
+                  state: committed.state,
+                },
+                narration: actionNarration,
+                actionNarration,
+                ambientNarration,
+                npcReply: null,
+                recommendedActions: [],
+                worldTickTrace: [],
+              };
+            }
             const decisions = committed.highRiskProjection.highRiskDecisions;
             highRiskTakeoverCoordination = {
               status: 'committed',
@@ -553,6 +601,16 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               reason: preparation.reason,
             };
           }
+          if (legacyMainPathExitActive) {
+            if (preparation.fallbackMode === 'ai_unavailable') {
+              minimumFallbackReason = preparation.reason;
+            } else {
+              phaseSixBlockingFailure = {
+                reason: preparation.reason,
+                fallbackMode: preparation.fallbackMode,
+              };
+            }
+          }
         }
       } catch (error) {
         lowRiskTakeoverService.discard(shadowSession.envelope.turnId);
@@ -568,6 +626,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
             reason: 'preparation_failed',
           };
         }
+        if (legacyMainPathExitActive) {
+          phaseSixBlockingFailure = {
+            reason: 'preparation_failed',
+            fallbackMode: 'formal_rejection',
+          };
+        }
       }
     } else if (lowRiskTakeoverService) {
       lowRiskTakeoverCoordination = {
@@ -581,8 +645,41 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           reason: 'shadow_unavailable',
         };
       }
+      if (legacyMainPathExitActive) minimumFallbackReason = 'shadow_unavailable';
+    } else if (legacyMainPathExitActive) {
+      minimumFallbackReason = 'takeover_service_unavailable';
     }
 
+    if (!resolution && legacyMainPathExitActive && phaseSixBlockingFailure) {
+      const clarification = phaseSixBlockingFailure.fallbackMode === 'clarification_required';
+      return reply.code(clarification ? 422 : 503).send({
+        error: clarification ? 'ai_first_clarification_required' : 'ai_first_turn_rejected',
+        coordination: {
+          warnings: routeWarnings,
+          legacyMainPathExit: {
+            status: 'not_committed',
+            reason: phaseSixBlockingFailure.reason,
+            fallbackMode: phaseSixBlockingFailure.fallbackMode,
+            storyNodeAuthority: 'material_only',
+            keywordFallbackAuthority: 'disabled',
+            minimumPlayableFallback: 'ai_unavailable_only',
+          },
+          ...(shadowSession ? {
+            shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' as const },
+          } : {}),
+        },
+      });
+    }
+    if (!resolution && legacyMainPathExitActive && minimumFallbackReason) {
+      resolution = resolveMinimumPlayableTurn(state, input);
+      legacyMainPathExitCoordination = {
+        status: 'offline_fallback',
+        reason: minimumFallbackReason,
+        storyNodeAuthority: 'material_only',
+        keywordFallbackAuthority: 'disabled',
+        minimumPlayableFallback: 'ai_unavailable_only',
+      };
+    }
     resolution ??= await resolveTurnHarness(state, input, harness);
     if (shadowSession && shadowCoordinator) {
       void shadowCoordinator.complete(shadowSession, resolution);
@@ -666,6 +763,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         } : {}),
         ...(highRiskTakeoverCoordination ? {
           highRiskTakeover: highRiskTakeoverCoordination,
+        } : {}),
+        ...(legacyMainPathExitCoordination ? {
+          legacyMainPathExit: legacyMainPathExitCoordination,
         } : {}),
       },
       sidebar,

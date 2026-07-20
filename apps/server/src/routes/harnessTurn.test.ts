@@ -300,6 +300,7 @@ function takeoverFixture(
   commitStatus: 'committed' | 'conflict' | 'failed' = 'committed',
   withKnowledgeClueProjection = false,
   withHighRiskProjection = false,
+  withLegacyMainPathExit = false,
 ) {
   const prepared = prepareLowRiskTurn({
     state: baseState,
@@ -308,13 +309,19 @@ function takeoverFixture(
   });
   if (prepared.status !== 'prepared') throw new Error('expected route takeover fixture');
   let parserCalls = 0;
+  let killerStrategyCalls = 0;
+  let actionNarrationCalls = 0;
+  let ambientNarrationCalls = 0;
   let completeCalls = 0;
   let committedFinalState: GameState | undefined;
   const shadowCoordinator: ShadowRunCoordinator = {
     start: () => ({ envelope: prepared.envelope, wave: Promise.resolve({} as never) }),
     complete: async () => { completeCalls += 1; },
   };
-  const lowRiskTakeoverService: LowRiskTakeoverService = {
+  const lowRiskTakeoverService: LowRiskTakeoverService & {
+    legacyMainPathExitEnabled: boolean;
+  } = {
+    legacyMainPathExitEnabled: withLegacyMainPathExit,
     prepare: async () => ({ status: 'prepared', prepared }),
     commit: async (_turnId, candidateState) => {
       committedFinalState = candidateState;
@@ -405,18 +412,34 @@ function takeoverFixture(
         parserCalls += 1;
         return resolution.plan;
       },
-      chooseKillerStrategy: async () => ({
-        id: 'killer-spare-key-takeover-route',
-        type: 'spare_key_entry',
-        title: 'Spare key attempt',
-        rationale: 'Verify that route continuation uses the prepared door state.',
-        visibleToPlayer: true,
-        risk: 'high',
-      } as const),
-      narrateAction: async () => ({ title: 'Door secured', text: 'The door is locked, chained, and blocked.' }),
-      narrateAmbient: async () => ({ title: 'Key stopped', text: 'The spare key cannot open the barricaded door.' }),
+      chooseKillerStrategy: async () => {
+        killerStrategyCalls += 1;
+        return {
+          id: 'killer-spare-key-takeover-route',
+          type: 'spare_key_entry',
+          title: 'Spare key attempt',
+          rationale: 'Verify that route continuation uses the prepared door state.',
+          visibleToPlayer: true,
+          risk: 'high',
+        } as const;
+      },
+      narrateAction: async () => {
+        actionNarrationCalls += 1;
+        return { title: 'Door secured', text: 'The door is locked, chained, and blocked.' };
+      },
+      narrateAmbient: async () => {
+        ambientNarrationCalls += 1;
+        return { title: 'Key stopped', text: 'The spare key cannot open the barricaded door.' };
+      },
     },
-    calls: () => ({ parserCalls, completeCalls, committedFinalState }),
+    calls: () => ({
+      parserCalls,
+      killerStrategyCalls,
+      actionNarrationCalls,
+      ambientNarrationCalls,
+      completeCalls,
+      committedFinalState,
+    }),
   };
 }
 
@@ -570,6 +593,101 @@ async function testHighRiskTakeoverPublishesOnlyConfirmedOutcome() {
     body.storyLog.some((node: { content?: string }) => node.content?.includes('Untrusted')),
     false,
   );
+  await app.close();
+}
+
+async function testLegacyMainPathExitDoesNotExecuteLegacyStateOrNarrationStages() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, true, true);
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(fixture.calls().parserCalls, 0);
+  assert.equal(fixture.calls().killerStrategyCalls, 0);
+  assert.equal(fixture.calls().actionNarrationCalls, 0);
+  assert.equal(fixture.calls().ambientNarrationCalls, 0);
+  assert.equal(body.coreState.player.injury, 'critical');
+  assert.equal(body.turn.killerStrategy.type, 'confirmed_shadow_result');
+  assert.equal(body.coordination.legacyMainPathExit.status, 'committed');
+  assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'material_only');
+  assert.equal(body.coordination.legacyMainPathExit.keywordFallbackAuthority, 'disabled');
+  await app.close();
+}
+
+async function testLegacyMainPathExitUsesMinimumFallbackOnlyWhenAiIsUnavailable() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, true, true);
+  fixture.lowRiskTakeoverService.prepare = async () => ({
+    status: 'bypassed',
+    reason: 'shadow_incomplete',
+    fallbackMode: 'ai_unavailable',
+  });
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: '打开包裹然后冲出门', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(fixture.calls().parserCalls, 0);
+  assert.equal(fixture.calls().killerStrategyCalls, 0);
+  assert.equal(fixture.calls().actionNarrationCalls, 0);
+  assert.equal(fixture.calls().ambientNarrationCalls, 0);
+  assert.equal(body.coreState.minute, baseState.minute);
+  assert.equal(body.coreState.room.package.state.opened, false);
+  assert.equal(body.coreState.room.front_door.state.opened, false);
+  assert.equal(body.turn.killerStrategy.type, 'minimum_playable_hold');
+  assert.equal(body.coordination.legacyMainPathExit.status, 'offline_fallback');
+  await app.close();
+}
+
+async function testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallback() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, true, true);
+  fixture.lowRiskTakeoverService.prepare = async () => ({
+    status: 'bypassed',
+    reason: 'arbitration_not_clean',
+    fallbackMode: 'formal_rejection',
+  });
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'open the package', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 503);
+  const body = response.json();
+  assert.equal(body.error, 'ai_first_turn_rejected');
+  assert.equal('coreState' in body, false);
+  assert.equal(fixture.calls().parserCalls, 0);
+  assert.equal(fixture.calls().killerStrategyCalls, 0);
+  assert.equal(fixture.calls().actionNarrationCalls, 0);
+  assert.equal(fixture.calls().ambientNarrationCalls, 0);
+  assert.equal(body.coordination.legacyMainPathExit.status, 'not_committed');
   await app.close();
 }
 
@@ -1350,6 +1468,9 @@ await testLowRiskTakeoverConflictPublishesNoStateOrStory();
 await testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory();
 await testKnowledgeClueTakeoverDisablesNarratorClueAuthority();
 await testHighRiskTakeoverPublishesOnlyConfirmedOutcome();
+await testLegacyMainPathExitDoesNotExecuteLegacyStateOrNarrationStages();
+await testLegacyMainPathExitUsesMinimumFallbackOnlyWhenAiIsUnavailable();
+await testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallback();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
 await testWorldTickRunsAsProductCapabilityForRoute();
