@@ -10,6 +10,7 @@ import {
   buildNpcVisibleContext,
   buildParserContext,
   createHarness,
+  type AiAdapters,
   type DirectorContext,
   type KillerContext,
   type HarnessOptions,
@@ -301,8 +302,8 @@ export async function recommendActionsAi(context: RecommendationContext): Promis
   return parsed.data.actions;
 }
 
-export function createAiHarness(options: HarnessOptions = {}) {
-  return createHarness({
+export function createAiHarnessAdapters(): AiAdapters {
+  return {
     parseAction: (input, state) => parseActionAi(input, state),
     chooseKillerStrategy: (killerContext) => killerStrategyAi(killerContext),
     narrateAction: (ctx) => narrateActionAi(ctx),
@@ -311,5 +312,9 @@ export function createAiHarness(options: HarnessOptions = {}) {
     npcReply: generateNpcReplyAi,
     recommendActions: recommendActionsAi,
     npcAdapter: createNpcAdapter(),
-  }, options);
+  };
+}
+
+export function createAiHarness(options: HarnessOptions = {}) {
+  return createHarness(createAiHarnessAdapters(), options);
 }

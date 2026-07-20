@@ -4,6 +4,7 @@ import {
   createInitialGameState,
   createInitialWorldState,
   prepareLowRiskTurn,
+  type AiAdapters,
 } from '@murder-loop-ai/game-core';
 import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
 import type { ActionAudioCue, ActionPlan, GameState, KillerStrategy, Narration, TurnResolution } from '@murder-loop-ai/shared';
@@ -425,35 +426,36 @@ function takeoverFixture(
     },
     discard: () => undefined,
   };
+  const aiAdapters: AiAdapters = {
+    parseAction: async () => {
+      parserCalls += 1;
+      return resolution.plan;
+    },
+    chooseKillerStrategy: async () => {
+      killerStrategyCalls += 1;
+      return {
+        id: 'killer-spare-key-takeover-route',
+        type: 'spare_key_entry',
+        title: 'Spare key attempt',
+        rationale: 'Verify that route continuation uses the prepared door state.',
+        visibleToPlayer: true,
+        risk: 'high',
+      } as const;
+    },
+    narrateAction: async () => {
+      actionNarrationCalls += 1;
+      return { title: 'Door secured', text: 'The door is locked, chained, and blocked.' };
+    },
+    narrateAmbient: async () => {
+      ambientNarrationCalls += 1;
+      return { title: 'Key stopped', text: 'The spare key cannot open the barricaded door.' };
+    },
+  };
   return {
     prepared,
     shadowCoordinator,
     lowRiskTakeoverService,
-    aiAdapters: {
-      parseAction: async () => {
-        parserCalls += 1;
-        return resolution.plan;
-      },
-      chooseKillerStrategy: async () => {
-        killerStrategyCalls += 1;
-        return {
-          id: 'killer-spare-key-takeover-route',
-          type: 'spare_key_entry',
-          title: 'Spare key attempt',
-          rationale: 'Verify that route continuation uses the prepared door state.',
-          visibleToPlayer: true,
-          risk: 'high',
-        } as const;
-      },
-      narrateAction: async () => {
-        actionNarrationCalls += 1;
-        return { title: 'Door secured', text: 'The door is locked, chained, and blocked.' };
-      },
-      narrateAmbient: async () => {
-        ambientNarrationCalls += 1;
-        return { title: 'Key stopped', text: 'The spare key cannot open the barricaded door.' };
-      },
-    },
+    aiAdapters,
     calls: () => ({
       parserCalls,
       killerStrategyCalls,
@@ -618,7 +620,7 @@ async function testHighRiskTakeoverPublishesOnlyConfirmedOutcome() {
   await app.close();
 }
 
-async function testLegacyMainPathExitDoesNotExecuteLegacyStateOrNarrationStages() {
+async function testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarration() {
   const app = Fastify({ logger: false });
   const fixture = takeoverFixture('committed', false, true, true);
   await registerTestHarnessRoute(app, {
@@ -637,12 +639,12 @@ async function testLegacyMainPathExitDoesNotExecuteLegacyStateOrNarrationStages(
   const body = response.json();
   assert.equal(fixture.calls().parserCalls, 0);
   assert.equal(fixture.calls().killerStrategyCalls, 0);
-  assert.equal(fixture.calls().actionNarrationCalls, 0);
-  assert.equal(fixture.calls().ambientNarrationCalls, 0);
+  assert.equal(fixture.calls().actionNarrationCalls, 1);
+  assert.equal(fixture.calls().ambientNarrationCalls, 1);
   assert.equal(body.coreState.player.injury, 'critical');
   assert.equal(body.turn.killerStrategy.type, 'confirmed_shadow_result');
   assert.equal(body.coordination.legacyMainPathExit.status, 'committed');
-  assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'material_only');
+  assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'confirmed_facts_narrator');
   assert.equal(body.coordination.legacyMainPathExit.keywordFallbackAuthority, 'disabled');
   await app.close();
 }
@@ -672,6 +674,122 @@ async function testLegacyMainPathExitPublishesAcceptedRecommendations() {
     label: 'Photograph the package label.',
     rationale: 'Preserve visible evidence before taking another action.',
   }]);
+  await app.close();
+}
+
+async function testLegacyMainPathExitRendersReadOnlyPostCommitNarration() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, false, true, true);
+  fixture.aiAdapters.narrateAction = async (context) => {
+    assert.equal(
+      context.stateSnapshot.phase,
+      fixture.prepared.playerResult.state.phase,
+      'post-commit narration should receive the committed state snapshot',
+    );
+    assert.ok(
+      context.confirmedFacts.some((fact) => fact.summary.includes('Locked')),
+      'post-commit narration should receive confirmed player facts',
+    );
+    return {
+      title: 'Door secured',
+      text: 'The deadbolt slides home and the chain settles against the door.',
+    };
+  };
+  fixture.aiAdapters.narrateAmbient = async () => ({
+    title: 'Hallway response',
+    text: 'A muted footstep stops beyond the door, then the corridor falls quiet again.',
+    ending: 'death',
+    isFatal: true,
+  });
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const actionIndex = body.storyLog.findIndex(
+    (node: { type: string; content: string }) => (
+      node.type === 'action_result'
+      && node.content.includes('The deadbolt slides home')
+    ),
+  );
+  const ambientIndex = body.storyLog.findIndex(
+    (node: { type: string; content: string }) => (
+      node.type === 'narrative'
+      && node.content.includes('A muted footstep stops')
+    ),
+  );
+  assert.ok(actionIndex >= 0, 'Narrator action prose should replace the material-only action result');
+  assert.ok(ambientIndex > actionIndex, 'ambient narration should follow the action result and its recommendations');
+  assert.deepEqual(body.storyLog[actionIndex].recommendedActions, [{
+    id: 'recommendation.accepted',
+    label: 'Photograph the package label.',
+    rationale: 'Preserve visible evidence before taking another action.',
+  }]);
+  assert.equal(
+    body.coreState.log.some((entry: { text: string }) => entry.text.includes('The deadbolt slides home')),
+    false,
+    'post-commit prose must not mutate the authoritative state log',
+  );
+  assert.equal(body.coreState.ending, null);
+  assert.equal(body.turn.ambientNarration.ending, undefined);
+  assert.equal(body.turn.ambientNarration.isFatal, undefined);
+  assert.ok(
+    body.coordination.warnings.some((warning: string) => warning.includes('authority fields ignored')),
+  );
+  assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'confirmed_facts_narrator');
+  await app.close();
+}
+
+async function testLegacyMainPathExitKeepsConfirmedMaterialWhenNarratorFails() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, true, true);
+  fixture.aiAdapters.narrateAction = async () => {
+    throw new Error('action narrator unavailable');
+  };
+  fixture.aiAdapters.narrateAmbient = async () => {
+    throw new Error('ambient narrator unavailable');
+  };
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: { input: 'lock and barricade the door', state: baseState },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.ok(
+    body.storyLog.some((node: { type: string; content: string }) => (
+      node.type === 'action_result'
+      && node.content.includes('Locked, chained, and barricaded the front door.')
+    )),
+    'confirmed action material should remain visible when action narration fails',
+  );
+  assert.ok(
+    body.storyLog.some((node: { type: string; content: string }) => (
+      node.type === 'narrative'
+      && node.content.includes('A critical injury was confirmed')
+    )),
+    'confirmed external material should remain visible when ambient narration fails',
+  );
+  assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'material_only');
+  assert.ok(
+    body.coordination.warnings.some((warning: string) => warning.includes('confirmed material remains visible')),
+  );
   await app.close();
 }
 
@@ -1518,8 +1636,10 @@ await testLowRiskTakeoverConflictPublishesNoStateOrStory();
 await testLowRiskTakeoverPersistenceFailurePublishesNoStateOrStory();
 await testKnowledgeClueTakeoverDisablesNarratorClueAuthority();
 await testHighRiskTakeoverPublishesOnlyConfirmedOutcome();
-await testLegacyMainPathExitDoesNotExecuteLegacyStateOrNarrationStages();
+await testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarration();
 await testLegacyMainPathExitPublishesAcceptedRecommendations();
+await testLegacyMainPathExitRendersReadOnlyPostCommitNarration();
+await testLegacyMainPathExitKeepsConfirmedMaterialWhenNarratorFails();
 await testLegacyMainPathExitUsesMinimumFallbackOnlyWhenAiIsUnavailable();
 await testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallback();
 await testDefaultHarnessRouteReturnsDispatcherTrace();

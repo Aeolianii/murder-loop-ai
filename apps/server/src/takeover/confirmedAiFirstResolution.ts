@@ -14,8 +14,14 @@ export function buildConfirmedAiFirstResolution(input: {
   publishedEventIds: Set<string>;
   recommendedActions: RecommendedAction[];
 }): TurnResolution {
+  const preparedEventIds = new Set(
+    input.prepared.eventCandidates.map((candidate) => candidate.event.id),
+  );
+  const ambientEventIds = new Set(
+    [...input.publishedEventIds].filter((eventId) => !preparedEventIds.has(eventId)),
+  );
   const confirmedOutcomeText = input.displayFragments
-    .filter((fragment) => fragment.eventRefs.some((eventId) => input.publishedEventIds.has(eventId)))
+    .filter((fragment) => fragment.eventRefs.some((eventId) => ambientEventIds.has(eventId)))
     .map((fragment) => fragment.text)
     .join(' ');
   const actionNarration: Narration = {
@@ -49,7 +55,15 @@ export function buildConfirmedAiFirstResolution(input: {
       addedClues: [],
       timePassed: 0,
       threatDelta: 0,
-      events: [],
+      events: confirmedOutcomeText
+        ? [{
+            kind: 'state_change',
+            subject: 'world',
+            summary: confirmedOutcomeText,
+            sensoryHints: [],
+            visibility: 'player',
+          }]
+        : [],
       state: input.state,
     },
     narration: actionNarration,

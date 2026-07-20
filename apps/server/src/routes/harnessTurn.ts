@@ -12,14 +12,19 @@ import {
 } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
 import { selectPrimaryActionAudioCue } from '../ai/audioCueSelector';
-import { createAiHarness } from '../ai/harnessAiAdapters';
+import { createAiHarness, createAiHarnessAdapters } from '../ai/harnessAiAdapters';
 import { env } from '../env';
 import {
+  applyConfirmedTurnNarration,
   buildSidebarPayload,
   toFrontendClues,
   toFrontendNode,
   type FrontendStoryNode,
 } from '../presenters/frontendTurnPresenter';
+import {
+  narrateConfirmedTurn,
+  type ConfirmedTurnNarration,
+} from '../presenters/confirmedTurnNarrator';
 import { coerceGameState, normalizeDynamicClueId } from '../state/coerceGameState';
 import {
   createShadowRunCoordinator,
@@ -379,7 +384,8 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
 
     const adapterBundle = options.createAiAdapters?.(input, state);
-    const harness = adapterBundle ? createHarness(adapterBundle.aiAdapters, harnessOptions) : createAiHarness(harnessOptions);
+    const aiAdapters = adapterBundle?.aiAdapters ?? createAiHarnessAdapters();
+    const harness = createHarness(aiAdapters, harnessOptions);
     const routeWarnings = [...(adapterBundle?.coordination?.warnings ?? [])];
     const routeJudgements = adapterBundle?.coordination?.judgements ?? {};
 
@@ -401,6 +407,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     let knowledgeClueTakeoverCoordination: Record<string, unknown> | undefined;
     let highRiskTakeoverCoordination: Record<string, unknown> | undefined;
     let legacyMainPathExitCoordination: Record<string, unknown> | undefined;
+    let confirmedTurnNarration: ConfirmedTurnNarration | undefined;
     let minimumFallbackReason: string | undefined;
     let phaseSixBlockingFailure: {
       reason: string;
@@ -688,6 +695,22 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       };
     }
     resolution ??= await resolveLegacyTurnHarness(state, input, harness);
+    if (legacyMainPathExitCoordination?.status === 'committed') {
+      confirmedTurnNarration = await narrateConfirmedTurn(resolution, aiAdapters);
+      routeWarnings.push(...confirmedTurnNarration.warnings);
+      if (confirmedTurnNarration.actionNarration || confirmedTurnNarration.ambientNarration) {
+        resolution = {
+          ...resolution,
+          narration: confirmedTurnNarration.actionNarration ?? resolution.narration,
+          actionNarration: confirmedTurnNarration.actionNarration
+            ?? resolution.actionNarration
+            ?? resolution.narration,
+          ambientNarration: confirmedTurnNarration.ambientNarration
+            ?? resolution.ambientNarration,
+        };
+        legacyMainPathExitCoordination.storyNodeAuthority = 'confirmed_facts_narrator';
+      }
+    }
     if (shadowSession && shadowCoordinator) {
       void shadowCoordinator.complete(shadowSession, resolution);
     }
@@ -729,10 +752,19 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const agentTrace = harness.dispatcher.getAgentTrace();
     const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
 
+    const materialNodes = visibleEntries.map(toFrontendNode);
+    const presentedNodes = confirmedTurnNarration
+      ? applyConfirmedTurnNarration(materialNodes, {
+          turnId: shadowSession?.envelope.turnId ?? `turn-${resolution.finalState.log.length}`,
+          timestamp: minuteLabel(resolution.finalState.minute),
+          actionNarration: confirmedTurnNarration.actionNarration,
+          ambientNarration: confirmedTurnNarration.ambientNarration,
+        })
+      : materialNodes;
     const storyLog = attachRecommendedActions(
       [
         { id: `input-${Date.now()}`, type: 'player_input', content: input },
-        ...visibleEntries.map(toFrontendNode),
+        ...presentedNodes,
       ],
       resolution,
     );
