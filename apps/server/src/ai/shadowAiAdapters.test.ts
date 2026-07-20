@@ -283,6 +283,18 @@ assert(
   ),
   'Main World Model prompt must forbid leaking non-authorized facts through output fields.',
 );
+assert(
+  calls.at(-1)?.system.includes(
+    'Classify riskClass from the direct proposed effect, not from possible downstream consequences or the surrounding threat.',
+  ),
+  'Proposal prompt must classify risk from the direct effect.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    'Locking or barricading an entry with an accessible ordinary object is reversible',
+  ),
+  'Proposal prompt must keep ordinary entry security in the reversible lane.',
+);
 
 assert.deepEqual(
   adapters.specialists.map((registration) => registration.id),
