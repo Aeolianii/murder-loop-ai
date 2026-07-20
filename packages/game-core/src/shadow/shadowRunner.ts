@@ -185,12 +185,13 @@ export async function runShadowCandidateWave(
 
   const turnBrief = compiler.brief ?? buildCompilerFallbackBrief(input.envelope);
   const compilerFallback = !compiler.brief;
+  const storyMaterial = canonicalStoryMaterial();
 
   const intentProjections = projectTurnIntent({
     brief: turnBrief,
     knowledge,
     canonicalConstraints: input.canonicalConstraints,
-    canonicalStoryMaterial: canonicalStoryMaterial(),
+    canonicalStoryMaterial: storyMaterial,
     conditionalSignals: compilerFallback ? [] : buildConditionalSignals(turnBrief),
   });
   const controller = new AbortController();

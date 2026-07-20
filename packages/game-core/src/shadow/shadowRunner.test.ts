@@ -311,11 +311,27 @@ function registrations(
   assert.equal(wave.semantic.status, 'failed');
   assert.equal((mainProjection as { fallbackMode?: string }).fallbackMode, 'raw_input');
   assert.equal((mainProjection as { rawInput?: string }).rawInput, fallbackRawInput);
+  assert.deepEqual(
+    (mainProjection as { canonicalStoryMaterial?: Array<{ id: string }> })
+      .canonicalStoryMaterial
+      ?.map((material) => material.id),
+    [
+      'material.handoff_2347',
+      'material.room_403_receipt',
+      'material.lin_yue_retracted_message',
+      'material.fake_store_call',
+    ],
+  );
   assert.equal(specialistProjections.length, 7, 'all Specialists still run on conservative projections');
   assert.equal(
     specialistProjections.some((projection) => JSON.stringify(projection).includes(fallbackRawInput)),
     false,
     'no Specialist may receive raw input during compiler fallback',
+  );
+  assert.equal(
+    specialistProjections.some((projection) => JSON.stringify(projection).includes('material.handoff_2347')),
+    false,
+    'authored story material must remain scoped to the Main World Model',
   );
   assert.ok(wave.turnBrief?.compilerVersion.includes('fallback'));
 }
