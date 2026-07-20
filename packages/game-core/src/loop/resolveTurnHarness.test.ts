@@ -358,24 +358,24 @@ async function testStoryNodeShortCircuitIsLegacyOnly() {
   const state = createInitialGameState();
   state.phoneBattery = 20;
   state.phoneFunctional = true;
-  const parseAction = async () => ({
-      id: 'plan-call',
+  const parseAction = async (): Promise<ActionPlan> => ({
+    id: 'plan-call',
+    raw: '打电话给林越',
+    summary: '用手机联系林越',
+    actions: [{
+      id: 'action-call',
       raw: '打电话给林越',
-      summary: '用手机联系林越',
-      actions: [{
-        id: 'action-call',
-        raw: '打电话给林越',
-        intent: 'communicate',
-        target: 'phone',
-        method: '用手机联系林越',
-        confidence: 0.96,
-        timeCost: 1,
-        noise: 0,
-        risk: 'low',
-      }],
+      intent: 'communicate',
+      target: 'phone',
+      method: '用手机联系林越',
       confidence: 0.96,
-      warnings: [],
-    });
+      timeCost: 1,
+      noise: 0,
+      risk: 'low',
+    }],
+    confidence: 0.96,
+    warnings: [],
+  });
   const harness = createHarness({ parseAction });
 
   const resolution = await resolveLegacyTurnHarness(state, '打电话给林越', harness);
