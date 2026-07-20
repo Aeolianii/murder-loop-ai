@@ -67,6 +67,64 @@ function actionNarrationGroundingIssues(narration: Narration, plan: ActionPlan):
   return issues;
 }
 
+function actionTargetLabel(target?: string) {
+  const labels: Record<string, string> = {
+    package: '包裹',
+    front_door: '门',
+    window: '窗户',
+    room: '房间',
+    phone: '手机',
+    phone_charger: '手机充电器',
+    chair: '椅子',
+    linyue: '林越',
+    lin_yue: '林越',
+    police: '警方',
+    police_dispatch: '警方',
+    chen_huaimin: '陈怀民',
+    self: '自己',
+  };
+  return target ? labels[target] ?? target : '目标';
+}
+
+function confirmedActionFallback(plan: ActionPlan): Narration {
+  const photographedPackage = plan.actions.some((action) => (
+    action.intent === 'preserve_evidence' && action.target === 'package'
+  ));
+  const parts = plan.actions.map((action) => {
+    const target = actionTargetLabel(action.target);
+    if (action.intent === 'preserve_evidence') {
+      return action.target === 'package'
+        ? '你拍下了包裹的照片'
+        : `你保存了${target}相关的证据`;
+    }
+    if (action.intent === 'communicate') {
+      if (action.target === 'linyue' && photographedPackage) {
+        return '通过手机把包裹照片和询问消息发送给林越';
+      }
+      return `你通过手机把消息发送给${target}`;
+    }
+    if (action.intent === 'secure_entry') return `你锁好并加固了${target}`;
+    if (action.intent === 'inspect') return `你检查了${target}`;
+    if (action.intent === 'record') return '你开始用手机记录现场';
+    if (action.intent === 'call_police') return '你拨打了报警电话';
+    if (action.intent === 'verify_identity') return `你通过官方渠道核实了${target}的身份`;
+    if (action.intent === 'hide_evidence') return `你藏好了${target}`;
+    if (action.intent === 'open_door') return '你打开了门';
+    if (action.intent === 'self_care') return '你检查并处理了自己的伤势';
+    if (action.intent === 'wait') return '你保持安静并继续观察';
+    if (action.intent === 'escape') return '你尝试离开当前危险位置';
+    if (action.intent === 'attack') return `你向${target}发起了攻击`;
+    if (action.intent === 'pick_up') return `你拿起了${target}`;
+    if (action.intent === 'use_item') return `你使用了${target}`;
+    const raw = action.raw.trim().replace(/^(然后|接着|随后|并且|并|再)/, '');
+    return /[\u4e00-\u9fff]/.test(raw) ? `你${raw}` : '你完成了一个已确认动作';
+  });
+  return {
+    title: '行动已确认',
+    text: `${parts.join('，然后')}。`,
+  };
+}
+
 function npcSpeaker(target?: string): NpcReply['speaker'] | undefined {
   if (target === 'linyue' || target === 'lin_yue') return 'linyue';
   if (target === 'police_dispatch' || target === 'real_police') return 'police_dispatch';
@@ -192,7 +250,7 @@ export async function narrateConfirmedTurn(
       action.warnings.push(
         `post-commit actionNarration not grounded in confirmed actions: ${groundingIssues.join(', ')}; confirmed material remains visible.`,
       );
-      actionNarration = undefined;
+      actionNarration = confirmedActionFallback(resolution.plan);
     }
   }
   if (npc.reply) {

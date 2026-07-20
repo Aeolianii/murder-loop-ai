@@ -815,7 +815,7 @@ async function testLegacyMainPathExitRejectsUngroundedActionNarration() {
   assert.equal(response.statusCode, 200);
   const body = response.json();
   const actionResult = body.storyLog.find((node: { type: string }) => node.type === 'action_result');
-  assert.match(actionResult?.content ?? '', /Locked, chained, and barricaded/);
+  assert.match(actionResult?.content ?? '', /你锁好并加固了门/);
   assert.doesNotMatch(actionResult?.content ?? '', /撕开封口|翻开包裹/);
   assert.ok(
     body.coordination.warnings.some((warning: string) => warning.includes('not grounded')),
@@ -835,8 +835,8 @@ async function testLegacyMainPathExitPublishesConfirmedNpcReply() {
   );
   let npcReplyCalls = 0;
   fixture.aiAdapters.narrateAction = async () => ({
-    title: '照片已发送',
-    text: '你拍下包裹的照片，通过手机发送给林越。',
+    title: '错误的包裹动作',
+    text: '我撕开封口，翻开包裹里的旧书和药板。',
   });
   fixture.aiAdapters.npcReply = async (speaker, input) => {
     npcReplyCalls += 1;
@@ -871,7 +871,9 @@ async function testLegacyMainPathExitPublishesConfirmedNpcReply() {
   assert.equal(body.turn.npcReply?.speaker, 'linyue');
   assert.match(body.turn.npcReply?.text ?? '', /不是我的包裹/);
   const actionResult = body.storyLog.find((node: { type: string }) => node.type === 'action_result');
-  assert.match(actionResult?.content ?? '', /拍下包裹的照片/);
+  assert.match(actionResult?.content ?? '', /你拍下了包裹的照片/);
+  assert.match(actionResult?.content ?? '', /发送给林越/);
+  assert.doesNotMatch(actionResult?.content ?? '', /撕开封口|翻开包裹/);
   assert.match(actionResult?.content ?? '', /林越回复|不是我的包裹/);
   await app.close();
 }
