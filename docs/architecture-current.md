@@ -108,7 +108,23 @@ AI_KNOWLEDGE_CLUE_TAKEOVER_ENABLED=true
   → Narrator.clue 无正式写权限
 ```
 
-阶段四当前只覆盖阶段三低风险回合；高风险 Knowledge、Killer/NPC 永久状态、Death、Ending 与证据销毁仍留待阶段五。实现和回滚说明见 `docs/ai-first-phase-4-implementation.md`。
+阶段四开关单独启用时只覆盖阶段三低风险回合；其实现和回滚说明见 `docs/ai-first-phase-4-implementation.md`。阶段五开启时会自动包含阶段四投影。
+
+阶段五增加默认关闭的高风险正式接管：
+
+```txt
+AI_HIGH_RISK_TAKEOVER_ENABLED=true
+  → 自动启用阶段二/三/四主链
+  → 从选中的 Killer / NPC / Environment Proposal 收集事件
+  → High-Risk Gate 要求完整因果链 + 独立确定性证据
+  → 本地复核 Proposal 权限、Actor 能力、位置、屏障、伤害和 Ending 原因
+  → 从阶段三确认的玩家 State 确定性回放批准事件
+  → 丢弃旧 World / Killer / NPC / Narrator 的状态和高风险文本写入
+  → 与阶段四投影一起 Atomic Turn Commit
+  → committed 后只发布本地确认文本和 pass/defer/reject 审计
+```
+
+阶段五接管 Killer 行动、强入/攻击、NPC 永久状态、Death / Ending 和关键证据销毁。临近 deadline 或警方状态的低风险玩家回合不再回退旧链，而由阶段五处理下游结果；玩家主动攻击等不在阶段三白名单内的高风险玩家命令仍保留旧路径。实现和回滚说明见 `docs/ai-first-phase-5-implementation.md`。
 
 ## 3. Monorepo 模块职责
 
@@ -141,7 +157,7 @@ AI_KNOWLEDGE_CLUE_TAKEOVER_ENABLED=true
 当前注意点：
 
 - `routes/harnessTurn.ts` 是正式主路由，当前主要负责请求处理、复活/回合编排、动态线索、audio cue、sidebar 与最终响应组装。
-- `takeover/lowRiskTakeoverService.ts` 负责阶段三 Shadow/Arbiter 接管门禁和 Atomic Store 编排；开关关闭或门禁未通过时不改变旧链。
+- `takeover/lowRiskTakeoverService.ts` 负责阶段三至五 Shadow/Arbiter 接管门禁、高风险投影和 Atomic Store 编排；开关关闭或门禁未通过时不改变旧链。
 - `ai/harnessAiAdapters.ts` 负责 `createAiHarness()` 以及 Parser / Killer / Narrator / Director / NPC 的 AI adapter。
 - `state/coerceGameState.ts` 负责旧状态和旧线索兼容。
 - `presenters/frontendTurnPresenter.ts` 负责前端 story/clue/sidebar 派生展示转换。
