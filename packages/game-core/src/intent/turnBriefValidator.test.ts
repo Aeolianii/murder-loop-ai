@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
-import { validateTurnBrief, type SemanticCompiler } from './turnBriefValidator';
+import {
+  validateTurnBrief,
+  validateTurnBriefTargetContract,
+  type SemanticCompiler,
+} from './turnBriefValidator';
 
 const brief: TurnBrief = {
   loopId: 'loop-1',
@@ -85,6 +89,140 @@ const brief: TurnBrief = {
   const result = validateTurnBrief(brief, { ...brief, loopId: 'loop-new' });
   assert.equal(result.valid, false);
   assert(result.issues.some((issue) => issue.includes('loopId')));
+}
+
+const targetContext = {
+  facts: [],
+  accessibleEntityIds: ['player', 'front_door', 'chair'],
+  capabilities: ['secure_entry'],
+  activeCommunicationActorIds: [],
+  recentConfirmedEventIds: [],
+  entityAliasIndex: {
+    front_door: ['front_door'],
+    chair: ['chair'],
+    椅子: ['chair'],
+  },
+  recentReferenceCandidates: [],
+  phaseSummary: 'investigation at minute 2',
+};
+const barricadeBrief: TurnBrief = {
+  ...brief,
+  orderedActions: [{
+    actionId: 'action-barricade',
+    actorId: 'player',
+    operation: 'secure_entry',
+    targetIds: ['front_door'],
+    method: 'block_with_chair',
+    dependsOnActionIds: [],
+    inputHandleIds: [],
+    outputHandleIds: [],
+    originalSpan: { start: 0, end: 7, text: '用椅子堵住门' },
+  }],
+  communications: [],
+  candidateHandles: [],
+};
+
+{
+  const issues = validateTurnBriefTargetContract(barricadeBrief, targetContext);
+  assert(
+    issues.some((issue) => (
+      issue.path === 'brief.orderedActions.0.targetIds'
+      && issue.message.includes('chair')
+    )),
+    'Furniture that changes state must be present in targetIds.',
+  );
+}
+
+{
+  const repaired = structuredClone(barricadeBrief);
+  repaired.orderedActions[0].targetIds.push('chair');
+  assert.deepEqual(validateTurnBriefTargetContract(repaired, targetContext), []);
+}
+
+{
+  const invalid = structuredClone(barricadeBrief);
+  invalid.orderedActions[0].operation = 'use_item';
+  invalid.orderedActions[0].targetIds = ['chair'];
+  const issues = validateTurnBriefTargetContract(invalid, targetContext);
+  assert(
+    issues.some((issue) => issue.message.includes('secure_entry')),
+    'Barricading with furniture must use the secure_entry operation.',
+  );
+}
+
+{
+  const unsupported = structuredClone(barricadeBrief);
+  unsupported.orderedActions[0].operation = 'use_item';
+  unsupported.orderedActions[0].targetIds = ['chair'];
+  unsupported.orderedActions[0].method = 'hold_as_weapon';
+  unsupported.orderedActions[0].originalSpan.text = '拿椅子当武器';
+  const issues = validateTurnBriefTargetContract(unsupported, targetContext);
+  assert.equal(
+    issues.some((issue) => issue.message.includes('secure_entry')),
+    false,
+    'Repair guidance must not reinterpret unrelated chair use as barricading.',
+  );
+  assert(
+    issues.some((issue) => issue.message.includes('supported item')),
+    'Unsupported chair use must remain a target-contract failure without changing intent.',
+  );
+}
+
+{
+  const invalid = structuredClone(barricadeBrief);
+  invalid.orderedActions[0].targetIds = ['front_door', 'window'];
+  const issues = validateTurnBriefTargetContract(invalid, {
+    ...targetContext,
+    accessibleEntityIds: [...targetContext.accessibleEntityIds, 'window'],
+  });
+  assert(
+    issues.some((issue) => issue.message.includes('secure_entry targetIds')),
+    'secure_entry must reject accessible targets that are not entrance barriers.',
+  );
+}
+
+{
+  const invalid = structuredClone(barricadeBrief);
+  invalid.orderedActions[0].operation = 'communicate';
+  invalid.orderedActions[0].targetIds = ['lin_yue', 'chen_huaimin'];
+  const issues = validateTurnBriefTargetContract(invalid, {
+    ...targetContext,
+    accessibleEntityIds: ['player'],
+    activeCommunicationActorIds: ['lin_yue', 'chen_huaimin'],
+  });
+  assert(
+    issues.some((issue) => issue.message.includes('exactly one active communication actor')),
+    'Each communication action must identify exactly one active recipient.',
+  );
+}
+
+{
+  const invalid = structuredClone(barricadeBrief);
+  invalid.orderedActions[0].operation = 'inspect';
+  invalid.orderedActions[0].targetIds = ['player'];
+  invalid.orderedActions[0].method = 'inspect';
+  invalid.orderedActions[0].originalSpan.text = '检查自己';
+  const issues = validateTurnBriefTargetContract(invalid, targetContext);
+  assert(
+    issues.some((issue) => issue.message.includes('visible room object')),
+    'inspect must not accept a generally accessible entity that the reducer cannot inspect.',
+  );
+}
+
+{
+  const invalid = structuredClone(barricadeBrief);
+  invalid.orderedActions[0].operation = 'use_item';
+  invalid.orderedActions[0].targetIds = ['phone_charger', 'tape'];
+  invalid.orderedActions[0].method = 'connect';
+  invalid.orderedActions[0].originalSpan.text = 'use charger and tape';
+  const issues = validateTurnBriefTargetContract(invalid, {
+    ...targetContext,
+    accessibleEntityIds: ['player', 'phone_charger', 'tape'],
+  });
+  assert(
+    issues.some((issue) => issue.message.includes('exactly one supported item')),
+    'use_item must use the same target cardinality as the low-risk reducer.',
+  );
 }
 
 const compiler: SemanticCompiler = {
