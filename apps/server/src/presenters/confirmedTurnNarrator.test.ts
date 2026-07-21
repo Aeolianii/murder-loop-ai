@@ -233,6 +233,7 @@ assert(
 
 const openActionSummary = '你打开手机浏览了一会社区动态，几分钟过去了，没有看到与当前危险直接相关的新消息。';
 let openActionNarratorCalled = false;
+const openActionNarratorText = '你打开手机浏览了一会儿社区动态，没有发现新的异常。';
 const openActionNarration = await narrateConfirmedTurn({
   ...resolution,
   plan: {
@@ -269,9 +270,9 @@ const openActionNarration = await narrateConfirmedTurn({
 }, {
   narrateAction: async () => {
     openActionNarratorCalled = true;
-    return { title: '错误改写', text: '你没有执行刚才请求的动作。' };
+    return { title: '行动结果', text: openActionNarratorText };
   },
   narrateAmbient: adapters.narrateAmbient,
 });
-assert.equal(openActionNarratorCalled, false, 'AI adjudication result must not be rewritten by another action narrator');
-assert.equal(openActionNarration.actionNarration?.text, openActionSummary);
+assert.equal(openActionNarratorCalled, true, 'confirmed open actions must still reach the action narrator');
+assert.equal(openActionNarration.actionNarration?.text, openActionNarratorText);

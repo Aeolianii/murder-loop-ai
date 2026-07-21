@@ -137,6 +137,16 @@ assert(
 );
 assert(
   calls[0].system.includes(
+    'When a requested behavior requires a physical resource absent from playerContext.accessibleEntityIds',
+  ),
+  'Semantic Compiler must preserve missing-resource requests as adjudicable open actions.',
+);
+assert(
+  calls[0].system.includes('Use operation="act" with targetIds=["player"]'),
+  'Missing-resource requests must not invent inaccessible target IDs.',
+);
+assert(
+  calls[0].system.includes(
     'When the player explicitly asks to inspect, open, or view package contents, set scope="interior.contents".',
   ),
   'Semantic Compiler prompt must preserve an explicit package-interior inspection scope.',
@@ -331,6 +341,10 @@ assert(calls.at(-1)?.system.includes('status="completed"'));
 assert(calls.at(-1)?.system.includes('status="blocked"/"failed"'));
 assert(calls.at(-1)?.system.includes('Simplified Chinese'));
 assert(calls.at(-1)?.system.includes('what cannot be done and why'));
+assert(calls.at(-1)?.system.includes('required physical resource is absent from the accessible entity IDs'));
+assert(calls.at(-1)?.system.includes('must not create or materialize the missing resource'));
+assert(calls.at(-1)?.system.includes('communicate the result only through the proposedEvents summary'));
+assert(calls.at(-1)?.system.includes('displayFragments must all be empty'));
 
 const killer = adapters.specialists.find((registration) => registration.id === 'killer-specialist');
 await killer?.generate({ facts: [], conditionalSignals: [] }, {
