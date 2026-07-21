@@ -360,7 +360,30 @@ function takeoverFixture(
   let completeCalls = 0;
   let committedFinalState: GameState | undefined;
   const shadowCoordinator: ShadowRunCoordinator = {
-    start: () => ({ envelope: prepared.envelope, wave: Promise.resolve({} as never) }),
+    start: () => ({
+      envelope: prepared.envelope,
+      wave: Promise.resolve({
+        status: 'completed',
+        envelope: prepared.envelope,
+        semantic: {
+          status: 'compiled',
+          durationMs: 1_200,
+          issues: [],
+        },
+        mainProposals: [],
+        specialistCandidates: [],
+        callRecords: [{
+          sourceAgent: 'player-specialist',
+          domain: 'player',
+          status: 'completed',
+          durationMs: 8_230,
+          receivedCount: 1,
+          schemaValidCount: 1,
+          errors: [],
+        }],
+        completedAt: new Date(),
+      }),
+    }),
     complete: async () => { completeCalls += 1; },
   };
   const lowRiskTakeoverService: LowRiskTakeoverService & {
@@ -553,6 +576,34 @@ async function testLowRiskTakeoverCommitsBeforePublishingResponse() {
   assert.equal(body.coordination.lowRiskTakeover.outputStateVersion, baseState.log.length + 1);
   assert.equal(typeof body.coordination.lowRiskTakeover.durationMs, 'number');
   assert(body.coordination.lowRiskTakeover.durationMs >= 0);
+  assert.equal(typeof body.coordination.turnTiming.wallClockMs, 'number');
+  assert(body.coordination.turnTiming.wallClockMs >= 0);
+  assert.equal(
+    body.coordination.turnTiming.entries.find((entry: { stageId: string }) => (
+      entry.stageId === 'semantic-compiler'
+    ))?.durationMs,
+    1_200,
+    'turn timing must include the semantic compiler instead of only the UI dispatcher trace',
+  );
+  assert.equal(
+    body.coordination.turnTiming.entries.find((entry: { stageId: string }) => (
+      entry.stageId === 'player-specialist'
+    ))?.durationMs,
+    8_230,
+    'turn timing must include each AI specialist stage',
+  );
+  assert.equal(
+    body.coordination.turnTiming.slowest.stageId,
+    'player-specialist',
+    'turn timing must identify the slowest stage',
+  );
+  assert.equal(
+    body.coordination.turnTiming.totalMs,
+    body.coordination.turnTiming.entries.reduce((sum: number, entry: { durationMs: number }) => (
+      sum + entry.durationMs
+    ), 0),
+    'stage total must equal the sum of all visible stage durations',
+  );
   await app.close();
 }
 

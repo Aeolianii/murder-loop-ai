@@ -72,6 +72,12 @@ interface HarnessResponseTraceEntry {
   durationMs: number;
 }
 
+interface TurnTimingEntry {
+  stageId: string;
+  durationMs: number;
+  status?: string;
+}
+
 function buildAgentTimingSummary(trace: HarnessResponseTraceEntry[]) {
   const entries = trace.map((entry) => ({
     taskId: entry.taskId,
@@ -89,6 +95,25 @@ function buildAgentTimingSummary(trace: HarnessResponseTraceEntry[]) {
     totalMs,
     slowest,
     entries,
+  };
+}
+
+function buildTurnTimingSummary(entries: TurnTimingEntry[], wallClockMs: number) {
+  const normalizedEntries = entries.map((entry) => ({
+    ...entry,
+    durationMs: Math.max(0, Math.round(entry.durationMs)),
+  }));
+  const totalMs = normalizedEntries.reduce((sum, entry) => sum + entry.durationMs, 0);
+  const slowest = normalizedEntries.reduce<TurnTimingEntry | null>(
+    (current, entry) => (!current || entry.durationMs > current.durationMs ? entry : current),
+    null,
+  );
+
+  return {
+    wallClockMs: Math.max(0, Math.round(wallClockMs)),
+    totalMs,
+    slowest,
+    entries: normalizedEntries,
   };
 }
 
@@ -365,6 +390,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       ?? env.aiLegacyMainPathExitEnabled;
 
   app.post('/api/harness/turn', async (request, reply) => {
+    const requestStartedAt = performance.now();
     const body = request.body as {
       operation?: 'turn' | 'reset_loop';
       input?: string;
@@ -514,6 +540,8 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const harness = createHarness(aiAdapters, harnessOptions);
     const routeWarnings = [...(adapterBundle?.coordination?.warnings ?? [])];
     const routeJudgements = adapterBundle?.coordination?.judgements ?? {};
+    const turnTimingEntries: TurnTimingEntry[] = [];
+    let shadowTimingPromise: Promise<void> | undefined;
 
     let shadowSession: ShadowRunSession | undefined;
     if (shadowCoordinator) {
@@ -523,6 +551,25 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           state,
           loopId: sessionLoopId,
           inputStateVersion: sessionStateVersion,
+        });
+        shadowTimingPromise = shadowSession.wave.then((wave) => {
+          if (wave.semantic && Number.isFinite(wave.semantic.durationMs)) {
+            turnTimingEntries.push({
+              stageId: 'semantic-compiler',
+              durationMs: wave.semantic.durationMs,
+              status: wave.semantic.status,
+            });
+          }
+          for (const call of wave.callRecords ?? []) {
+            if (!Number.isFinite(call.durationMs)) continue;
+            turnTimingEntries.push({
+              stageId: call.sourceAgent,
+              durationMs: call.durationMs,
+              status: call.status,
+            });
+          }
+        }).catch((error) => {
+          routeWarnings.push(`Shadow timing unavailable: ${error instanceof Error ? error.message : String(error)}`);
         });
       } catch (error) {
         routeWarnings.push(`Shadow Run start failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -551,6 +598,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           store: openedSession.store,
         });
         if (preparation.status === 'prepared') {
+          const ruleCommitStartedAt = performance.now();
           resolution = legacyMainPathExitActive
             ? buildConfirmedAiFirstResolution({
                 prepared: preparation.prepared,
@@ -742,6 +790,10 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
               legacyHighRiskAuthority: 'disabled',
             };
           }
+          turnTimingEntries.push({
+            stageId: 'rule-commit',
+            durationMs: performance.now() - ruleCommitStartedAt,
+          });
         } else {
           lowRiskTakeoverCoordination = {
             status: 'bypassed',
@@ -833,8 +885,16 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         minimumPlayableFallback: 'ai_unavailable_only',
       };
     }
-    resolution ??= await resolveLegacyTurnHarness(state, input, harness);
+    if (!resolution) {
+      const legacyResolutionStartedAt = performance.now();
+      resolution = await resolveLegacyTurnHarness(state, input, harness);
+      turnTimingEntries.push({
+        stageId: 'legacy-resolution',
+        durationMs: performance.now() - legacyResolutionStartedAt,
+      });
+    }
     if (!turnCommittedToSession) {
+      const legacyCommitStartedAt = performance.now();
       const legacyTurnId = shadowSession?.envelope.turnId ?? `route-${randomUUID()}`;
       const legacyCommit = await openedSession.store.commitTurn({
         expectedLoopId: sessionLoopId,
@@ -855,9 +915,18 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       }
       turnCommittedToSession = true;
       outputStateVersion = sessionStateVersion + 1;
+      turnTimingEntries.push({
+        stageId: 'rule-commit',
+        durationMs: performance.now() - legacyCommitStartedAt,
+      });
     }
     if (legacyMainPathExitCoordination?.status === 'committed') {
+      const narrationStartedAt = performance.now();
       confirmedTurnNarration = await narrateConfirmedTurn(resolution, aiAdapters);
+      turnTimingEntries.push({
+        stageId: 'confirmed-narration',
+        durationMs: performance.now() - narrationStartedAt,
+      });
       routeWarnings.push(...confirmedTurnNarration.warnings);
       if (
         confirmedTurnNarration.actionNarration
@@ -897,6 +966,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
 
     // 并发启动回合后的非权威展示工作：audioCue 和 sidebar。
 
+    const presentationStartedAt = performance.now();
     const audioCuePromise = options.selectActionAudioCue?.({
       input,
       plan: resolution.plan,
@@ -912,10 +982,33 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
 
     const endingEntry = resolution.finalState.ending ? resolution.finalState.log[resolution.finalState.log.length - 1] : null;
     const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
+    turnTimingEntries.push({
+      stageId: 'presentation',
+      durationMs: performance.now() - presentationStartedAt,
+    });
     const trace = harness.dispatcher.getTrace().map(e => ({
       taskId: e.eventType, agentId: e.agentId, source: e.source, warnings: e.warnings, durationMs: e.durationMs,
     }));
     const agentTiming = buildAgentTimingSummary(trace);
+    if (trace.some((entry) => entry.taskId !== 'TurnCompleted')) {
+      const aggregateIndex = turnTimingEntries.findIndex((entry) => (
+        entry.stageId === 'legacy-resolution'
+      ));
+      if (aggregateIndex >= 0) turnTimingEntries.splice(aggregateIndex, 1);
+    }
+    for (const entry of trace) {
+      if (entry.taskId === 'TurnCompleted') continue;
+      turnTimingEntries.push({
+        stageId: `legacy-${entry.agentId}`,
+        durationMs: entry.durationMs,
+        status: entry.source,
+      });
+    }
+    if (lowRiskTakeoverService && shadowTimingPromise) await shadowTimingPromise;
+    const turnTiming = buildTurnTimingSummary(
+      turnTimingEntries,
+      performance.now() - requestStartedAt,
+    );
     const agentTrace = harness.dispatcher.getAgentTrace();
 
     const materialNodes = visibleEntries.map(toFrontendNode);
@@ -961,6 +1054,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         warnings: [...routeWarnings, ...trace.flatMap(t => t.warnings)],
         trace,
         agentTiming,
+        turnTiming,
         judgements: routeJudgements,
         ...(shadowSession ? {
           shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' as const },

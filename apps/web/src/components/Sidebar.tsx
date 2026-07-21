@@ -2,7 +2,8 @@ import { BookOpen, Brain, Smartphone, X } from 'lucide-react';
 import { useState } from 'react';
 import { getClueAsset } from '../clueAssets';
 import { type ClueReadMap, isClueUnread } from '../clueRevealState';
-import type { Clue } from '../types';
+import type { Clue, TurnTimingState } from '../types';
+import { TurnTimingPanel } from './TurnTimingPanel';
 
 interface SidebarProps {
   clues: Clue[];
@@ -16,6 +17,7 @@ interface SidebarProps {
   };
   readClues?: ClueReadMap;
   onClueSelect?: (clue: Clue) => void;
+  turnTiming?: TurnTimingState;
 }
 
 const STORY_BG = '你叫沈知夏，今天刚搬进青荷公寓 503。傍晚，房东陈怀民把钥匙交给你；维修工林越来检查过煤气管道。现在你在 23:00 醒来，后脑钝痛，桌上有一个被拆开一半的陌生纸箱。你只记得潮湿纸箱的霉味和一句压低的“东西呢？”。第一轮中，你在 23:47 死亡，又带着模糊记忆回到这里。';
@@ -85,7 +87,7 @@ export function InventoryItem({ sidebar }: InventoryItemProps) {
   );
 }
 
-export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect }: SidebarProps) {
+export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect, turnTiming }: SidebarProps) {
   const [showMemories, setShowMemories] = useState(false);
 
   return (
@@ -121,6 +123,8 @@ export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect }:
             )}
           </div>
         )}
+
+        <TurnTimingPanel timing={turnTiming} />
 
         <div className="mb-6 flex items-center gap-2">
           <Brain className="h-4 w-4 text-zinc-500" />

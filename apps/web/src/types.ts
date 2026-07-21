@@ -58,6 +58,19 @@ export interface Clue {
   source?: string;  // 'ai_generated' | 'static_fallback' | 'player_discovered'
 }
 
+export interface TurnTimingEntry {
+  stageId: string;
+  durationMs: number;
+  status?: string;
+}
+
+export interface TurnTimingState {
+  wallClockMs: number;
+  totalMs: number;
+  slowest: TurnTimingEntry | null;
+  entries: TurnTimingEntry[];
+}
+
 export interface CoordinationState {
   warnings: string[];
   facts?: unknown;
@@ -84,6 +97,7 @@ export interface CoordinationState {
       durationMs: number;
     }>;
   };
+  turnTiming?: TurnTimingState;
   judgements?: Record<string, unknown>;
 }
 
