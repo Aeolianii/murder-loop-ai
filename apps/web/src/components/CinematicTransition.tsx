@@ -140,7 +140,7 @@ export function CinematicTransition({ kind, title, summary, method, onComplete }
       </div>
 
       <div className={`absolute inset-0 pointer-events-none ${isDeath ? 'bg-[radial-gradient(ellipse_at_center,_transparent_0%,_rgba(60,0,0,0.45)_52%,_#000000_100%)]' : 'bg-[radial-gradient(ellipse_at_center,_transparent_0%,_rgba(18,50,35,0.28)_52%,_#000000_100%)]'} opacity-90`} />
-      <div className="absolute bottom-8 font-mono text-[10px] tracking-[0.28em] text-zinc-700">CLICK TO SKIP</div>
+      <div className="absolute bottom-8 font-mono text-[10px] tracking-[0.28em] text-zinc-700">点击跳过</div>
     </motion.div>
   );
 }

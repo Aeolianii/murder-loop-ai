@@ -52,7 +52,7 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
               <div className="mt-1 flex flex-1 gap-3 text-sm md:gap-4">
                 <BrainCircuit className="w-5 h-5 text-indigo-500/60 shrink-0 mt-1" />
                 <div>
-                  <div className="text-zinc-600 font-mono text-[10px] mb-2 uppercase tracking-[0.2em]">系统解析 // System Parsing</div>
+                  <div className="text-zinc-600 font-mono text-[10px] mb-2 uppercase tracking-[0.2em]">系统解析 // 正在确认行动</div>
                   <div className="text-[#c9c9c9] font-serif text-base tracking-wide leading-relaxed">{confirmationText}</div>
                 </div>
               </div>
@@ -63,14 +63,14 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
                 >
                   <span className="opacity-0 group-hover:opacity-100 absolute -left-3 transition-opacity">‹</span> 
                   重新选择 
-                  <span className="text-[10px] text-zinc-600 ml-1">ESC</span>
+                  <span className="text-[10px] text-zinc-600 ml-1">取消</span>
                 </button>
                 <button 
                   onClick={onConfirmAction}
                   className="font-mono text-xs text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest relative group"
                 >
                   执行抉择 
-                  <span className="text-[10px] text-indigo-500/50 ml-1">ENT</span>
+                  <span className="text-[10px] text-indigo-500/50 ml-1">确认</span>
                   <span className="opacity-0 group-hover:opacity-100 absolute -right-3 transition-opacity">›</span>
                 </button>
               </div>

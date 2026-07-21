@@ -59,7 +59,8 @@ assert(next.storyLog.at(-1)?.id === 'narration-1', 'applyHarnessTurnResponse sho
 const errorState = applyHarnessTurnResponse(pending, response, new Error('backend failed badly'));
 assert(errorState.isParsing === false, 'applyHarnessTurnResponse should clear parsing state on error');
 assert(errorState.storyLog.at(-1)?.type === 'system', 'applyHarnessTurnResponse should append system message on error');
-assert(errorState.storyLog.at(-1)?.content.includes('backend failed badly'), 'error message should include the request failure');
+assert(errorState.storyLog.at(-1)?.content === '后端暂时没有回应，行动未写入循环。', 'error message should remain player-facing Chinese copy');
+assert(!/[A-Za-z]/.test(errorState.storyLog.at(-1)?.content ?? ''), 'technical English errors must not leak into the UI');
 
 const rewindState = rewindFrontendStateFromResponse({
   ...next,

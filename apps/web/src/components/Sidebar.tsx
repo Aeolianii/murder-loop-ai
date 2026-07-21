@@ -23,7 +23,7 @@ const STORY_BG = '你叫沈知夏，今天刚搬进青荷公寓 503。傍晚，�
 export function NewBadge() {
   return (
     <span className="shrink-0 rounded border border-amber-300/20 bg-amber-300/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-200">
-      NEW
+      新
     </span>
   );
 }
@@ -51,7 +51,7 @@ export function ClueItem({ clue, unread, onSelect }: ClueItemProps) {
         <span className="font-sans text-sm text-zinc-200">{clue.name}</span>
         <span className="flex shrink-0 items-center gap-1">
           {!hasImage && (
-            <span className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">TEXT</span>
+            <span className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">文本</span>
           )}
           {unread && <NewBadge />}
         </span>
@@ -72,7 +72,7 @@ export function InventoryItem({ sidebar }: InventoryItemProps) {
         <Smartphone className="h-3.5 w-3.5" />
         手机
         {sidebar?.phone.recording && (
-          <span className="rounded bg-rose-500/20 px-1 py-0.5 font-mono text-[10px] text-rose-400">REC</span>
+          <span className="rounded bg-rose-500/20 px-1 py-0.5 font-mono text-[10px] text-rose-400">录音</span>
         )}
       </div>
       <p className="font-sans text-xs text-zinc-500">
@@ -161,7 +161,7 @@ export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect }:
 
       <div className="border-t border-white/5 bg-black/20 p-4 text-center">
         <div className="break-all font-mono text-[10px] tracking-widest text-zinc-700">
-          ID: S-503 // ENV: HOSTILE // V_0.3.1
+          会话：503 // 环境：危险 // 版本：0.3.1
         </div>
       </div>
     </aside>

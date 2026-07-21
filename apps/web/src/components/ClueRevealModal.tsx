@@ -9,6 +9,18 @@ interface ClueRevealModalProps {
   onClose: () => void;
 }
 
+function localizedClueSource(source: string): string {
+  if (/[\u3400-\u9fff]/.test(source) && !/[A-Za-z]/.test(source)) return source;
+  const labels: Record<string, string> = {
+    ai: '实时推演',
+    dynamic: '实时推演',
+    rule: '现场检查',
+    authored: '剧情记录',
+    observation: '现场观察',
+  };
+  return labels[source.toLowerCase()] ?? '现场记录';
+}
+
 export function ClueRevealModal({ clue, open, onClose }: ClueRevealModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const asset = clue ? getClueAsset(clue.id) : null;
@@ -49,7 +61,7 @@ export function ClueRevealModal({ clue, open, onClose }: ClueRevealModalProps) {
           onClick={onClose}
           className="absolute right-3 top-3 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-xl leading-none text-zinc-200 transition-colors hover:border-white/35 hover:bg-zinc-900/80 focus:outline focus:outline-1 focus:outline-white/60 md:h-9 md:w-9"
         >
-          x
+          ×
         </button>
 
         {asset ? (
@@ -87,7 +99,7 @@ export function ClueRevealModal({ clue, open, onClose }: ClueRevealModalProps) {
             </p>
             {clue.source && (
               <p className="mt-8 font-mono text-[11px] uppercase tracking-widest text-zinc-600">
-                SOURCE: {clue.source}
+                来源：{localizedClueSource(clue.source)}
               </p>
             )}
           </section>

@@ -5,10 +5,6 @@ function nonInputStoryNodes(response: HarnessTurnResponse): StoryNode[] {
   return response.storyLog?.filter(node => node.type !== 'player_input') ?? [];
 }
 
-function requestErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export function beginHarnessTurn(state: GameState, actionText: string, id = Date.now().toString()): GameState {
   return {
     ...state,
@@ -26,7 +22,6 @@ export function applyHarnessTurnResponse(
   error?: unknown,
 ): GameState {
   if (error) {
-    const message = requestErrorMessage(error);
     return {
       ...state,
       isParsing: false,
@@ -35,7 +30,7 @@ export function applyHarnessTurnResponse(
         {
           id: `sys-${Date.now()}`,
           type: 'system',
-          content: `后端暂时没有回应（${message.slice(0, 60)}），行动未写入循环。`,
+          content: '后端暂时没有回应，行动未写入循环。',
         },
       ],
     };
