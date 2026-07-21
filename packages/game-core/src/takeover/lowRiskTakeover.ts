@@ -706,7 +706,6 @@ function aiOutcomeForAction(
   return outcomes.find((outcome) => (
     outcome.actorId === 'player'
     && outcome.operation === 'act'
-    && outcome.riskClass === 'reversible'
     && outcome.status !== 'attempted'
     && outcome.sourceActionIds.includes(action.actionId)
     && action.targetIds.every((targetId) => outcome.targetIds.includes(targetId))

@@ -280,6 +280,150 @@ assert.equal(openActionPrepared.status, 'prepared');
 if (openActionPrepared.status !== 'prepared') throw new Error('expected AI-judged open action');
 assert.match(openActionPrepared.prepared.playerResult.text, /浏览.*社区动态/);
 
+const unavailableResourceProposal = structuredClone(openActionProposal);
+unavailableResourceProposal.riskClass = 'high_impact';
+unavailableResourceProposal.proposedEvents[0].riskClass = 'high_impact';
+unavailableResourceProposal.proposedEvents[0].status = 'failed';
+unavailableResourceProposal.proposedEvents[0].summary = '你无法完成这个动作，因为所需物品并不存在。';
+const unavailableResourceService = createLowRiskTakeoverService({
+  highRiskTakeoverEnabled: true,
+});
+const unavailableResourcePrepared = await unavailableResourceService.prepare(
+  session(wave(openActionBrief, unavailableResourceProposal)),
+  state,
+);
+assert.equal(unavailableResourcePrepared.status, 'prepared');
+if (unavailableResourcePrepared.status !== 'prepared') {
+  throw new Error('expected a high-risk-classified failed action to stay playable');
+}
+assert.match(unavailableResourcePrepared.prepared.playerResult.text, /无法.*不存在/);
+
+const fatalActionBrief = brief('act', ['player', 'window']);
+fatalActionBrief.orderedActions[0].originalSpan = {
+  start: 0,
+  end: 8,
+  text: '执行一个致命行动',
+};
+const fatalAttempt: ProposedEvent = {
+  id: 'event.player.fatal.attempted',
+  kind: 'action',
+  sourceActionIds: ['action-low-risk'],
+  actorId: 'player',
+  operation: 'act',
+  targetIds: ['player', 'window'],
+  status: 'attempted',
+  summary: '你开始执行这个行动。',
+  assertions: [],
+  visibility: ['player'],
+  riskClass: 'reversible',
+  evidenceRefs: [],
+  causalParentIds: [],
+};
+const fatalAction: ProposedEvent = {
+  id: 'event.player.fatal.completed',
+  kind: 'action',
+  sourceActionIds: ['action-low-risk'],
+  actorId: 'player',
+  operation: 'act',
+  targetIds: ['player', 'window'],
+  status: 'completed',
+  summary: '这个行动成立，并直接造成了致命后果。',
+  assertions: [{
+    id: 'assertion.player.fatal.lethality',
+    subject: 'player',
+    predicate: 'lethality',
+    value: 'lethal',
+    visibleTo: ['player'],
+  }],
+  visibility: ['player'],
+  riskClass: 'irreversible',
+  evidenceRefs: [
+    fatalAttempt.id,
+    'fact.object.window.location',
+    'invariant.death.requires_feasible_lethal_action',
+  ],
+  causalParentIds: [fatalAttempt.id],
+};
+const fatalStatus: ProposedEvent = {
+  id: 'event.player.fatal.status',
+  kind: 'state_transition',
+  sourceActionIds: ['action-low-risk'],
+  actorId: 'player',
+  operation: 'change_status',
+  targetIds: ['player'],
+  status: 'completed',
+  summary: '你死亡了。',
+  assertions: [{
+    id: 'assertion.player.fatal.status',
+    subject: 'player',
+    predicate: 'status',
+    value: 'dead',
+    visibleTo: ['player'],
+  }],
+  visibility: ['player'],
+  riskClass: 'irreversible',
+  evidenceRefs: [
+    fatalAction.id,
+    'invariant.death.requires_feasible_lethal_action',
+  ],
+  causalParentIds: [fatalAction.id],
+};
+const fatalEnding: ProposedEvent = {
+  id: 'event.player.fatal.ending',
+  kind: 'ending',
+  sourceActionIds: ['action-low-risk'],
+  actorId: 'player',
+  operation: 'resolve_ending',
+  targetIds: ['death'],
+  status: 'completed',
+  summary: '这一轮结束了。',
+  assertions: [{
+    id: 'assertion.player.fatal.ending',
+    subject: 'game',
+    predicate: 'ending',
+    value: 'death',
+    visibleTo: ['player'],
+  }, {
+    id: 'assertion.player.fatal.reason',
+    subject: 'game',
+    predicate: 'reason',
+    value: 'self_inflicted',
+    visibleTo: ['player'],
+  }],
+  visibility: ['player'],
+  riskClass: 'irreversible',
+  evidenceRefs: [
+    fatalStatus.id,
+    'invariant.ending.requires_terminal_cause',
+  ],
+  causalParentIds: [fatalStatus.id],
+};
+const fatalProposal = playerProposal('irreversible');
+fatalProposal.operation = 'act';
+fatalProposal.targetIds = ['player', 'window'];
+fatalProposal.proposedEvents = [fatalAttempt, fatalAction, fatalStatus, fatalEnding];
+const fatalState = createInitialGameState();
+fatalState.world = createInitialWorldState();
+const fatalService = createLowRiskTakeoverService({ highRiskTakeoverEnabled: true });
+const fatalPrepared = await fatalService.prepare(
+  session(wave(fatalActionBrief, fatalProposal)),
+  fatalState,
+);
+assert.equal(fatalPrepared.status, 'prepared');
+if (fatalPrepared.status !== 'prepared') throw new Error('expected fatal action preparation');
+const fatalCommitted = await fatalService.commit(
+  envelope.turnId,
+  fatalPrepared.prepared.playerResult.state,
+);
+assert.equal(fatalCommitted.outcome.result.commitStatus, 'committed');
+assert.equal(fatalCommitted.state?.world?.characters.player.status, 'dead');
+assert.equal(fatalCommitted.state?.ending, 'death');
+assert.equal(fatalCommitted.state?.endingReason, 'self_inflicted');
+assert.equal(fatalCommitted.state?.phase, 'death');
+const fatalEndingEntry = fatalCommitted.state?.log.find((entry) => entry.id.includes(fatalEnding.id));
+assert.equal(fatalEndingEntry?.tone, 'death');
+assert.doesNotMatch(`${fatalEndingEntry?.title}${fatalEndingEntry?.text}`, /[A-Za-z]/);
+
 const missingOpenActionWave = wave(openActionBrief, openActionProposal);
 missingOpenActionWave.arbitration!.selectedProposalIds = [];
 const missingOpenActionService = createLowRiskTakeoverService();

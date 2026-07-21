@@ -23,6 +23,7 @@ const HIGH_RISK_INVARIANT_REFS = [
   'invariant.arrest.requires_police_presence',
   'invariant.attack.requires_same_location',
   'invariant.death.requires_lethal_injury',
+  'invariant.death.requires_feasible_lethal_action',
   'invariant.ending.requires_terminal_cause',
   'invariant.entry.requires_clear_barrier',
   'invariant.evidence_destroy.requires_access',
@@ -33,6 +34,7 @@ const HIGH_RISK_INVARIANT_REFS = [
 
 const SUPPORTED_EVENT_SEMANTICS = new Set([
   'act:attempted',
+  'act:completed',
   'attack:attempted',
   'attack:blocked',
   'attack:completed',
@@ -76,6 +78,7 @@ const ENDING_REASONS = new Set<EndingReason>([
   'forced_entry',
   'window_route',
   'ambient_pressure',
+  'self_inflicted',
   'killer_dead_with_evidence',
   'killer_dead_no_evidence',
   'deadline_survived_with_evidence',
@@ -254,8 +257,11 @@ function applyConfirmedEvent(
   switch (eventSemantic(event)) {
     case 'act:attempted':
       return event.actorId === 'chen_huaimin'
+        || (event.actorId === 'player' && event.targetIds.includes('player'))
         ? { status: 'applied' }
-        : { status: 'rejected', reason: 'killer_action_actor_invalid' };
+        : { status: 'rejected', reason: 'action_actor_invalid' };
+    case 'act:completed':
+      return applyPlayerLethalAction(event, eventsById);
     case 'attack:blocked':
       return { status: 'rejected', reason: 'attack_block_capability_unmodeled' };
     case 'move:completed':
@@ -305,6 +311,26 @@ function applyConfirmedEvent(
     default:
       return { status: 'rejected', reason: 'high_risk_event_type_unsupported' };
   }
+}
+
+function applyPlayerLethalAction(
+  event: ProposedEvent,
+  eventsById: Map<string, ProposedEvent>,
+): ApplyResult {
+  const attempt = event.causalParentIds
+    .map((id) => eventsById.get(id))
+    .find((parent) => parent && eventSemantic(parent) === 'act:attempted');
+  if (
+    event.actorId !== 'player'
+    || !event.targetIds.includes('player')
+    || attempt?.actorId !== 'player'
+    || !attempt.targetIds.includes('player')
+    || factValue(event, 'lethality') !== 'lethal'
+    || !hasEvidence(event, ['invariant.death.requires_feasible_lethal_action'])
+  ) {
+    return { status: 'rejected', reason: 'player_lethal_action_not_grounded' };
+  }
+  return { status: 'applied' };
 }
 
 function entryBlockIsConfirmed(state: GameState, event: ProposedEvent): boolean {
@@ -556,6 +582,25 @@ function applyCharacterKilled(
   event: ProposedEvent,
   eventsById: Map<string, ProposedEvent>,
 ): ApplyResult {
+  const lethalPlayerAction = event.causalParentIds
+    .map((id) => eventsById.get(id))
+    .find((parent) => (
+      parent
+      && eventSemantic(parent) === 'act:completed'
+      && parent.actorId === 'player'
+      && parent.targetIds.includes('player')
+      && factValue(parent, 'lethality') === 'lethal'
+    ));
+  const subject = event.targetIds[0];
+  if (
+    subject === 'player'
+    && lethalPlayerAction
+    && hasEvidence(event, ['invariant.death.requires_feasible_lethal_action'])
+  ) {
+    state.player.injury = 'critical';
+    state.world!.characters.player.status = 'dead';
+    return { status: 'applied' };
+  }
   if (
     !hasDirectParentStatus(event, eventsById, 'injured')
     || !hasEvidence(event, ['invariant.death.requires_lethal_injury'])
@@ -565,7 +610,6 @@ function applyCharacterKilled(
   const injuryParent = event.causalParentIds
     .map((id) => eventsById.get(id))
     .find((parent) => parent && factValue(parent, 'status') === 'injured');
-  const subject = event.targetIds[0];
   if (
     injuryParent?.targetIds[0] !== subject
     || factValue(injuryParent, 'injury') !== 'critical'
@@ -728,17 +772,30 @@ function applyEnding(
     return parent ? eventSemantic(parent) : undefined;
   }));
   if (ending === 'death') {
-    const killedPlayer = event.causalParentIds.some((id) => {
-      const parent = eventsById.get(id);
-      return parent
+    const killedPlayerEvent = event.causalParentIds
+      .map((id) => eventsById.get(id))
+      .find((parent) => (
+        parent
         && eventSemantic(parent) === 'change_status:completed'
         && factValue(parent, 'status') === 'dead'
-        && parent.targetIds[0] === 'player';
-    });
-    if (!killedPlayer || state.player.injury !== 'critical') {
+        && parent.targetIds[0] === 'player'
+      ));
+    const selfInflictedCause = killedPlayerEvent?.causalParentIds.some((id) => {
+      const parent = eventsById.get(id);
+      return parent
+        && eventSemantic(parent) === 'act:completed'
+        && parent.actorId === 'player'
+        && parent.targetIds.includes('player')
+        && factValue(parent, 'lethality') === 'lethal';
+    }) ?? false;
+    if (!killedPlayerEvent || state.player.injury !== 'critical') {
       return { status: 'rejected', reason: 'death_terminal_cause_missing' };
     }
-    if (!['forced_entry', 'window_route', 'ambient_pressure', 'deadline_murder'].includes(reason)) {
+    if (
+      (reason === 'self_inflicted') !== selfInflictedCause
+      || (!selfInflictedCause
+        && !['forced_entry', 'window_route', 'ambient_pressure', 'deadline_murder'].includes(reason))
+    ) {
       return { status: 'rejected', reason: 'ending_reason_mismatch' };
     }
   } else {
@@ -873,6 +930,7 @@ function correctedBlockedEntry(event: ProposedEvent, blockedBy: string): Propose
 
 function sanitizeConfirmedEvent(event: ProposedEvent): ProposedEvent {
   const predicatesBySemantic: Record<string, string[]> = {
+    'act:completed': ['lethality'],
     'move:completed': ['location'],
     'enter:attempted': ['entry_route'],
     'enter:blocked': ['entry_route', 'blocked_by'],
@@ -977,52 +1035,83 @@ function isPlayerVisible(event: ProposedEvent): boolean {
 
 function deterministicTitle(event: ProposedEvent): string {
   switch (eventSemantic(event)) {
-    case 'enter:attempted': return 'Entry attempt';
-    case 'enter:blocked': return 'Entry blocked';
-    case 'enter:completed': return 'Entry confirmed';
-    case 'attack:attempted': return 'Attack attempt';
-    case 'attack:completed': return 'Attack confirmed';
-    case 'change_status:completed': return 'Status changed';
-    case 'destroy:completed': return 'Evidence destroyed';
-    case 'resolve_ending:completed': return 'Ending confirmed';
-    default: return 'World event confirmed';
+    case 'enter:attempted': return '进入尝试';
+    case 'enter:blocked': return '进入受阻';
+    case 'enter:completed': return '进入已确认';
+    case 'attack:attempted': return '攻击尝试';
+    case 'attack:completed': return '攻击已确认';
+    case 'change_status:completed': return factValue(event, 'status') === 'dead' ? '死亡' : '状态变化';
+    case 'destroy:completed': return '证据被毁';
+    case 'resolve_ending:completed': return factValue(event, 'ending') === 'death' ? '死亡结局' : '结局已确认';
+    default: return '世界事件已确认';
   }
 }
 
 function deterministicSummary(event: ProposedEvent): string {
-  const target = event.targetIds[0] ?? 'the target';
+  const actor = displayEntityLabel(event.actorId, '相关人物');
+  const target = displayEntityLabel(event.targetIds[0], '相关目标');
   switch (eventSemantic(event)) {
     case 'move:completed':
-      return `${event.actorId} moved to ${factValue(event, 'location') ?? 'a confirmed location'}.`;
+      return `${actor}移动到了已确认的位置。`;
     case 'enter:attempted':
-      return `${event.actorId} attempted entry via ${factValue(event, 'entry_route') ?? 'a route'}.`;
+      return `${actor}尝试进入。`;
     case 'enter:blocked':
-      return `The entry attempt was blocked by ${factValue(event, 'blocked_by') ?? 'a confirmed barrier'}.`;
+      return `进入尝试被已确认的障碍挡住了。`;
     case 'enter:completed':
-      return `${event.actorId} entered ${target} through ${factValue(event, 'entry_route') ?? 'a confirmed route'}.`;
+      return `${actor}已经进入${target}。`;
     case 'attack:attempted':
-      return `${event.actorId} attempted to attack ${target}.`;
+      return `${actor}试图攻击${target}。`;
     case 'attack:completed':
-      return `The attack against ${target} landed.`;
+      return `针对${target}的攻击已经命中。`;
     case 'attack:blocked':
-      return `The attack against ${target} was blocked.`;
+      return `针对${target}的攻击被挡住了。`;
     case 'change_status:completed':
-      return `${target} status changed to ${factValue(event, 'status') ?? 'a confirmed state'}.`;
+      return target === 'player' && factValue(event, 'status') === 'dead'
+        ? '你在这次行动中死亡。'
+        : `${target}的状态已经发生变化。`;
     case 'intervene:completed':
-      return `Intervention against ${target} was confirmed.`;
+      return `针对${target}的介入已经确认。`;
     case 'destroy:attempted':
-      return `${event.actorId} attempted to destroy ${target}.`;
+      return `${actor}试图销毁${target}。`;
     case 'destroy:completed':
-      return `${target} was destroyed by an actor with confirmed access.`;
+      return `${target}已被有权限接触它的人销毁。`;
     case 'reach_deadline:completed':
-      return 'The confirmed deadline was reached.';
+      return '已到达确认的截止时间。';
     case 'resolve_ending:completed':
-      return `The ${factValue(event, 'ending') ?? target} ending was confirmed.`;
+      return factValue(event, 'ending') === 'death'
+        ? '这一轮在你的死亡中结束。'
+        : '这一轮的结局已经确认。';
     case 'act:attempted':
-      return `${event.actorId} attempted an action.`;
+      return `${actor}尝试执行这个行动。`;
+    case 'act:completed':
+      return factValue(event, 'lethality') === 'lethal'
+        ? '你执行了一个已确认会造成致命后果的行动。'
+        : '你完成了这个行动。';
     default:
-      return 'A deterministic world event was confirmed.';
+      return '一个世界事件已经确认。';
   }
+}
+
+function displayEntityLabel(id: string | undefined, fallback: string): string {
+  const labels: Record<string, string> = {
+    player: '你',
+    chen_huaimin: '陈怀民',
+    lin_yue: '林越',
+    real_police: '警方',
+    fake_police: '门外的人',
+    system: '环境',
+    room_503: '房间',
+    room_501: '隔壁房间',
+    corridor_5f: '五楼走廊',
+    stairwell: '楼梯间',
+    lobby: '大堂',
+    parking_lot: '停车场',
+    package: '包裹',
+    front_door: '入户门',
+    window: '窗户',
+    death: '死亡结局',
+  };
+  return id ? labels[id] ?? fallback : fallback;
 }
 
 function eventSemantic(event: ProposedEvent): string {

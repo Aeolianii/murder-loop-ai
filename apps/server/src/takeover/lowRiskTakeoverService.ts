@@ -463,7 +463,10 @@ function selectDownstreamEventCandidates(wave: ShadowCandidateWave): {
   const selected = proposals
     .filter((proposal) => (
       selectedProposalIds.has(proposal.id)
-      && ['killer', 'npc', 'environment', 'world'].includes(proposal.domain)
+      && (
+        ['killer', 'npc', 'environment', 'world'].includes(proposal.domain)
+        || playerProposalNeedsHighRiskProjection(proposal)
+      )
     ));
   for (const proposal of selected) {
     for (const event of proposal.proposedEvents) {
@@ -490,6 +493,7 @@ const DOMAIN_EVENT_KIND_POLICY: Partial<Record<
   Proposal['domain'],
   Set<Proposal['proposedEvents'][number]['kind']>
 >> = {
+  player: new Set(['action', 'state_transition', 'ending']),
   killer: new Set(['action', 'state_transition', 'information_transfer', 'ending']),
   npc: new Set(['action', 'state_transition', 'information_transfer', 'observation', 'ending']),
   environment: new Set(['state_transition', 'observation', 'timer', 'ending']),
@@ -502,6 +506,17 @@ const DOMAIN_EVENT_KIND_POLICY: Partial<Record<
     'ending',
   ]),
 };
+
+function playerProposalNeedsHighRiskProjection(
+  proposal: Proposal | SpecialistCandidate,
+): boolean {
+  return proposal.domain === 'player'
+    && proposal.proposedEvents.some((event) => (
+      event.riskClass !== 'reversible'
+      && event.status !== 'blocked'
+      && event.status !== 'failed'
+    ));
+}
 
 function proposalCanAuthorEvent(
   proposal: Proposal | SpecialistCandidate,
@@ -527,7 +542,6 @@ function selectAiPlayerOutcomes(wave: ShadowCandidateWave): ProposedEvent[] {
     .flatMap((proposal) => proposal.proposedEvents)
     .filter((event) => (
       event.actorId === 'player'
-      && event.riskClass === 'reversible'
       && event.status !== 'attempted'
       && (event.visibility.includes('player') || event.visibility.includes('public'))
     ));

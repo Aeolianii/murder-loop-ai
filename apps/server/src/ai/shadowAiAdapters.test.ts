@@ -137,6 +137,12 @@ assert(
 );
 assert(
   calls[0].system.includes(
+    'For self-directed high-impact or irreversible behavior, also use operation="act"',
+  ),
+  'Semantic Compiler must preserve self-directed high-risk intent as a generic adjudicable act.',
+);
+assert(
+  calls[0].system.includes(
     'When a requested behavior requires a physical resource absent from playerContext.accessibleEntityIds',
   ),
   'Semantic Compiler must preserve missing-resource requests as adjudicable open actions.',
@@ -345,6 +351,17 @@ assert(calls.at(-1)?.system.includes('required physical resource is absent from 
 assert(calls.at(-1)?.system.includes('must not create or materialize the missing resource'));
 assert(calls.at(-1)?.system.includes('communicate the result only through the proposedEvents summary'));
 assert(calls.at(-1)?.system.includes('displayFragments must all be empty'));
+assert(calls.at(-1)?.system.includes('invariant.death.requires_feasible_lethal_action'));
+assert(calls.at(-1)?.system.includes('lethality="lethal"'));
+assert(calls.at(-1)?.system.includes('reason="self_inflicted"'));
+assert(calls.at(-1)?.system.includes('must not propose death or an ending'));
+assert(calls.at(-1)?.system.includes(
+  'basedOnFactIds must contain only IDs from projection.factIds and must never contain canonical constraint IDs',
+));
+assert(calls.at(-1)?.system.includes('predicate="reason"'));
+assert(calls.at(-1)?.system.includes('exactly one resolved act:completed event'));
+assert(calls.at(-1)?.system.includes('kind="state_transition", operation="change_status"'));
+assert(calls.at(-1)?.system.includes('kind="ending", operation="resolve_ending"'));
 
 const killer = adapters.specialists.find((registration) => registration.id === 'killer-specialist');
 await killer?.generate({ facts: [], conditionalSignals: [] }, {

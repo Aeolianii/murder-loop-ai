@@ -24,6 +24,7 @@ const CANONICAL_SHADOW_CONSTRAINTS = [
   'invariant.arrest.requires_police_presence',
   'invariant.attack.requires_same_location',
   'invariant.death.requires_lethal_injury',
+  'invariant.death.requires_feasible_lethal_action',
   'invariant.ending.requires_terminal_cause',
   'invariant.entry.requires_clear_barrier',
   'invariant.evidence_destroy.requires_access',

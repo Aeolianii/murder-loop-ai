@@ -63,7 +63,10 @@ export interface IntentProjections {
     canonicalConstraints: string[];
     canonicalStoryMaterial: CanonicalStoryMaterial[];
   };
-  playerSpecialist: ProjectedTurnMetadata & FactProjection & { turnBrief: TurnBrief };
+  playerSpecialist: ProjectedTurnMetadata & FactProjection & {
+    turnBrief: TurnBrief;
+    canonicalConstraints: string[];
+  };
   killerSpecialist: SpecialistProjection;
   npcSpecialists: Record<string, SpecialistProjection & { communications: ConditionalCommunication[] }>;
   environmentSpecialist: SpecialistProjection;
@@ -99,6 +102,7 @@ export function projectTurnIntent(input: IntentProjectionInput): IntentProjectio
       ...metadata,
       ...input.knowledge.player,
       turnBrief: input.brief,
+      canonicalConstraints: [...input.canonicalConstraints],
     },
     killerSpecialist: specialistProjection(
       metadata,

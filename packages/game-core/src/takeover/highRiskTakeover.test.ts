@@ -40,6 +40,8 @@ function event(input: {
     evidence_destruction_attempted: { kind: 'action', operation: 'destroy', status: 'attempted' },
     killer_action_attempted: { kind: 'action', operation: 'act', status: 'attempted' },
     npc_action_attempted: { kind: 'action', operation: 'act', status: 'attempted' },
+    player_action_attempted: { kind: 'action', operation: 'act', status: 'attempted' },
+    player_action_completed: { kind: 'action', operation: 'act', status: 'completed' },
     police_intervention_confirmed: { kind: 'action', operation: 'intervene', status: 'completed' },
   };
   const semantics = semanticsByLegacyType[input.eventType];
@@ -59,6 +61,8 @@ function event(input: {
     'entry_blocked',
     'killer_action_attempted',
     'npc_action_attempted',
+    'player_action_attempted',
+    'player_action_completed',
   ].includes(input.eventType);
   const actorId = factMap.get('actor')
     ?? factMap.get('attacker')
@@ -94,6 +98,106 @@ function event(input: {
     evidenceRefs: input.evidenceRefs ?? [],
     causalParentIds: input.causalParentIds ?? [],
   };
+}
+
+{
+  const attempted = event({
+    id: 'event.player.self-directed.attempted',
+    eventType: 'player_action_attempted',
+    subject: 'player',
+    facts: ['target:player'],
+  });
+  const lethalAction = event({
+    id: 'event.player.self-directed.lethal',
+    eventType: 'player_action_completed',
+    subject: 'player',
+    riskClass: 'irreversible',
+    facts: ['target:player', 'lethality:lethal'],
+    evidenceRefs: [
+      attempted.id,
+      'fact.object.window.location',
+      'invariant.death.requires_feasible_lethal_action',
+    ],
+    causalParentIds: [attempted.id],
+  });
+  const killed = event({
+    id: 'event.player.self-directed.killed',
+    eventType: 'character_killed',
+    subject: 'player',
+    riskClass: 'irreversible',
+    facts: ['actor:player', 'status:dead'],
+    evidenceRefs: [
+      lethalAction.id,
+      'invariant.death.requires_feasible_lethal_action',
+    ],
+    causalParentIds: [lethalAction.id],
+  });
+  const ending = event({
+    id: 'event.player.self-directed.ending',
+    eventType: 'ending_reached',
+    subject: 'death',
+    riskClass: 'irreversible',
+    facts: ['actor:player', 'ending:death', 'reason:self_inflicted'],
+    evidenceRefs: [
+      killed.id,
+      'invariant.ending.requires_terminal_cause',
+    ],
+    causalParentIds: [killed.id],
+  });
+
+  const projection = project([attempted, lethalAction, killed, ending]);
+
+  assert.equal(projection.state.world?.characters.player.status, 'dead');
+  assert.equal(projection.state.player.injury, 'critical');
+  assert.equal(projection.state.ending, 'death');
+  assert.equal(projection.state.endingReason, 'self_inflicted');
+  assert.equal(projection.state.phase, 'death');
+  assert.deepEqual(projection.rejectedEventIds, []);
+  assert.equal(projection.acceptedEventIds.includes(ending.id), true);
+  assert.equal(
+    projection.displayFragments.every((fragment) => !/[A-Za-z]/.test(fragment.text)),
+    true,
+  );
+
+  const mismatchedEnding = event({
+    id: 'event.player.self-directed.mismatched-ending',
+    eventType: 'ending_reached',
+    subject: 'death',
+    riskClass: 'irreversible',
+    facts: ['actor:player', 'ending:death', 'reason:forced_entry'],
+    evidenceRefs: [
+      killed.id,
+      'invariant.ending.requires_terminal_cause',
+    ],
+    causalParentIds: [killed.id],
+  });
+  const mismatchedProjection = project([
+    attempted,
+    lethalAction,
+    killed,
+    mismatchedEnding,
+  ]);
+  assert.equal(mismatchedProjection.state.ending, null);
+  assert.equal(
+    mismatchedProjection.rejectedEventIds.includes(mismatchedEnding.id),
+    true,
+  );
+}
+
+{
+  const ungroundedDeath = event({
+    id: 'event.player.ungrounded-death',
+    eventType: 'character_killed',
+    subject: 'player',
+    riskClass: 'irreversible',
+    facts: ['actor:player', 'status:dead'],
+    evidenceRefs: ['invariant.death.requires_feasible_lethal_action'],
+  });
+  const projection = project([ungroundedDeath]);
+
+  assert.equal(projection.state.ending, null);
+  assert.notEqual(projection.state.world?.characters.player.status, 'dead');
+  assert.deepEqual(projection.rejectedEventIds, [ungroundedDeath.id]);
 }
 
 function project(events: ProposedEvent[]): HighRiskTakeoverProjection {

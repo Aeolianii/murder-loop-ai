@@ -84,6 +84,7 @@ export type EndingReason =
   | 'forced_entry'
   | 'window_route'
   | 'ambient_pressure'
+  | 'self_inflicted'
   | 'killer_dead_with_evidence'
   | 'killer_dead_no_evidence'
   | 'deadline_survived_with_evidence'

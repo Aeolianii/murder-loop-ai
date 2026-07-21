@@ -279,6 +279,7 @@ function aiActionOutcome(
   actionId: string,
   status: ProposedEvent['status'],
   summary: string,
+  riskClass: ProposedEvent['riskClass'] = 'reversible',
 ): ProposedEvent {
   return {
     id: `event.ai-action.${actionId}`,
@@ -297,7 +298,7 @@ function aiActionOutcome(
       visibleTo: ['player'],
     }],
     visibility: ['player'],
-    riskClass: 'reversible',
+    riskClass,
     evidenceRefs: ['fact.player.phone_functional'],
     causalParentIds: [],
   };
@@ -336,6 +337,23 @@ assert.equal(aiRejectedOpenAction.status, 'prepared');
 if (aiRejectedOpenAction.status !== 'prepared') throw new Error('expected AI-rejected open action result');
 assert.match(aiRejectedOpenAction.playerResult.text, /无法.*因为/);
 assert.equal(aiRejectedOpenAction.eventCandidates[0]?.event.status, 'failed');
+
+const aiRejectedHighRiskOpenAction = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: brief([browseAction]),
+  aiPlayerOutcomes: [aiActionOutcome(
+    browseAction.actionId,
+    'failed',
+    '你无法完成这个动作，因为所需物品并不存在。',
+    'high_impact',
+  )],
+});
+assert.equal(aiRejectedHighRiskOpenAction.status, 'prepared');
+if (aiRejectedHighRiskOpenAction.status !== 'prepared') {
+  throw new Error('expected high-risk-classified failed action to remain a resolved outcome');
+}
+assert.equal(aiRejectedHighRiskOpenAction.eventCandidates[0]?.event.status, 'failed');
+assert.match(aiRejectedHighRiskOpenAction.playerResult.text, /无法.*不存在/);
 
 const powerlessPhoneState = createInitialGameState();
 powerlessPhoneState.phoneBattery = 0;
