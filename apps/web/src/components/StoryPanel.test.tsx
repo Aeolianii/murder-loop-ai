@@ -30,6 +30,16 @@ assert.match(
   /aria-label="执行建议：Photograph the package label\."/,
   'recommendation buttons must expose an accessible action label',
 );
+assert.match(
+  html,
+  /<button[^>]*translate="no"/,
+  'recommendation buttons must prevent browser translation from changing the visible action label',
+);
+assert.match(
+  html,
+  /<button[^>]*class="[^"]*\bnotranslate\b[^"]*"/,
+  'recommendation buttons must opt out of translation extensions that use the notranslate class',
+);
 
 const staleHtml = renderToStaticMarkup(
   <StoryPanel

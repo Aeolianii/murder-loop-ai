@@ -71,10 +71,11 @@ export function StoryPanel({
                           <button
                             key={action.id}
                             type="button"
+                            translate="no"
                             aria-label={`执行建议：${action.label}`}
                             disabled={recommendationsDisabled || index !== latestActionResultIndex}
                             onClick={() => onRecommendedAction(action.label)}
-                            className="block w-full rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-900/70 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="notranslate block w-full rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-900/70 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <div className="text-xs leading-relaxed text-zinc-300 md:text-sm">{action.label}</div>
                             <div className="mt-1 text-[11px] leading-relaxed text-zinc-500 md:text-xs">{action.rationale}</div>
