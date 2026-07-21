@@ -92,7 +92,8 @@ async function testFrontendAdapterUsesHarnessResolver() {
   const body = response.json();
   assert.equal(body.storyLog[0].type, 'player_input');
   assert.equal(body.storyLog[1].type, 'action_result');
-  assert.equal(body.storyLog[1].content, 'Package checked。The box sits where it was, its damp corner soft under your thumb.');
+  assert.match(body.storyLog[1].content, /行动结果|动作已经执行/);
+  assert.doesNotMatch(body.storyLog[1].content, /[A-Za-z]/);
   assert.equal(body.storyLog[1].recommendedActions[0].id, 'agent-preserve-package-photo');
   assert.equal(body.storyLog[1].recommendedActions[0].label, '检查桌上的包裹');
   assert.doesNotMatch(body.storyLog[1].recommendedActions[0].rationale, /[A-Za-z]/);

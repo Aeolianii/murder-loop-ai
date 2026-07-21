@@ -397,8 +397,8 @@ function takeoverFixture(
                 id: 'log-phase5-confirmed-injury',
                 run: prepared.playerResult.state.run,
                 minute: prepared.playerResult.state.minute,
-                title: 'Injury confirmed',
-                text: 'A critical injury was confirmed, but no death or ending was confirmed.',
+                title: '伤势已确认',
+                text: '已经确认玩家受到重伤，但没有确认死亡或结局。',
                 tone: 'threat' as const,
                 channel: 'ambient' as const,
               },
@@ -423,7 +423,7 @@ function takeoverFixture(
                 ...prepared.displayFragments,
                 ...(withHighRiskProjection ? [{
                   id: 'display.phase5.confirmed-injury',
-                  text: 'A critical injury was confirmed, but no death or ending was confirmed.',
+                  text: '已经确认玩家受到重伤，但没有确认死亡或结局。',
                   eventRefs: ['event.phase5.confirmed-injury'],
                   claimRefs: ['injury:critical'],
                 }] : []),
@@ -487,11 +487,11 @@ function takeoverFixture(
     },
     narrateAction: async () => {
       actionNarrationCalls += 1;
-      return { title: 'Door secured', text: 'The door is locked, chained, and blocked.' };
+      return { title: '入户门已加固', text: '门锁已经锁好，门链扣紧，椅子也抵住了门。' };
     },
     narrateAmbient: async () => {
       ambientNarrationCalls += 1;
-      return { title: 'Key stopped', text: 'The spare key cannot open the barricaded door.' };
+      return { title: '钥匙被挡住', text: '备用钥匙无法转开已经被椅子抵住的入户门。' };
     },
   };
   return {
@@ -762,17 +762,17 @@ async function testLegacyMainPathExitRendersReadOnlyPostCommitNarration() {
       'post-commit narration should receive the committed state snapshot',
     );
     assert.ok(
-      context.confirmedFacts.some((fact) => fact.summary.includes('Locked')),
+      context.confirmedFacts.some((fact) => fact.summary.includes('锁好')),
       'post-commit narration should receive confirmed player facts',
     );
     return {
-      title: 'Door secured',
-      text: 'The deadbolt slides home and the chain settles against the door.',
+      title: '入户门已加固',
+      text: '锁舌滑进锁孔，门链也稳稳扣在入户门上。',
     };
   };
   fixture.aiAdapters.narrateAmbient = async () => ({
-    title: 'Hallway response',
-    text: 'A muted footstep stops beyond the door, then the corridor falls quiet again.',
+    title: '楼道回应',
+    text: '门外一声压低的脚步停住，随后楼道重新安静下来。',
     ending: 'death',
     isFatal: true,
   });
@@ -793,13 +793,13 @@ async function testLegacyMainPathExitRendersReadOnlyPostCommitNarration() {
   const actionIndex = body.storyLog.findIndex(
     (node: { type: string; content: string }) => (
       node.type === 'action_result'
-      && node.content.includes('The deadbolt slides home')
+      && node.content.includes('锁舌滑进锁孔')
     ),
   );
   const ambientIndex = body.storyLog.findIndex(
     (node: { type: string; content: string }) => (
       node.type === 'narrative'
-      && node.content.includes('A muted footstep stops')
+      && node.content.includes('一声压低的脚步停住')
     ),
   );
   assert.ok(actionIndex >= 0, 'Narrator action prose should replace the material-only action result');
@@ -810,7 +810,7 @@ async function testLegacyMainPathExitRendersReadOnlyPostCommitNarration() {
     rationale: '先保存包裹标签的可见信息，可以为后续核对寄件情况保留依据。',
   }]);
   assert.equal(
-    body.coreState.log.some((entry: { text: string }) => entry.text.includes('The deadbolt slides home')),
+    body.coreState.log.some((entry: { text: string }) => entry.text.includes('锁舌滑进锁孔')),
     false,
     'post-commit prose must not mutate the authoritative state log',
   );
@@ -846,7 +846,7 @@ async function testLegacyMainPathExitRejectsUngroundedActionNarration() {
   assert.equal(response.statusCode, 200);
   const body = response.json();
   const actionResult = body.storyLog.find((node: { type: string }) => node.type === 'action_result');
-  assert.match(actionResult?.content ?? '', /你锁好并加固了门/);
+  assert.match(actionResult?.content ?? '', /锁好门锁.*扣上门链.*椅子抵住了入户门/);
   assert.doesNotMatch(actionResult?.content ?? '', /撕开封口|翻开包裹/);
   assert.ok(
     body.coordination.warnings.some((warning: string) => warning.includes('not grounded')),
@@ -902,7 +902,7 @@ async function testLegacyMainPathExitPublishesConfirmedNpcReply() {
   assert.equal(body.turn.npcReply?.speaker, 'linyue');
   assert.match(body.turn.npcReply?.text ?? '', /不是我的包裹/);
   const actionResult = body.storyLog.find((node: { type: string }) => node.type === 'action_result');
-  assert.match(actionResult?.content ?? '', /你拍下了包裹的照片/);
+  assert.match(actionResult?.content ?? '', /拍下了包裹.*照片已保存在手机中/);
   assert.match(actionResult?.content ?? '', /发送给林越/);
   assert.doesNotMatch(actionResult?.content ?? '', /撕开封口|翻开包裹/);
   assert.match(actionResult?.content ?? '', /林越回复|不是我的包裹/);
@@ -935,18 +935,18 @@ async function testLegacyMainPathExitKeepsConfirmedMaterialWhenNarratorFails() {
   assert.ok(
     body.storyLog.some((node: { type: string; content: string }) => (
       node.type === 'action_result'
-      && node.content.includes('Locked, chained, and barricaded the front door.')
+      && node.content.includes('锁好门锁、扣上门链，并用椅子抵住了入户门')
     )),
     'confirmed action material should remain visible when action narration fails',
   );
   assert.ok(
     body.storyLog.some((node: { type: string; content: string }) => (
       node.type === 'narrative'
-      && node.content.includes('A critical injury was confirmed')
+      && node.content.includes('已经确认玩家受到重伤')
     )),
     'confirmed external material should remain visible when ambient narration fails',
   );
-  assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'material_only');
+  assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'confirmed_facts_narrator');
   assert.ok(
     body.coordination.warnings.some((warning: string) => warning.includes('confirmed material remains visible')),
   );
@@ -1081,12 +1081,12 @@ async function testDefaultHarnessRouteInjectsAiAdapters() {
     risk: 'low',
   };
   const actionNarration: Narration = {
-    title: 'Checked wound',
-    text: 'Your fingers find the sore spot behind your head.',
+    title: '伤口已检查',
+    text: '手指碰到后脑的肿痛处，没有摸到正在流出的血。',
   };
   const ambientNarration: Narration = {
-    title: 'Hallway pause',
-    text: 'The hallway stays quiet for another breath.',
+    title: '楼道停顿',
+    text: '楼道又安静了片刻。',
   };
 
   await registerTestHarnessRoute(app, {
@@ -1119,8 +1119,8 @@ async function testDefaultHarnessRouteInjectsAiAdapters() {
 
   const body = response.json();
   assert.equal(body.turn.plan.actions[0].intent, 'self_care');
-  assert.equal(body.turn.actionNarration.title, 'Checked wound');
-  assert.equal(body.turn.ambientNarration.title, 'Hallway pause');
+  assert.equal(body.turn.actionNarration.title, '伤口已检查');
+  assert.equal(body.turn.ambientNarration.title, '楼道停顿');
   assert.equal(body.coordination.trace[0].source, 'ai');
   assert.ok(body.coordination.warnings.includes('adapter factory used'));
 

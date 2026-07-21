@@ -53,6 +53,60 @@ function attachRecommendedActions(
   );
 }
 
+function isChineseUiNarration(narration: Narration): boolean {
+  const text = `${narration.title}${narration.text}`;
+  return /[\u3400-\u9fff]/.test(text) && !/[A-Za-z]/.test(text);
+}
+
+function guaranteedChineseFallback(
+  narration: Narration,
+  slot: 'action' | 'ambient',
+): Narration {
+  if (isChineseUiNarration(narration)) return narration;
+  return slot === 'action'
+    ? { title: '行动结果', text: '你的动作已经执行，现场状态已按可以确认的结果更新。' }
+    : { title: '环境变化', text: '周围暂时没有出现新的可确认变化。' };
+}
+
+function enforceChineseFrontendNarration(adapters: AiAdapters): AiAdapters {
+  return {
+    ...adapters,
+    narrateAction: adapters.narrateAction
+      ? async (context) => {
+          const narration = await adapters.narrateAction!(context);
+          return isChineseUiNarration(narration)
+            ? narration
+            : guaranteedChineseFallback(
+                createFallbackActionNarrationFromConfirmedFacts(context),
+                'action',
+              );
+        }
+      : undefined,
+    narrateAmbient: adapters.narrateAmbient
+      ? async (context) => {
+          const narration = await adapters.narrateAmbient!(context);
+          return isChineseUiNarration(narration)
+            ? narration
+            : guaranteedChineseFallback(
+                createFallbackAmbientNarrationFromConfirmedFacts(context),
+                'ambient',
+              );
+        }
+      : undefined,
+    narrate: adapters.narrate
+      ? async (context) => {
+          const narration = await adapters.narrate!(context);
+          return isChineseUiNarration(narration)
+            ? narration
+            : guaranteedChineseFallback(
+                createFallbackActionNarrationFromConfirmedFacts(context),
+                'action',
+              );
+        }
+      : undefined,
+  };
+}
+
 function toFrontendNode(entry: StoryLogEntry): FrontendStoryNode {
   if (entry.channel === 'action') {
     return {
@@ -343,7 +397,7 @@ export async function frontendAdapterRoute(app: FastifyInstance, options: Fronte
 
     const beforeLogLength = baseState.log.length;
     const adapterBundle = options.createAiAdapters?.(actionText, baseState) ?? createFrontendHarnessAdapters(actionText, baseState);
-    const harness = createHarness(adapterBundle.aiAdapters);
+    const harness = createHarness(enforceChineseFrontendNarration(adapterBundle.aiAdapters));
     const resolution = await resolveLegacyTurnHarness(baseState, actionText, harness);
     const finalState = resolution.finalState;
     const outcomeWarnings = collectNarrationOutcomeWarnings(

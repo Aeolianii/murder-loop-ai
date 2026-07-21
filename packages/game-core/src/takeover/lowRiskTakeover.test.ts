@@ -185,6 +185,32 @@ assert(projectedInterior.state.observations.some((observation) => (
   observation.subject === 'package' && observation.scope === 'interior.contents'
 )));
 
+const multiAreaInspection = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: brief([
+    action('inspect-under-bed', 'inspect', ['bed'], { scope: 'under' }),
+    action('inspect-closet', 'inspect', ['closet'], { scope: 'interior' }),
+  ]),
+});
+assert.equal(multiAreaInspection.status, 'prepared');
+if (multiAreaInspection.status !== 'prepared') throw new Error('expected multi-area inspection');
+assert.equal(multiAreaInspection.playerResult.state.room.bed.state.checkedUnder, true);
+assert.equal(multiAreaInspection.playerResult.state.room.closet.state.checked, true);
+assert.match(multiAreaInspection.playerResult.text, /床底/);
+assert.match(multiAreaInspection.playerResult.text, /衣柜/);
+assert.match(multiAreaInspection.playerResult.text, /未发现|没有发现|无异常/);
+assert.doesNotMatch(multiAreaInspection.playerResult.text, /[A-Za-z]/);
+assert(multiAreaInspection.playerResult.domainEvents.some((event) => (
+  event.subject === 'bed'
+  && event.facts.includes('fact.bed.under.checked')
+  && event.facts.includes('fact.bed.under.no_anomaly')
+)));
+assert(multiAreaInspection.playerResult.domainEvents.some((event) => (
+  event.subject === 'closet'
+  && event.facts.includes('fact.closet.interior.checked')
+  && event.facts.includes('fact.closet.interior.no_anomaly')
+)));
+
 const inventedBarricade = prepareLowRiskTurn({
   state,
   brief: brief([action('invented-barricade', 'secure_entry', ['front_door', 'suitcase'])]),

@@ -16,6 +16,17 @@ export interface ConfirmedTurnNarration {
 
 type NarrationSlot = 'actionNarration' | 'ambientNarration';
 
+const HAN_CHARACTER = /[\u3400-\u9fff]/;
+const ASCII_LETTER = /[A-Za-z]/;
+
+function isChineseUiText(text: string): boolean {
+  return HAN_CHARACTER.test(text) && !ASCII_LETTER.test(text);
+}
+
+function isChineseUiNarration(narration: Narration): boolean {
+  return isChineseUiText(`${narration.title}${narration.text}`);
+}
+
 function presentationOnlyNarration(narration: Narration): Narration {
   const sanitized = sanitizeNarration(narration);
   return {
@@ -36,6 +47,15 @@ function packageContentsWereRevealed(resolution: TurnResolution): boolean {
     event.eventType === 'package_opened'
     || event.facts?.includes('fact.package.interior.contents_revealed')
   ));
+}
+
+function confirmedFactsForTarget(resolution: TurnResolution, target: string): string[] {
+  const domainEvents = (resolution.playerResult as TurnResolution['playerResult'] & {
+    domainEvents?: Array<{ subject?: string; facts?: string[] }>;
+  }).domainEvents ?? [];
+  return domainEvents
+    .filter((event) => event.subject === target)
+    .flatMap((event) => event.facts ?? []);
 }
 
 function actionNarrationGroundingIssues(
@@ -65,6 +85,27 @@ function actionNarrationGroundingIssues(
     ) {
       issues.push('missing confirmed recipient linyue');
     }
+    if (action.intent === 'inspect') {
+      const targetCoverage: Record<string, RegExp> = {
+        bed: /床底|床下/,
+        closet: /衣柜/,
+        bathroom: /卫生间|水箱/,
+        window: /窗户|窗锁/,
+        front_door: /入户门|房门|门锁|门链/,
+        package: /包裹/,
+      };
+      const targetRule = action.target ? targetCoverage[action.target] : undefined;
+      if (targetRule && !targetRule.test(text)) {
+        issues.push(`missing confirmed inspection target ${action.target}`);
+      }
+      const facts = action.target ? confirmedFactsForTarget(resolution, action.target) : [];
+      const confirmsNoAnomaly = facts.some((fact) => (
+        fact.endsWith('.no_anomaly') || fact.endsWith('.no_new_clue')
+      ));
+      if (confirmsNoAnomaly && !/没有发现|未发现|无异常|没有藏人|未见/.test(text)) {
+        issues.push(`missing confirmed inspection outcome ${action.target}`);
+      }
+    }
   }
 
   const allowsPackageInterior = plan.actions.some((action) => (
@@ -92,6 +133,9 @@ function actionTargetLabel(target?: string) {
     package: '包裹',
     front_door: '门',
     window: '窗户',
+    bed: '床底',
+    closet: '衣柜',
+    bathroom: '卫生间',
     room: '房间',
     phone: '手机',
     phone_charger: '手机充电器',
@@ -108,10 +152,13 @@ function actionTargetLabel(target?: string) {
 
 function confirmedActionFallback(resolution: TurnResolution): Narration {
   const plan = resolution.plan;
-  const photographedPackage = plan.actions.some((action) => (
-    action.intent === 'preserve_evidence' && action.target === 'package'
-  ));
   const packageContentsRevealed = packageContentsWereRevealed(resolution);
+  if (!packageContentsRevealed && isChineseUiText(resolution.playerResult.text)) {
+    return {
+      title: '行动结果',
+      text: resolution.playerResult.text,
+    };
+  }
   const parts = plan.actions.map((action) => {
     const target = actionTargetLabel(action.target);
     if (action.intent === 'preserve_evidence') {
@@ -120,9 +167,6 @@ function confirmedActionFallback(resolution: TurnResolution): Narration {
         : `你保存了${target}相关的证据`;
     }
     if (action.intent === 'communicate') {
-      if (action.target === 'linyue' && photographedPackage) {
-        return '通过手机把包裹照片和询问消息发送给林越';
-      }
       return `你通过手机把消息发送给${target}`;
     }
     if (action.intent === 'secure_entry') return `你锁好并加固了${target}`;
@@ -130,6 +174,9 @@ function confirmedActionFallback(resolution: TurnResolution): Narration {
       if (action.target === 'package' && packageContentsRevealed) {
         return '你打开并检查了包裹。纸箱里有一本被掏空的旧书、一块只剩部分药片的药板和一张数字纸条；模糊的“5-03 / 503”收件标记说明它可能不是你的。你获得了线索“包裹里的异常物品”';
       }
+      if (action.target === 'bed') return '你检查了床底，没有发现可疑物品或新的线索';
+      if (action.target === 'closet') return '你检查了衣柜，没有发现可疑物品或新的线索';
+      if (action.target === 'bathroom') return '你检查了卫生间和水箱，没有发现可疑物品或新的线索';
       return `你检查了${target}`;
     }
     if (action.intent === 'record') return '你开始用手机记录现场';
@@ -188,10 +235,12 @@ async function runConfirmedNpcReply(
   }
   try {
     const parsed = NpcReplySchema.safeParse(await adapters.npcReply(speaker, input, resolution.finalState));
-    if (parsed.success) return { reply: parsed.data, warnings: [] };
+    if (parsed.success && isChineseUiText(parsed.data.text)) return { reply: parsed.data, warnings: [] };
     return {
       reply: fallbackNpcReply(speaker, input, resolution.finalState),
-      warnings: ['post-commit npcReply failed schema validation; deterministic fallback used.'],
+      warnings: [parsed.success
+        ? 'post-commit npcReply returned non-Chinese display text; deterministic fallback used.'
+        : 'post-commit npcReply failed schema validation; deterministic fallback used.'],
     };
   } catch (error) {
     return {
@@ -234,6 +283,11 @@ async function runNarratorSlot(
         warnings: [`post-commit ${slot} failed schema validation; confirmed material remains visible.`],
       };
     }
+    if (!isChineseUiNarration(parsed.data)) {
+      return {
+        warnings: [`post-commit ${slot} returned non-Chinese display text; confirmed material remains visible.`],
+      };
+    }
     const authorityWarnings = parsed.data.ending
       || parsed.data.isFatal
       || parsed.data.killerKilled
@@ -270,7 +324,7 @@ export async function narrateConfirmedTurn(
     runConfirmedNpcReply(resolution, adapters),
   ]);
 
-  let actionNarration = action.narration;
+  let actionNarration = action.narration ?? confirmedActionFallback(resolution);
   if (actionNarration) {
     const groundingIssues = actionNarrationGroundingIssues(actionNarration, resolution);
     if (groundingIssues.length > 0) {

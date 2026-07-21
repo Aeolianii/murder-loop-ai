@@ -93,3 +93,78 @@ assert(
   narrated.warnings.some((warning) => warning.includes('missing confirmed package contents')),
   'generic AI narration must be rejected when confirmed package contents were revealed',
 );
+
+const inspectedState = createInitialGameState();
+inspectedState.room.bed.inspected = true;
+inspectedState.room.bed.state.checkedUnder = true;
+inspectedState.room.closet.inspected = true;
+inspectedState.room.closet.state.checked = true;
+const inspectionSummary = '你俯身检查了床底，没有发现可疑物品或新的线索。你逐层检查了衣柜，也没有发现异常。';
+const multiAreaResolution: TurnResolution = {
+  ...resolution,
+  plan: {
+    id: 'inspect-bed-and-closet',
+    raw: '检查床底和衣柜',
+    summary: '检查床底和衣柜',
+    actions: [
+      {
+        id: 'inspect-bed',
+        raw: '检查床底',
+        intent: 'inspect',
+        target: 'bed',
+        method: 'under',
+        confidence: 1,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      },
+      {
+        id: 'inspect-closet',
+        raw: '检查衣柜',
+        intent: 'inspect',
+        target: 'closet',
+        method: 'interior',
+        confidence: 1,
+        timeCost: 1,
+        noise: 0,
+        risk: 'low',
+      },
+    ],
+    confidence: 1,
+    warnings: [],
+  },
+  playerResult: {
+    ...playerResult,
+    title: '检查结果',
+    text: inspectionSummary,
+    state: inspectedState,
+    domainEvents: [
+      {
+        eventType: 'inspection_completed',
+        subject: 'bed',
+        facts: ['fact.bed.under.checked', 'fact.bed.under.no_anomaly'],
+      },
+      {
+        eventType: 'inspection_completed',
+        subject: 'closet',
+        facts: ['fact.closet.interior.checked', 'fact.closet.interior.no_anomaly'],
+      },
+    ],
+  } as RuleResult & {
+    domainEvents: Array<{ eventType: string; subject: string; facts: string[] }>;
+  },
+  finalState: inspectedState,
+};
+
+const localizedInspection = await narrateConfirmedTurn(multiAreaResolution, {
+  narrateAction: async () => ({
+    title: 'Inspection complete',
+    text: '你检查了bed，然后检查了closet。',
+  }),
+  narrateAmbient: adapters.narrateAmbient,
+});
+const localizedInspectionText = `${localizedInspection.actionNarration?.title ?? ''}${localizedInspection.actionNarration?.text ?? ''}`;
+assert.match(localizedInspectionText, /床底/);
+assert.match(localizedInspectionText, /衣柜/);
+assert.match(localizedInspectionText, /未发现|没有发现|无异常/);
+assert.doesNotMatch(localizedInspectionText, /[A-Za-z]/);

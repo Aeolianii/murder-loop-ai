@@ -21,5 +21,6 @@ assert.deepEqual(resolution.worldTickTrace, []);
 assert.notEqual(resolution.finalState, state);
 assert.equal(
   resolution.finalState.log.at(-1)?.text,
-  'AI services are unavailable. No requested action or world-state change was applied.',
+  '智能叙事服务暂时不可用，本次请求的动作和世界状态均未改变。',
 );
+assert.doesNotMatch(`${resolution.actionNarration?.title}${resolution.actionNarration?.text}`, /[A-Za-z]/);

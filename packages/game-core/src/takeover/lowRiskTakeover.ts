@@ -203,7 +203,7 @@ export function prepareLowRiskTurn(input: {
     id: `log-low-risk-${input.brief.turnId}`,
     run: state.run,
     minute: state.minute,
-    title: 'Action confirmed',
+    title: '行动已确认',
     text,
     tone: 'neutral',
     channel: 'action',
@@ -215,7 +215,7 @@ export function prepareLowRiskTurn(input: {
     executionAuthorityId,
     plan,
     playerResult: {
-      title: 'Action confirmed',
+      title: '行动已确认',
       text,
       tone: 'neutral',
       addedClues: [],
@@ -402,7 +402,7 @@ function applyLowRiskAction(input: {
   const { state, action, operation } = input;
   let eventType = 'low_risk_action_confirmed';
   let subject = canonicalActionTarget(action.targetIds);
-  let summary = 'The low-risk action was confirmed.';
+  let summary = '行动已经确认。';
   let facts: string[] = [`action_confirmed:${action.actionId}`];
   let status: ProposedEvent['status'] = 'completed';
   let ruleKind: RuleEvent['kind'] = 'action';
@@ -433,23 +433,20 @@ function applyLowRiskAction(input: {
       ];
     } else {
       eventType = 'inspection_completed';
-      summary = `Inspected ${subject} without changing concealed contents.`;
-      facts = action.targetIds.flatMap((targetId) => [
-        `inspected:${targetId}`,
-        `fact.${targetId}.exterior.observed`,
-        ...(targetId === 'package' ? ['fact.package.exterior.label_ambiguous'] : []),
-      ]);
+      const outcomes = action.targetIds.map((targetId) => inspectionOutcome(state, targetId));
+      summary = outcomes.map((outcome) => outcome.summary).join(' ');
+      facts = outcomes.flatMap((outcome) => outcome.facts);
     }
   } else if (operation === 'preserve_evidence') {
     if (!state.phoneFunctional) {
       eventType = 'photograph_failed';
       status = 'failed';
-      summary = `Could not photograph ${subject} because the phone is unavailable.`;
+      summary = `手机当前无法使用，没能拍下${actionTargetLabel(subject)}。`;
       facts = ['photograph_failed:phone_unavailable'];
     } else {
       for (const targetId of action.targetIds) state.room[targetId].state.photographed = true;
       eventType = subject === 'package' ? 'package_photographed' : 'object_photographed';
-      summary = `Photographed the visible exterior of ${subject}.`;
+      summary = `你拍下了${actionTargetLabel(subject)}当前可见的外观，照片已保存在手机中。`;
       facts = action.targetIds.flatMap((targetId) => [
         `photographed:${targetId}`,
         `fact.${targetId}.exterior.photo_captured`,
@@ -460,8 +457,8 @@ function applyLowRiskAction(input: {
     if (state.phoneFunctional) {
       eventType = 'message_delivered';
       summary = input.sharesPackagePhoto
-        ? `Delivered the package photo and message to ${subject}.`
-        : `Delivered a message to ${subject}.`;
+        ? `你已将包裹照片和消息发送给${actionTargetLabel(subject)}。`
+        : `你已将消息发送给${actionTargetLabel(subject)}。`;
       facts = [
         `message_delivered:${subject}`,
         ...(input.sharesPackagePhoto && subject === 'linyue'
@@ -471,7 +468,7 @@ function applyLowRiskAction(input: {
     } else {
       eventType = 'message_delivery_failed';
       status = 'failed';
-      summary = `The message to ${subject} was not delivered because the phone is unavailable.`;
+      summary = `手机当前无法使用，发给${actionTargetLabel(subject)}的消息未能送达。`;
       facts = [`message_delivery_failed:${subject}`];
     }
   } else if (operation === 'secure_entry') {
@@ -484,14 +481,14 @@ function applyLowRiskAction(input: {
     }
     eventType = 'front_door_secured';
     subject = 'front_door';
-    summary = barricaded ? 'Locked, chained, and barricaded the front door.' : 'Locked and chained the front door.';
+    summary = barricaded ? '你锁好门锁、扣上门链，并用椅子抵住了入户门。' : '你锁好门锁并扣上了入户门的门链。';
     facts = ['front_door:locked', 'front_door:chain_locked', ...(barricaded ? ['front_door:barricaded'] : [])];
   } else if (operation === 'pick_up') {
     const itemId = action.targetIds[0];
     state.playerHolding = itemId;
     eventType = 'item_picked_up';
     subject = itemId;
-    summary = `Picked up ${itemId}.`;
+    summary = `你拿起了${actionTargetLabel(itemId)}。`;
     facts = [`item_picked_up:${itemId}`];
   } else if (operation === 'use_item') {
     const itemId = action.targetIds[0];
@@ -499,25 +496,25 @@ function applyLowRiskAction(input: {
     if (state.playerHolding !== itemId) {
       eventType = 'item_use_failed';
       status = 'failed';
-      summary = `Could not use ${itemId} because it is not being held.`;
+      summary = `你没有拿着${actionTargetLabel(itemId)}，因此无法使用它。`;
       facts = [`item_use_failed:not_held:${itemId}`];
     } else if (itemId === 'phone_charger') {
       state.phoneBattery = Math.min(100, state.phoneBattery + 30);
       state.phoneFunctional = state.phoneBattery > 0;
       state.room.phone_charger.state.pluggedIn = true;
       eventType = 'item_used';
-      summary = 'Connected the phone charger.';
+      summary = '你接上了手机充电器，手机开始充电。';
       facts = ['phone_charger:plugged_in'];
     } else {
       state.room.front_door.state.barricaded = true;
       eventType = 'item_used';
-      summary = 'Used tape to reinforce the front door.';
+      summary = '你用胶带进一步加固了入户门。';
       facts = ['front_door:tape_reinforced'];
     }
   } else {
     eventType = 'player_waited';
     subject = 'player';
-    summary = 'Waited and observed the room.';
+    summary = '你保持安静并观察房间，暂时没有发现新的异常。';
     facts = ['player:waited'];
   }
 
@@ -538,6 +535,71 @@ function applyLowRiskAction(input: {
     createdAt: { run: state.run, minute: state.minute },
     ruleKind,
   });
+}
+
+function inspectionOutcome(
+  state: GameState,
+  targetId: string,
+): { summary: string; facts: string[] } {
+  const baseFacts = [`inspected:${targetId}`];
+  if (targetId === 'bed') {
+    state.room.bed.state.checkedUnder = true;
+    return {
+      summary: '你俯身检查了床底，确认下面没有藏人，也没有发现可疑物品或新的线索。',
+      facts: [...baseFacts, 'fact.bed.under.checked', 'fact.bed.under.no_anomaly'],
+    };
+  }
+  if (targetId === 'closet') {
+    state.room.closet.state.checked = true;
+    return {
+      summary: '你逐层检查了衣柜，确认里面没有藏人，也没有发现可疑物品或新的线索。',
+      facts: [...baseFacts, 'fact.closet.interior.checked', 'fact.closet.interior.no_anomaly'],
+    };
+  }
+  if (targetId === 'bathroom') {
+    state.room.bathroom.state.waterTankChecked = true;
+    return {
+      summary: '你检查了卫生间和水箱，里面没有藏人，也没有发现可疑物品或新的线索。',
+      facts: [...baseFacts, 'fact.bathroom.water_tank.checked', 'fact.bathroom.water_tank.no_anomaly'],
+    };
+  }
+  if (targetId === 'window') {
+    state.room.window.state.checked = true;
+    const locked = state.room.window.state.locked === true;
+    return {
+      summary: `你检查了窗户，确认窗锁${locked ? '已经扣好' : '没有扣上'}；窗边没有发现其他异常或新的线索。`,
+      facts: [
+        ...baseFacts,
+        'fact.window.lock.checked',
+        `fact.window.lock.${locked ? 'locked' : 'unlocked'}`,
+        'fact.window.no_new_clue',
+      ],
+    };
+  }
+  if (targetId === 'front_door') {
+    const locked = state.room.front_door.state.locked === true;
+    const chained = state.room.front_door.state.chainLocked === true;
+    return {
+      summary: `你检查了入户门，门锁${locked ? '已经锁好' : '尚未反锁'}，门链${chained ? '已经扣上' : '还没有扣上'}；门边没有发现新的异常。`,
+      facts: [
+        ...baseFacts,
+        'fact.front_door.lock.checked',
+        `fact.front_door.lock.${locked ? 'locked' : 'unlocked'}`,
+        `fact.front_door.chain.${chained ? 'secured' : 'open'}`,
+        'fact.front_door.no_new_clue',
+      ],
+    };
+  }
+  if (targetId === 'package') {
+    return {
+      summary: '你检查了包裹外观，收件标记模糊不清；包裹仍保持封闭，内部物品尚未确认。',
+      facts: [...baseFacts, 'fact.package.exterior.observed', 'fact.package.exterior.label_ambiguous'],
+    };
+  }
+  return {
+    summary: `你检查了${actionTargetLabel(targetId)}，暂时没有发现异常或新的线索。`,
+    facts: [...baseFacts, `fact.${targetId}.observed`, `fact.${targetId}.no_anomaly`],
+  };
 }
 
 function inspectsPackageInterior(action: TurnBrief['orderedActions'][number]): boolean {
@@ -564,7 +626,7 @@ function createTimeEvent(
     targetIds: ['clock'],
     status: 'completed',
     subject: 'clock',
-    summary: `Time advanced by ${after - before} minute(s).`,
+    summary: `时间向前推进了${after - before}分钟。`,
     facts: [`minute:${after}`, `minutes_elapsed:${after - before}`],
     causalParentIds: causalParentId ? [causalParentId] : [],
     envelope,
@@ -590,7 +652,7 @@ function createBatteryEvent(
     targetIds: ['phone'],
     status: 'completed',
     subject: 'phone',
-    summary: `Phone battery changed from ${before} to ${after}.`,
+    summary: `手机电量从${before}变为${after}。`,
     facts: [`phone_battery:${after}`],
     causalParentIds: [causalParentId],
     envelope,
@@ -699,6 +761,38 @@ function assertionsFromLegacyFacts(
 function canonicalActionTarget(targetIds: string[]): string {
   const target = targetIds[0] ?? 'room';
   return target === 'lin_yue' ? 'linyue' : target;
+}
+
+function actionTargetLabel(targetId: string): string {
+  const labels: Record<string, string> = {
+    package: '包裹',
+    front_door: '入户门',
+    window: '窗户',
+    room: '房间',
+    player: '自己',
+    self: '自己',
+    bed: '床底',
+    closet: '衣柜',
+    bathroom: '卫生间',
+    phone: '手机',
+    phone_charger: '手机充电器',
+    chair: '椅子',
+    tape: '胶带',
+    flashlight: '手电筒',
+    hanger: '衣架',
+    mirror: '镜子',
+    newspaper: '旧报纸',
+    belt: '皮带',
+    screwdriver: '螺丝刀',
+    lighter: '打火机',
+    bleach: '清洁剂',
+    pen_paper: '纸笔',
+    linyue: '林越',
+    lin_yue: '林越',
+    police_dispatch: '警方接线员',
+    chen_huaimin: '陈怀民',
+  };
+  return labels[targetId] ?? '当前目标';
 }
 
 function envelopeFromBrief(brief: TurnBrief): TurnEnvelope {

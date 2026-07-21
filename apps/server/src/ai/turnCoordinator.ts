@@ -142,6 +142,12 @@ export function verifyNarration(
   slot: 'actionNarration' | 'ambientNarration',
   options: VerifyNarrationOptions = {},
 ): Narration {
+  const fallbackText = `${fallback.title}${fallback.text}`;
+  const safeFallback = /[\u3400-\u9fff]/.test(fallbackText) && !/[A-Za-z]/.test(fallbackText)
+    ? fallback
+    : slot === 'actionNarration'
+      ? { title: '行动结果', text: '你的动作已经执行，现场状态已按可以确认的结果更新。' }
+      : { title: '环境变化', text: '周围暂时没有出现新的可确认变化。' };
   let checkedNarration = narration;
   const allowedClockLabels = buildAllowedClockLabels(options);
   const clockLabels = Array.from(new Set(extractClockLabels(`${narration.title}\n${narration.text}`)));
@@ -159,23 +165,24 @@ export function verifyNarration(
       blackboard.warnings.push(`${slot} 叙事出现时间漂移，已自动从 ${wrongLabel} 校正为 ${currentLabel}。`);
     } else {
       blackboard.warnings.push(`${slot} 叙事出现与当前上下文不匹配的绝对时间（${invalidClockLabels.join(', ')}），已回退到 fallback 文本。`);
-      blackboard.artifacts[slot] = fallback;
-      return fallback;
+      blackboard.artifacts[slot] = safeFallback;
+      return safeFallback;
     }
   }
 
   const text = `${checkedNarration.title}\n${checkedNarration.text}`;
   const hasMetaLeak = forbiddenMetaWords.some((word) => text.includes(word));
   const hasInternalId = /\b[a-z]+_[a-z_]+\b/.test(text);
+  const isChineseDisplayText = /[\u3400-\u9fff]/.test(text) && !/[A-Za-z]/.test(text);
 
-  if (!hasMetaLeak && !hasInternalId) {
+  if (!hasMetaLeak && !hasInternalId && isChineseDisplayText) {
     blackboard.artifacts[slot] = checkedNarration;
     return checkedNarration;
   }
 
-  blackboard.warnings.push(`${slot} 验证器检测到开发词或内部 id 泄漏，但保留 AI 原始叙事。`);
-  blackboard.artifacts[slot] = checkedNarration;
-  return checkedNarration;
+  blackboard.warnings.push(`${slot} 验证器检测到英文、开发词或内部标识，已回退到中文确认结果。`);
+  blackboard.artifacts[slot] = safeFallback;
+  return safeFallback;
 }
 
 function clampScore(value: number) {

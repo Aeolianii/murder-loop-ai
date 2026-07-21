@@ -29,8 +29,8 @@ export function buildConfirmedAiFirstResolution(input: {
     text: input.prepared.playerResult.text,
   };
   const ambientNarration: Narration = {
-    title: confirmedOutcomeText ? 'Confirmed world outcome' : 'No high-risk outcome confirmed',
-    text: confirmedOutcomeText || 'No high-risk state change passed the deterministic gate.',
+    title: confirmedOutcomeText ? '环境变化已确认' : '暂时没有新的危险变化',
+    text: confirmedOutcomeText || '本回合没有新的高风险状态变化通过规则校验。',
   };
 
   return {
@@ -40,7 +40,7 @@ export function buildConfirmedAiFirstResolution(input: {
       id: `phase6.${input.prepared.envelope.turnId}`,
       type: 'confirmed_shadow_result',
       title: ambientNarration.title,
-      rationale: 'Only confirmed AI-first events are authoritative; no legacy state path was executed.',
+      rationale: '仅采用已经通过规则校验的事件，不执行旧版状态路径。',
       visibleToPlayer: confirmedOutcomeText.length > 0,
       risk: confirmedOutcomeText ? 'high' : 'low',
     },

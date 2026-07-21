@@ -7,7 +7,7 @@ import type {
 } from '@murder-loop-ai/shared';
 
 const FALLBACK_TEXT =
-  'AI services are unavailable. No requested action or world-state change was applied.';
+  '智能叙事服务暂时不可用，本次请求的动作和世界状态均未改变。';
 
 /**
  * Closes a turn without interpreting natural language or authoring new world facts.
@@ -23,7 +23,7 @@ export function resolveMinimumPlayableTurn(
     id,
     run: state.run,
     minute: state.minute,
-    title: 'AI services unavailable',
+    title: '叙事服务暂时不可用',
     text: FALLBACK_TEXT,
     tone: 'neutral',
     channel: 'ambient',
@@ -32,13 +32,13 @@ export function resolveMinimumPlayableTurn(
   const plan: ActionPlan = {
     id: `${id}-plan`,
     raw: input,
-    summary: 'No action was interpreted while AI services were unavailable.',
+    summary: '叙事服务不可用，本次没有解析或执行任何动作。',
     actions: [],
     confidence: 0,
     warnings: ['ai_services_unavailable'],
   };
   const playerResult: RuleResult = {
-    title: 'Action not applied',
+    title: '行动未执行',
     text: FALLBACK_TEXT,
     tone: 'neutral',
     addedClues: [],
@@ -48,8 +48,8 @@ export function resolveMinimumPlayableTurn(
     state: finalState,
   };
   const killerResult: RuleResult = {
-    title: 'World held',
-    text: 'No additional world action was confirmed.',
+    title: '世界状态保持不变',
+    text: '本次没有确认新的世界状态变化。',
     tone: 'neutral',
     addedClues: [],
     timePassed: 0,
@@ -68,8 +68,8 @@ export function resolveMinimumPlayableTurn(
     killerStrategy: {
       id: `${id}-world-hold`,
       type: 'minimum_playable_hold',
-      title: 'World held',
-      rationale: 'No AI candidate was available, so the fallback cannot author a world action.',
+      title: '世界状态保持不变',
+      rationale: '没有可用的叙事候选，因此兜底流程不会创建新的世界动作。',
       visibleToPlayer: false,
       risk: 'low',
     },
