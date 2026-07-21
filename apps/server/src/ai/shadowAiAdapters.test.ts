@@ -131,6 +131,12 @@ assert(
 );
 assert(
   calls[0].system.includes(
+    'When the player explicitly asks to inspect, open, or view package contents, set scope="interior.contents".',
+  ),
+  'Semantic Compiler prompt must preserve an explicit package-interior inspection scope.',
+);
+assert(
+  calls[0].system.includes(
     'Resolve pronouns and deictic references to the nearest compatible explicit entity',
   ),
   'Semantic Compiler prompt must define a generic reference-resolution policy.',

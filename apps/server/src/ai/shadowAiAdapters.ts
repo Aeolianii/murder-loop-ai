@@ -160,6 +160,7 @@ function semanticCompilerPrompt(): string {
     'method describes technique only and must never be the only place where a state-changing entity appears.',
     'Every secure_entry action must include "front_door" in targetIds. Barricading with chair must use operation="secure_entry" and targetIds=["front_door","chair"]. Never encode furniture barricading as use_item.',
     'For sequential "lock, then barricade" input, emit two secure_entry actions in source order. The barricade action depends on the lock action and includes both front_door and the furniture entity in targetIds.',
+    'When the player explicitly asks to inspect, open, or view package contents, set scope="interior.contents". Preserve equivalent Chinese phrases such as “检查包裹内容”“打开包裹”“看看包裹里面” as the same interior scope; never reduce them to an exterior-only package inspection.',
     `Echo loopId, turnId, inputStateVersion, and deadlineAt exactly. Use compilerVersion="semantic-compiler-v1" and schemaVersion="${WORLD_MODEL_SCHEMA_VERSION}".`,
     'Return valid json only.',
     'Every object is strict. Every key shown below is required unless explicitly marked optional. Use [] for every array field that has no grounded items. Do not add keys that are not shown in the contract.',

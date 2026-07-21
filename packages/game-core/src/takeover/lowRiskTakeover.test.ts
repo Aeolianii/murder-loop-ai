@@ -152,12 +152,38 @@ const unsupportedAttack = prepareLowRiskTurn({
 assert.equal(unsupportedAttack.status, 'not_eligible');
 if (unsupportedAttack.status === 'not_eligible') assert.equal(unsupportedAttack.reason, 'unsupported_operation');
 
+const packageContentsAction = action('inspect-inside', 'inspect', ['package']);
+packageContentsAction.originalSpan = { start: 0, end: 6, text: '检查包裹内容' };
 const interiorObservation = prepareLowRiskTurn({
   state,
-  brief: brief([action('inspect-inside', 'inspect', ['package'], { scope: 'interior.contents' })]),
+  brief: brief([packageContentsAction]),
 });
-assert.equal(interiorObservation.status, 'not_eligible');
-if (interiorObservation.status === 'not_eligible') assert.equal(interiorObservation.reason, 'observation_scope_not_low_risk');
+assert.equal(interiorObservation.status, 'prepared');
+if (interiorObservation.status !== 'prepared') throw new Error('expected package contents inspection');
+assert.equal(interiorObservation.playerResult.state.room.package.state.opened, true);
+assert.equal(interiorObservation.playerResult.state.evidencePhase, 'package_opened');
+assert.match(interiorObservation.playerResult.text, /旧书/);
+assert.match(interiorObservation.playerResult.text, /药板/);
+assert.match(interiorObservation.playerResult.text, /数字纸条/);
+assert(
+  interiorObservation.playerResult.domainEvents.some((event) => (
+    event.eventType === 'package_opened'
+    && event.facts.includes('fact.package.interior.contents_revealed')
+  )),
+);
+
+const projectedInterior = projectConfirmedKnowledgeAndClues({
+  baselineState: state,
+  candidateState: interiorObservation.playerResult.state,
+  eventCandidates: interiorObservation.eventCandidates,
+  candidates: interiorObservation.knowledgeClueCandidates,
+});
+assert.equal(projectedInterior.status, 'projected');
+if (projectedInterior.status !== 'projected') throw new Error('expected package contents projection');
+assert(projectedInterior.state.clues.some((clue) => clue.id === 'package_contents'));
+assert(projectedInterior.state.observations.some((observation) => (
+  observation.subject === 'package' && observation.scope === 'interior.contents'
+)));
 
 const inventedBarricade = prepareLowRiskTurn({
   state,

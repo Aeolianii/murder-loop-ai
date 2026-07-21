@@ -363,7 +363,7 @@ function registrations(
     (specialistProjections.find(({ id }) => id === 'clue-specialist')?.projection as {
       clueDefinitions?: Array<{ id: string }>;
     }).clueDefinitions?.map((definition) => definition.id),
-    ['wrong_package', 'package_photo', 'linyue_has_photo'],
+    ['wrong_package', 'package_contents', 'package_photo', 'linyue_has_photo'],
     'Clue Specialist must receive the deterministic clue registry it is allowed to propose.',
   );
   assert.ok(wave.turnBrief?.compilerVersion.includes('fallback'));

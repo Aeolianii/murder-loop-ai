@@ -13,6 +13,14 @@ export const clueBook: Record<string, Omit<ClueRecord, 'discoveredAt'>> = {
     weight: 12,
     isPersistent: true,
   },
+  package_contents: {
+    id: 'package_contents',
+    title: '包裹里的异常物品',
+    detail: '包裹内有一本被掏空的旧书、一块没有完整外包装的药板和一张数字纸条；这些物品的组合不像普通误投快递。',
+    source: 'player_discovered',
+    weight: 14,
+    isPersistent: true,
+  },
   package_photo: {
     id: 'package_photo',
     title: '包裹照片',

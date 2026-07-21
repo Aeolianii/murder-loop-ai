@@ -23,11 +23,13 @@ function testEnsureWorldStateCreatesSyncedWorld() {
 function testSyncEvidenceAndLinYueKnowledge() {
   const state = createInitialGameState();
   state.evidencePhase = 'evidence_shared';
+  state.room.package.state.opened = true;
   state.room.package.state.photographed = true;
   state.linYuePhase = 'received_photo';
 
   const world = syncGameStateToWorld(state, ensureWorldState(state));
 
+  assert.equal(world.objects.package.flags.opened, true);
   assert.equal(world.objects.package.flags.photographed, true);
   assert.equal(world.objects.package_photo.flags.exists, true);
   assert.equal(world.objects.package_photo.flags.sharedWithLinYue, true);

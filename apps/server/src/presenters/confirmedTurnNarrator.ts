@@ -28,7 +28,21 @@ function normalized(text: string) {
   return text.toLowerCase().replace(/\s+/g, '');
 }
 
-function actionNarrationGroundingIssues(narration: Narration, plan: ActionPlan): string[] {
+function packageContentsWereRevealed(resolution: TurnResolution): boolean {
+  const domainEvents = (resolution.playerResult as TurnResolution['playerResult'] & {
+    domainEvents?: Array<{ eventType: string; facts?: string[] }>;
+  }).domainEvents ?? [];
+  return domainEvents.some((event) => (
+    event.eventType === 'package_opened'
+    || event.facts?.includes('fact.package.interior.contents_revealed')
+  ));
+}
+
+function actionNarrationGroundingIssues(
+  narration: Narration,
+  resolution: TurnResolution,
+): string[] {
+  const plan = resolution.plan;
   const text = normalized(`${narration.title}\n${narration.text}`);
   const issues: string[] = [];
   const coverageRules: Partial<Record<ActionPlan['actions'][number]['intent'], RegExp>> = {
@@ -64,6 +78,12 @@ function actionNarrationGroundingIssues(narration: Narration, plan: ActionPlan):
   ) {
     issues.push('invented package opening');
   }
+  if (
+    packageContentsWereRevealed(resolution)
+    && (!/旧书/.test(text) || !/药盒|药板|药片/.test(text) || !/纸条/.test(text))
+  ) {
+    issues.push('missing confirmed package contents');
+  }
   return issues;
 }
 
@@ -86,10 +106,12 @@ function actionTargetLabel(target?: string) {
   return target ? labels[target] ?? target : '目标';
 }
 
-function confirmedActionFallback(plan: ActionPlan): Narration {
+function confirmedActionFallback(resolution: TurnResolution): Narration {
+  const plan = resolution.plan;
   const photographedPackage = plan.actions.some((action) => (
     action.intent === 'preserve_evidence' && action.target === 'package'
   ));
+  const packageContentsRevealed = packageContentsWereRevealed(resolution);
   const parts = plan.actions.map((action) => {
     const target = actionTargetLabel(action.target);
     if (action.intent === 'preserve_evidence') {
@@ -104,7 +126,12 @@ function confirmedActionFallback(plan: ActionPlan): Narration {
       return `你通过手机把消息发送给${target}`;
     }
     if (action.intent === 'secure_entry') return `你锁好并加固了${target}`;
-    if (action.intent === 'inspect') return `你检查了${target}`;
+    if (action.intent === 'inspect') {
+      if (action.target === 'package' && packageContentsRevealed) {
+        return '你打开并检查了包裹。纸箱里有一本被掏空的旧书、一块只剩部分药片的药板和一张数字纸条；模糊的“5-03 / 503”收件标记说明它可能不是你的。你获得了线索“包裹里的异常物品”';
+      }
+      return `你检查了${target}`;
+    }
     if (action.intent === 'record') return '你开始用手机记录现场';
     if (action.intent === 'call_police') return '你拨打了报警电话';
     if (action.intent === 'verify_identity') return `你通过官方渠道核实了${target}的身份`;
@@ -245,12 +272,12 @@ export async function narrateConfirmedTurn(
 
   let actionNarration = action.narration;
   if (actionNarration) {
-    const groundingIssues = actionNarrationGroundingIssues(actionNarration, resolution.plan);
+    const groundingIssues = actionNarrationGroundingIssues(actionNarration, resolution);
     if (groundingIssues.length > 0) {
       action.warnings.push(
         `post-commit actionNarration not grounded in confirmed actions: ${groundingIssues.join(', ')}; confirmed material remains visible.`,
       );
-      actionNarration = confirmedActionFallback(resolution.plan);
+      actionNarration = confirmedActionFallback(resolution);
     }
   }
   if (npc.reply) {

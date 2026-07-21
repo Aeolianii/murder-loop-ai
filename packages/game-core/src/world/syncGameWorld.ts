@@ -19,6 +19,7 @@ function syncClockAndThreat(state: GameState, world: WorldState) {
 }
 
 function syncEvidence(state: GameState, world: WorldState) {
+  world.objects.package.flags.opened = state.room.package?.state.opened === true;
   const photographed = state.evidencePhase === 'package_photographed'
     || state.evidencePhase === 'evidence_shared'
     || state.evidencePhase === 'evidence_backed_up'

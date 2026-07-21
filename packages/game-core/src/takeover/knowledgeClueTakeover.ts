@@ -130,13 +130,26 @@ export function buildLowRiskKnowledgeClueCandidates(
       ));
       if (visibleFactIds.length === 0) continue;
       const subject = event.targetIds[0] ?? visibleAssertions[0].subject;
-      const observationId = `observation.${event.id}.exterior-label`;
+      const packageContentsAssertion = visibleAssertions.find((assertion) => (
+        assertion.subject === 'package'
+        && assertion.predicate === 'interior.contents_revealed'
+        && assertion.value === true
+      ));
+      const observationId = packageContentsAssertion
+        ? `observation.${event.id}.package-contents`
+        : `observation.${event.id}.exterior-label`;
       candidates.observations.push({
         id: observationId,
         subject,
-        predicate: subject === 'package' ? 'exterior_label' : 'visible_exterior',
-        value: subject === 'package' ? 'ambiguous' : 'observed',
-        scope: subject === 'package' ? 'exterior.label' : 'exterior',
+        predicate: packageContentsAssertion
+          ? 'contents'
+          : subject === 'package' ? 'exterior_label' : 'visible_exterior',
+        value: packageContentsAssertion
+          ? 'old_book,medicine_blister,numeric_note'
+          : subject === 'package' ? 'ambiguous' : 'observed',
+        scope: packageContentsAssertion
+          ? 'interior.contents'
+          : subject === 'package' ? 'exterior.label' : 'exterior',
         visibleFactIds,
         sourceEventIds: [event.id],
         observedAt,
@@ -157,6 +170,25 @@ export function buildLowRiskKnowledgeClueCandidates(
         candidates.clues.push({
           id: 'wrong_package',
           claims: [packageLabelFact],
+          basedOnObservationIds: [observationId],
+        });
+      }
+      if (packageContentsAssertion) {
+        const packageContentsFact = canonicalFactIdForAssertion(
+          event.id,
+          packageContentsAssertion.id,
+        );
+        candidates.knowledgeUpdates.push({
+          characterId: 'player',
+          factId: 'package_contents_revealed',
+          confidence: 1,
+          source: 'seen',
+          sourceEventId: event.id,
+          basedOnFactIds: [packageContentsFact],
+        });
+        candidates.clues.push({
+          id: 'package_contents',
+          claims: [packageContentsFact],
           basedOnObservationIds: [observationId],
         });
       }
@@ -232,6 +264,13 @@ const PHASE_FOUR_CLUE_DEFINITIONS: Record<string, {
     weight: 12,
     isPersistent: true,
     allowedAssertions: [{ subject: 'package', predicate: 'exterior.label_ambiguous', value: true }],
+  },
+  package_contents: {
+    title: '包裹里的异常物品',
+    detail: '包裹内有一本被掏空的旧书、一块没有完整外包装的药板和一张数字纸条；这些物品的组合不像普通误投快递。',
+    weight: 14,
+    isPersistent: true,
+    allowedAssertions: [{ subject: 'package', predicate: 'interior.contents_revealed', value: true }],
   },
   package_photo: {
     title: '包裹外包装照片',

@@ -51,7 +51,7 @@ const ORDINARY_ITEM_IDS = new Set([
 ]);
 
 const COMMUNICATION_TARGET_IDS = new Set(['lin_yue', 'linyue', 'police_dispatch', 'chen_huaimin']);
-const PACKAGE_INTERIOR_SCOPE = /(interior|inside|contents?|open)/i;
+const PACKAGE_INTERIOR_SCOPE = /(interior|inside|contents?|open|内部|里面|内容|打开|拆开|翻开)/i;
 
 type LowRiskOperation = 'inspect' | 'preserve_evidence' | 'communicate' | 'secure_entry' | 'pick_up' | 'use_item' | 'wait';
 
@@ -291,9 +291,9 @@ function validateTurnEligibility(state: GameState, brief: TurnBrief): LowRiskTak
     const operation = LOW_RISK_OPERATIONS.get(action.operation);
     if (!operation) return 'unsupported_operation';
 
-    if ((operation === 'inspect' || operation === 'preserve_evidence')
+    if (operation === 'preserve_evidence'
       && action.targetIds.includes('package')
-      && PACKAGE_INTERIOR_SCOPE.test(`${action.scope ?? ''} ${action.method ?? ''}`)) {
+      && inspectsPackageInterior(action)) {
       return 'observation_scope_not_low_risk';
     }
     if (operation === 'inspect') {
@@ -411,13 +411,35 @@ function applyLowRiskAction(input: {
     for (const targetId of action.targetIds) {
       if (targetId !== 'room') state.room[targetId].inspected = true;
     }
-    eventType = 'inspection_completed';
-    summary = `Inspected ${subject} without changing concealed contents.`;
-    facts = action.targetIds.flatMap((targetId) => [
-      `inspected:${targetId}`,
-      `fact.${targetId}.exterior.observed`,
-      ...(targetId === 'package' ? ['fact.package.exterior.label_ambiguous'] : []),
-    ]);
+    const packageContentsRevealed = action.targetIds.includes('package')
+      && inspectsPackageInterior(action);
+    if (packageContentsRevealed) {
+      state.room.package.state.opened = true;
+      if (state.world?.objects.package) state.world.objects.package.flags.opened = true;
+      if (state.evidencePhase === 'package_unnoticed' || state.evidencePhase === 'package_seen') {
+        state.evidencePhase = 'package_opened';
+      }
+      eventType = 'package_opened';
+      ruleKind = 'clue';
+      summary = '你打开并检查了包裹。纸箱里有一本被掏空的旧书、一块只剩部分药片的药板和一张数字纸条；模糊的“5-03 / 503”收件标记说明它可能不是你的。获得线索：包裹里的异常物品。';
+      facts = [
+        'inspected:package',
+        'fact.package.exterior.label_ambiguous',
+        'fact.package.interior.opened',
+        'fact.package.interior.contents_revealed',
+        'fact.package.interior.old_book_visible',
+        'fact.package.interior.medicine_blister_visible',
+        'fact.package.interior.numeric_note_visible',
+      ];
+    } else {
+      eventType = 'inspection_completed';
+      summary = `Inspected ${subject} without changing concealed contents.`;
+      facts = action.targetIds.flatMap((targetId) => [
+        `inspected:${targetId}`,
+        `fact.${targetId}.exterior.observed`,
+        ...(targetId === 'package' ? ['fact.package.exterior.label_ambiguous'] : []),
+      ]);
+    }
   } else if (operation === 'preserve_evidence') {
     if (!state.phoneFunctional) {
       eventType = 'photograph_failed';
@@ -516,6 +538,14 @@ function applyLowRiskAction(input: {
     createdAt: { run: state.run, minute: state.minute },
     ruleKind,
   });
+}
+
+function inspectsPackageInterior(action: TurnBrief['orderedActions'][number]): boolean {
+  return PACKAGE_INTERIOR_SCOPE.test([
+    action.scope,
+    action.method,
+    action.originalSpan.text,
+  ].filter(Boolean).join(' '));
 }
 
 function createTimeEvent(
