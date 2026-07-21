@@ -12,6 +12,7 @@ import { normalizeActionPlanJson, unwrapJsonObject } from '../ai/unwrapJsonObjec
 import { formatWorldInfoPromptBlock } from '../ai/worldInfoPrompt';
 import { formatConfirmedWorldEventsPromptBlock } from '../ai/worldEventPrompt';
 import { generateNpcReplyAi, recommendActionsAi } from '../ai/harnessAiAdapters';
+import { presentRecommendedActionsInChinese } from '../presenters/frontendTurnPresenter';
 
 interface FrontendAdapterRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -36,6 +37,7 @@ function attachRecommendedActions(
   resolution: TurnResolution,
 ): FrontendStoryNode[] {
   if (!resolution.recommendedActions?.length) return nodes;
+  const recommendedActions = presentRecommendedActionsInChinese(resolution.recommendedActions);
   let index = -1;
   for (let i = nodes.length - 1; i >= 0; i -= 1) {
     if (nodes[i].type === 'action_result') {
@@ -46,7 +48,7 @@ function attachRecommendedActions(
   if (index < 0) return nodes;
   return nodes.map((node, nodeIndex) =>
     nodeIndex === index
-      ? { ...node, recommendedActions: resolution.recommendedActions }
+      ? { ...node, recommendedActions }
       : node
   );
 }

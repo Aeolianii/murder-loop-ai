@@ -479,6 +479,10 @@ assert(
   ),
   'Recommendation Specialist must not repeat a current structured action.',
 );
+assert(
+  calls.at(-1)?.system.includes('label 和 rationale 必须使用简体中文'),
+  'Recommendation Specialist must produce Simplified Chinese user-facing copy.',
+);
 
 const repairCalls: Array<{ system: string; user: unknown }> = [];
 const repairAdapters = createAiShadowAdapters(async (role, system, user) => {

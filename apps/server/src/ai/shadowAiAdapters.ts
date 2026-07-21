@@ -404,8 +404,8 @@ function proposalPrompt(sourceAgent: string, domain: string): string {
     })}`,
     `recommendations item: ${JSON.stringify({
       id: 'recommendation-1',
-      label: 'short action label',
-      rationale: 'grounded rationale',
+      label: '检查尚未确认的区域',
+      rationale: '根据玩家已经确认的事实说明推荐理由。',
       basedOnFactIds: ['authorized-fact-id'],
       basedOnEventIds: [],
     })}`,
@@ -442,6 +442,7 @@ function proposalRoleDirective(sourceAgent: string, domain: string): string {
       'Recommendations are displayed after projection.turnBrief completes.',
       'Do not recommend the same operation and targetIds already present in projection.turnBrief.orderedActions.',
       'Do not use a fact about a current action target when that action may change the cited fact before the recommendation is displayed.',
+      'label 和 rationale 必须使用简体中文，不得输出英文句子、后台字段名或事实 ID；只有 id 继续使用稳定的英文标识。',
       'For this role, recommendations is the only non-empty payload array.',
       'Keep proposedEffects, observations, proposedEvents, clueCandidates, and displayFragments empty.',
       'Also keep turnBriefActionIds, replacementFor, targetIds, basedOnFactIds, preconditions, forbiddenScopes, visibility, evidenceRefs, and causalParentIds empty.',

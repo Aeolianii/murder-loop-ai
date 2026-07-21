@@ -746,8 +746,8 @@ async function testLegacyMainPathExitPublishesAcceptedRecommendations() {
   );
   assert.deepEqual(actionResult?.recommendedActions, [{
     id: 'recommendation.accepted',
-    label: 'Photograph the package label.',
-    rationale: 'Preserve visible evidence before taking another action.',
+    label: '拍摄并保存包裹标签',
+    rationale: '先保存包裹标签的可见信息，可以为后续核对寄件情况保留依据。',
   }]);
   await app.close();
 }
@@ -806,8 +806,8 @@ async function testLegacyMainPathExitRendersReadOnlyPostCommitNarration() {
   assert.ok(ambientIndex > actionIndex, 'ambient narration should follow the action result and its recommendations');
   assert.deepEqual(body.storyLog[actionIndex].recommendedActions, [{
     id: 'recommendation.accepted',
-    label: 'Photograph the package label.',
-    rationale: 'Preserve visible evidence before taking another action.',
+    label: '拍摄并保存包裹标签',
+    rationale: '先保存包裹标签的可见信息，可以为后续核对寄件情况保留依据。',
   }]);
   assert.equal(
     body.coreState.log.some((entry: { text: string }) => entry.text.includes('The deadbolt slides home')),

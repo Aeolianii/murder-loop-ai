@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHarness, createInitialGameState } from '@murder-loop-ai/game-core';
-import { buildSidebarPayload } from './frontendTurnPresenter';
+import {
+  buildSidebarPayload,
+  presentRecommendedActionsInChinese,
+} from './frontendTurnPresenter';
 
 const harness = createHarness();
 const state = createInitialGameState();
@@ -29,4 +32,62 @@ assert.equal(
   )).length,
   1,
   'reading Sidebar twice from one turn Harness must not dispatch TurnCompleted twice',
+);
+
+const presentedRecommendations = presentRecommendedActionsInChinese([
+  {
+    id: 'photograph-package',
+    label: 'Photograph the package label',
+    rationale: 'Preserve visible evidence before taking another action.',
+  },
+  {
+    id: 'inspect-package',
+    label: 'Inspect the package on the desk',
+    rationale: 'The package may contain useful evidence.',
+  },
+  {
+    id: 'check-window',
+    label: 'Check the window',
+    rationale: 'The window may provide an escape route.',
+  },
+  {
+    id: 'check-bed',
+    label: 'Check under the bed',
+    rationale: 'Something may be hidden underneath.',
+  },
+  {
+    id: 'check-closet',
+    label: 'Check the closet',
+    rationale: 'The closet has not been searched.',
+  },
+  {
+    id: 'check-bathroom',
+    label: 'Check the bathroom water tank',
+    rationale: 'Items are sometimes hidden there.',
+  },
+  {
+    id: 'unknown-action',
+    label: 'Review the latest situation',
+    rationale: 'Choose a safe next step.',
+  },
+]);
+
+assert.deepEqual(
+  presentedRecommendations.map((action) => action.label),
+  ['拍摄并保存包裹标签', '检查桌上的包裹', '检查窗户', '检查床底', '检查衣柜', '检查卫生间水箱', '检查房间'],
+);
+for (const action of presentedRecommendations) {
+  assert.doesNotMatch(action.label, /[A-Za-z]/);
+  assert.doesNotMatch(action.rationale, /[A-Za-z]/);
+}
+
+const alreadyChinese = [{
+  id: 'secure-door',
+  label: '锁好前门',
+  rationale: '门锁尚未确认，先确保入口安全。',
+}];
+assert.deepEqual(
+  presentRecommendedActionsInChinese(alreadyChinese),
+  alreadyChinese,
+  'valid Chinese recommendation copy must remain unchanged',
 );

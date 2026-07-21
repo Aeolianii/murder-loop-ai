@@ -289,7 +289,7 @@ export async function recommendActionsAi(context: RecommendationContext): Promis
       '身份核验必须匹配对方实际声明：只有对方明确自称警察或民警时，才可以要求警号、单位或接警编号；普通试门者不要问警号，应按实际情况询问身份与来意、记录证据或报警。',
       '不得把普通可拾取物自动当作武器；只有可见事实明确表明玩家发现或持有武器时，才能推荐使用武器。',
       '不得透露陈怀民、假警察、凶手意图等玩家尚未确认的幕后身份。不得编造物品、人物、短信、原话或地点。',
-      'label 写玩家可直接执行的具体动作，rationale 只解释已知依据。id 使用简短稳定的英文 snake_case。',
+      'label 写玩家可直接执行的具体动作，rationale 只解释已知依据。label 和 rationale 必须使用简体中文，不得输出英文句子、后台字段名或事实 ID；id 使用简短稳定的英文 snake_case。',
       `intent 可选值：${ActionIntentValues.join('|')}。不确定时可以省略 intent 或 target。`,
       '若当前已经结局或没有可靠建议，返回空数组。',
       '只输出 JSON：{"actions":[{"id":"...","label":"...","rationale":"...","intent":"communicate","target":"front_door"}]}',
