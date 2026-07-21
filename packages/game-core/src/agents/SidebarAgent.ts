@@ -108,11 +108,13 @@ function buildNpcStatus(state: GameState): SidebarPayload['npcStatus'] {
 
 function buildRoomStatus(state: GameState): SidebarPayload['roomStatus'] {
   if (!state.room) return [];
-  return Object.entries(state.room).map(([key, obj]) => ({
-    item: obj.name ?? key,
-    state: Object.entries(obj.state ?? {}).filter(([, v]) => v === true).map(([k]) => k).join(', ') || '正常',
-    icon: roomItemIcon(key, obj.state ?? {}),
-  }));
+  return Object.entries(state.room)
+    .filter(([, obj]) => obj.visible && obj.location !== 'package')
+    .map(([key, obj]) => ({
+      item: obj.name ?? key,
+      state: Object.entries(obj.state ?? {}).filter(([, v]) => v === true).map(([k]) => k).join(', ') || '正常',
+      icon: roomItemIcon(key, obj.state ?? {}),
+    }));
 }
 
 export const SidebarAgent: AgentRegistration = {

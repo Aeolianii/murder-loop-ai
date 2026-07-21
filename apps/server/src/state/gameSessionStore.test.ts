@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createInitialGameState } from '@murder-loop-ai/game-core';
+import { coerceGameState } from './coerceGameState';
 import { createInMemoryGameSessionStore } from './gameSessionStore';
 
 const sessions = createInMemoryGameSessionStore();
@@ -63,5 +64,16 @@ const current = sessions.open({
 assert.equal(current.status, 'ready');
 if (current.status !== 'ready') throw new Error('Expected the current session version to open.');
 assert.equal(current.state.minute, initial.minute + 1);
+
+const legacyRoom = structuredClone(initial.room);
+delete legacyRoom.package_old_book;
+delete legacyRoom.package_medicine_blister;
+delete legacyRoom.package_numeric_note;
+legacyRoom.package.state.opened = true;
+const migrated = coerceGameState({ ...initial, room: legacyRoom });
+assert.equal(migrated.room.package.state.opened, true);
+assert.equal(migrated.room.package_old_book.visible, true);
+assert.equal(migrated.room.package_medicine_blister.visible, true);
+assert.equal(migrated.room.package_numeric_note.visible, true);
 
 console.log('gameSessionStore.test.ts passed');

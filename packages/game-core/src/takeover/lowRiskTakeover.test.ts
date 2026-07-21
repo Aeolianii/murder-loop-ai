@@ -171,6 +171,57 @@ assert(
     && event.facts.includes('fact.package.interior.contents_revealed')
   )),
 );
+assert.equal(interiorObservation.playerResult.state.room.package_old_book?.visible, true);
+assert.equal(interiorObservation.playerResult.state.room.package_medicine_blister?.visible, true);
+assert.equal(interiorObservation.playerResult.state.room.package_numeric_note?.visible, true);
+
+const packageItemCases = [
+  {
+    raw: '检查旧书',
+    target: 'package_old_book',
+    expected: /掏空|夹层/,
+    forbidden: /药板|数字纸条/,
+  },
+  {
+    raw: '检查药板',
+    target: 'package_medicine_blister',
+    expected: /铝箔|药片/,
+    forbidden: /旧书|数字纸条/,
+  },
+  {
+    raw: '检查数字纸条',
+    target: 'package_numeric_note',
+    expected: /数字|含义/,
+    forbidden: /旧书|药板/,
+  },
+] as const;
+
+for (const packageItemCase of packageItemCases) {
+  // The semantic compiler used to collapse all three phrases back to the package.
+  // The reducer must recover the concrete visible child target from the original span.
+  const itemAction = action('inspect-package-item', 'inspect', ['package'], { scope: 'interior.contents' });
+  itemAction.originalSpan = { start: 0, end: packageItemCase.raw.length, text: packageItemCase.raw };
+  const itemInspection = prepareLowRiskTurn({
+    state: interiorObservation.playerResult.state,
+    brief: brief([itemAction]),
+  });
+  assert.equal(itemInspection.status, 'prepared');
+  if (itemInspection.status !== 'prepared') throw new Error('expected package item inspection');
+
+  assert.equal(itemInspection.plan.actions[0]?.target, packageItemCase.target);
+  assert.equal(itemInspection.playerResult.state.room[packageItemCase.target]?.inspected, true);
+  assert.equal(itemInspection.playerResult.state.room[packageItemCase.target]?.state.detailsChecked, true);
+  assert.match(itemInspection.playerResult.text, packageItemCase.expected);
+  assert.doesNotMatch(itemInspection.playerResult.text, packageItemCase.forbidden);
+  assert.doesNotMatch(itemInspection.playerResult.text, /打开并检查了包裹|包裹里的异常物品/);
+  assert(itemInspection.playerResult.domainEvents.some((event) => (
+    event.eventType === 'package_item_inspected'
+    && event.subject === packageItemCase.target
+    && event.facts.includes(`fact.${packageItemCase.target}.details.checked`)
+    && event.facts.includes(`fact.${packageItemCase.target}.no_new_clue`)
+  )));
+  assert(!itemInspection.playerResult.domainEvents.some((event) => event.eventType === 'package_opened'));
+}
 
 const projectedInterior = projectConfirmedKnowledgeAndClues({
   baselineState: state,

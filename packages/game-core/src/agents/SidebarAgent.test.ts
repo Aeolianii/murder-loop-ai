@@ -49,5 +49,23 @@ async function testChargingTurnKeepsSidebarBatteryAligned() {
   assert.equal(sidebar.phone.battery, result.state.phoneBattery);
 }
 
+async function testHiddenPackageItemsDoNotLeakIntoSidebar() {
+  const state = createInitialGameState();
+
+  const sidebar = await SidebarAgent.fallback({ finalState: state }) as SidebarPayload;
+
+  assert(!sidebar.roomStatus.some((item) => /旧书|药板|数字纸条/.test(item.item)));
+
+  state.room.package_old_book.visible = true;
+  state.room.package_medicine_blister.visible = true;
+  state.room.package_numeric_note.visible = true;
+  const openedPackageSidebar = await SidebarAgent.fallback({ finalState: state }) as SidebarPayload;
+  assert(
+    !openedPackageSidebar.roomStatus.some((item) => /旧书|药板|数字纸条/.test(item.item)),
+    'package child targets are action semantics, not standalone room-status rows',
+  );
+}
+
 await testFalsePolicePhaseDoesNotSpoilIdentity();
 await testChargingTurnKeepsSidebarBatteryAligned();
+await testHiddenPackageItemsDoNotLeakIntoSidebar();

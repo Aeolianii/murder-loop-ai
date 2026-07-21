@@ -14,6 +14,36 @@ export const initialRoomObjects: Record<string, RoomObjectState> = {
       restored: false,
     },
   },
+  package_old_book: {
+    id: 'package_old_book',
+    name: '包裹里的旧书',
+    location: 'package',
+    visible: false,
+    inspected: false,
+    state: {
+      detailsChecked: false,
+    },
+  },
+  package_medicine_blister: {
+    id: 'package_medicine_blister',
+    name: '包裹里的药板',
+    location: 'package',
+    visible: false,
+    inspected: false,
+    state: {
+      detailsChecked: false,
+    },
+  },
+  package_numeric_note: {
+    id: 'package_numeric_note',
+    name: '包裹里的数字纸条',
+    location: 'package',
+    visible: false,
+    inspected: false,
+    state: {
+      detailsChecked: false,
+    },
+  },
   front_door: {
     id: 'front_door',
     name: '入户门',

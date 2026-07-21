@@ -27,6 +27,7 @@ export interface SelectWorldInfoInput {
 
 const ALL_AGENTS: WorldInfoAgent[] = ['parser', 'rule', 'killer', 'narrator', 'director', 'npc', 'ui-adapter', 'sidebar'];
 const CORE_AGENTS: WorldInfoAgent[] = ['parser', 'rule', 'killer', 'narrator', 'director'];
+const PLAYER_PRIVATE_OBJECT_AGENTS: WorldInfoAgent[] = ['parser', 'rule', 'narrator'];
 
 const manualRuleCards: WorldInfoCard[] = [
   {
@@ -246,7 +247,7 @@ function buildObjectCards(): WorldInfoCard[] {
       title: reviewed?.title ?? object.name ?? object.id,
       tags: unique(['object', 'room', object.id, object.location, ...stateKeys]),
       triggerKeywords: keywords,
-      visibleToAgents: CORE_AGENTS,
+      visibleToAgents: object.location === 'package' ? PLAYER_PRIVATE_OBJECT_AGENTS : CORE_AGENTS,
       content: reviewed?.content ?? `Object ${object.id} is located at ${object.location}. Visible: ${object.visible}. Trackable state keys: ${stateKeys.join(', ') || 'none'}.`,
       priority: object.id === 'package' || object.id === 'front_door' || object.id === 'phone' ? 8 : 6,
       source: 'derived',

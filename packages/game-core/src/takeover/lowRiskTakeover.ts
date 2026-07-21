@@ -52,6 +52,13 @@ const ORDINARY_ITEM_IDS = new Set([
 
 const COMMUNICATION_TARGET_IDS = new Set(['lin_yue', 'linyue', 'police_dispatch', 'chen_huaimin']);
 const PACKAGE_INTERIOR_SCOPE = /(interior|inside|contents?|open|内部|里面|内容|打开|拆开|翻开)/i;
+const PACKAGE_CHILD_IDS = [
+  'package_old_book',
+  'package_medicine_blister',
+  'package_numeric_note',
+] as const;
+
+type PackageChildId = typeof PACKAGE_CHILD_IDS[number];
 
 type LowRiskOperation = 'inspect' | 'preserve_evidence' | 'communicate' | 'secure_entry' | 'pick_up' | 'use_item' | 'wait';
 
@@ -297,8 +304,9 @@ function validateTurnEligibility(state: GameState, brief: TurnBrief): LowRiskTak
       return 'observation_scope_not_low_risk';
     }
     if (operation === 'inspect') {
-      if (action.targetIds.length === 0) return 'unsupported_target';
-      const invalid = action.targetIds.some((targetId) => targetId !== 'room' && !state.room[targetId]?.visible);
+      const targetIds = effectiveInspectTargetIds(action);
+      if (targetIds.length === 0) return 'unsupported_target';
+      const invalid = targetIds.some((targetId) => targetId !== 'room' && !state.room[targetId]?.visible);
       if (invalid) return 'unsupported_target';
     }
     if (operation === 'preserve_evidence') {
@@ -367,19 +375,23 @@ function crossesLegacyHighRiskBoundary(state: GameState, brief: TurnBrief): bool
 }
 
 function buildActionPlan(brief: TurnBrief): ActionPlan {
-  const actions = brief.orderedActions.map((action) => ({
-    id: action.actionId,
-    raw: action.originalSpan.text,
-    intent: LOW_RISK_OPERATIONS.get(action.operation)!,
-    target: canonicalActionTarget(action.targetIds),
-    method: [action.scope, action.method].filter(Boolean).join(' / ') || undefined,
-    confidence: 1,
-    timeCost: 1,
-    noise: 0,
-    risk: 'low' as const,
-    contactChannel: LOW_RISK_OPERATIONS.get(action.operation) === 'communicate' ? 'phone' as const : undefined,
-    itemKind: LOW_RISK_OPERATIONS.get(action.operation) === 'pick_up' ? 'utility' as const : undefined,
-  }));
+  const actions = brief.orderedActions.map((action) => {
+    const operation = LOW_RISK_OPERATIONS.get(action.operation)!;
+    const targetIds = operation === 'inspect' ? effectiveInspectTargetIds(action) : action.targetIds;
+    return {
+      id: action.actionId,
+      raw: action.originalSpan.text,
+      intent: operation,
+      target: canonicalActionTarget(targetIds),
+      method: [action.scope, action.method].filter(Boolean).join(' / ') || undefined,
+      confidence: 1,
+      timeCost: 1,
+      noise: 0,
+      risk: 'low' as const,
+      contactChannel: operation === 'communicate' ? 'phone' as const : undefined,
+      itemKind: operation === 'pick_up' ? 'utility' as const : undefined,
+    };
+  });
   return {
     id: `plan.low-risk.${brief.turnId}`,
     raw: brief.orderedActions.map((action) => action.originalSpan.text).join(' then '),
@@ -400,21 +412,23 @@ function applyLowRiskAction(input: {
   sharesPackagePhoto: boolean;
 }): AppliedLowRiskAction {
   const { state, action, operation } = input;
+  const targetIds = operation === 'inspect' ? effectiveInspectTargetIds(action) : action.targetIds;
   let eventType = 'low_risk_action_confirmed';
-  let subject = canonicalActionTarget(action.targetIds);
+  let subject = canonicalActionTarget(targetIds);
   let summary = '行动已经确认。';
   let facts: string[] = [`action_confirmed:${action.actionId}`];
   let status: ProposedEvent['status'] = 'completed';
   let ruleKind: RuleEvent['kind'] = 'action';
 
   if (operation === 'inspect') {
-    for (const targetId of action.targetIds) {
+    for (const targetId of targetIds) {
       if (targetId !== 'room') state.room[targetId].inspected = true;
     }
-    const packageContentsRevealed = action.targetIds.includes('package')
+    const packageContentsRevealed = targetIds.includes('package')
       && inspectsPackageInterior(action);
     if (packageContentsRevealed) {
       state.room.package.state.opened = true;
+      for (const childId of PACKAGE_CHILD_IDS) state.room[childId].visible = true;
       if (state.world?.objects.package) state.world.objects.package.flags.opened = true;
       if (state.evidencePhase === 'package_unnoticed' || state.evidencePhase === 'package_seen') {
         state.evidencePhase = 'package_opened';
@@ -432,8 +446,8 @@ function applyLowRiskAction(input: {
         'fact.package.interior.numeric_note_visible',
       ];
     } else {
-      eventType = 'inspection_completed';
-      const outcomes = action.targetIds.map((targetId) => inspectionOutcome(state, targetId));
+      eventType = targetIds.some(isPackageChildId) ? 'package_item_inspected' : 'inspection_completed';
+      const outcomes = targetIds.map((targetId) => inspectionOutcome(state, targetId));
       summary = outcomes.map((outcome) => outcome.summary).join(' ');
       facts = outcomes.flatMap((outcome) => outcome.facts);
     }
@@ -525,7 +539,7 @@ function applyLowRiskAction(input: {
     sourceActionIds: [action.actionId],
     actorId: 'player',
     operation,
-    targetIds: action.targetIds.length > 0 ? action.targetIds : [subject],
+    targetIds: targetIds.length > 0 ? targetIds : [subject],
     status,
     subject,
     summary,
@@ -596,6 +610,46 @@ function inspectionOutcome(
       facts: [...baseFacts, 'fact.package.exterior.observed', 'fact.package.exterior.label_ambiguous'],
     };
   }
+  if (targetId === 'package_old_book') {
+    state.room.package_old_book.state.detailsChecked = true;
+    return {
+      summary: '你逐页翻看那本被掏空的旧书。书页中部形成一个空夹层，里面没有遗留其他物品，封面和书页上也没有发现新的标记。',
+      facts: [
+        ...baseFacts,
+        'fact.package_old_book.details.checked',
+        'fact.package_old_book.compartment.hollow',
+        'fact.package_old_book.compartment.empty',
+        'fact.package_old_book.no_new_clue',
+      ],
+    };
+  }
+  if (targetId === 'package_medicine_blister') {
+    state.room.package_medicine_blister.state.detailsChecked = true;
+    return {
+      summary: '你拿起药板仔细检查。铝箔有撕开的痕迹，剩余药片上没有可辨认的品牌或药名；除此之外，没有发现新的编号或异常。',
+      facts: [
+        ...baseFacts,
+        'fact.package_medicine_blister.details.checked',
+        'fact.package_medicine_blister.foil.opened',
+        'fact.package_medicine_blister.label.unreadable',
+        'fact.package_medicine_blister.no_new_clue',
+      ],
+    };
+  }
+  if (targetId === 'package_numeric_note') {
+    state.room.package_numeric_note.state.detailsChecked = true;
+    return {
+      summary: '你摊开数字纸条逐行检查。上面只有一串排列整齐的数字，没有发现姓名、地址或可直接识别的联系方式；目前无法确认它的含义，也没有获得新的线索。',
+      facts: [
+        ...baseFacts,
+        'fact.package_numeric_note.details.checked',
+        'fact.package_numeric_note.sequence.numeric',
+        'fact.package_numeric_note.identifying_text.absent',
+        'fact.package_numeric_note.meaning.unknown',
+        'fact.package_numeric_note.no_new_clue',
+      ],
+    };
+  }
   return {
     summary: `你检查了${actionTargetLabel(targetId)}，暂时没有发现异常或新的线索。`,
     facts: [...baseFacts, `fact.${targetId}.observed`, `fact.${targetId}.no_anomaly`],
@@ -608,6 +662,28 @@ function inspectsPackageInterior(action: TurnBrief['orderedActions'][number]): b
     action.method,
     action.originalSpan.text,
   ].filter(Boolean).join(' '));
+}
+
+function isPackageChildId(targetId: string): targetId is PackageChildId {
+  return (PACKAGE_CHILD_IDS as readonly string[]).includes(targetId);
+}
+
+function packageChildTarget(action: TurnBrief['orderedActions'][number]): PackageChildId | undefined {
+  const explicitTarget = action.targetIds.find(isPackageChildId);
+  if (explicitTarget) return explicitTarget;
+
+  const text = [action.originalSpan.text, action.scope, action.method]
+    .filter(Boolean)
+    .join(' ');
+  if (/旧书|掏空的书|old\s*book/i.test(text)) return 'package_old_book';
+  if (/药板|药盒|药片|blister|medicine/i.test(text)) return 'package_medicine_blister';
+  if (/数字纸条|数字.*纸|纸条|number(?:ed|ic)?\s*note/i.test(text)) return 'package_numeric_note';
+  return undefined;
+}
+
+function effectiveInspectTargetIds(action: TurnBrief['orderedActions'][number]): string[] {
+  const packageChild = packageChildTarget(action);
+  return packageChild ? [packageChild] : action.targetIds;
 }
 
 function createTimeEvent(
@@ -766,6 +842,9 @@ function canonicalActionTarget(targetIds: string[]): string {
 function actionTargetLabel(targetId: string): string {
   const labels: Record<string, string> = {
     package: '包裹',
+    package_old_book: '包裹里的旧书',
+    package_medicine_blister: '包裹里的药板',
+    package_numeric_note: '包裹里的数字纸条',
     front_door: '入户门',
     window: '窗户',
     room: '房间',

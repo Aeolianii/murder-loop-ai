@@ -168,3 +168,65 @@ assert.match(localizedInspectionText, /床底/);
 assert.match(localizedInspectionText, /衣柜/);
 assert.match(localizedInspectionText, /未发现|没有发现|无异常/);
 assert.doesNotMatch(localizedInspectionText, /[A-Za-z]/);
+
+const medicineState = structuredClone(state);
+medicineState.room.package_medicine_blister.visible = true;
+medicineState.room.package_medicine_blister.inspected = true;
+medicineState.room.package_medicine_blister.state.detailsChecked = true;
+const medicineSummary = '你拿起药板仔细检查。铝箔有撕开的痕迹，剩余药片上没有可辨认的品牌或药名；除此之外，没有发现新的编号或异常。';
+const medicineResolution: TurnResolution = {
+  ...resolution,
+  plan: {
+    id: 'inspect-package-medicine',
+    raw: '检查药板',
+    summary: '检查包裹里的药板',
+    actions: [{
+      id: 'inspect-package-medicine',
+      raw: '检查药板',
+      intent: 'inspect',
+      target: 'package_medicine_blister',
+      method: 'details',
+      confidence: 1,
+      timeCost: 1,
+      noise: 0,
+      risk: 'low',
+    }],
+    confidence: 1,
+    warnings: [],
+  },
+  playerResult: {
+    ...playerResult,
+    title: '药板检查结果',
+    text: medicineSummary,
+    state: medicineState,
+    domainEvents: [{
+      eventType: 'package_item_inspected',
+      subject: 'package_medicine_blister',
+      facts: [
+        'fact.package_medicine_blister.details.checked',
+        'fact.package_medicine_blister.foil.opened',
+        'fact.package_medicine_blister.label.unreadable',
+        'fact.package_medicine_blister.no_new_clue',
+      ],
+    }],
+  } as RuleResult & {
+    domainEvents: Array<{ eventType: string; subject: string; facts: string[] }>;
+  },
+  finalState: medicineState,
+};
+
+const medicineNarration = await narrateConfirmedTurn(medicineResolution, {
+  narrateAction: async () => ({
+    title: '包裹检查完成',
+    text: packageSummary,
+  }),
+  narrateAmbient: adapters.narrateAmbient,
+});
+const medicineNarrationText = `${medicineNarration.actionNarration?.title ?? ''}${medicineNarration.actionNarration?.text ?? ''}`;
+assert.match(medicineNarrationText, /药板/);
+assert.match(medicineNarrationText, /铝箔|药片/);
+assert.doesNotMatch(medicineNarrationText, /旧书|数字纸条|打开.*包裹/);
+assert(
+  medicineNarration.warnings.some((warning) => warning.includes('package_medicine_blister')),
+  'a repeated package overview must be rejected for a medicine-blister inspection',
+);

@@ -93,10 +93,24 @@ function actionNarrationGroundingIssues(
         window: /窗户|窗锁/,
         front_door: /入户门|房门|门锁|门链/,
         package: /包裹/,
+        package_old_book: /旧书|夹层/,
+        package_medicine_blister: /药板|药片|铝箔/,
+        package_numeric_note: /数字纸条|数字|纸条/,
       };
       const targetRule = action.target ? targetCoverage[action.target] : undefined;
       if (targetRule && !targetRule.test(text)) {
         issues.push(`missing confirmed inspection target ${action.target}`);
+      }
+      const unrelatedPackageItemRules: Partial<Record<string, RegExp>> = {
+        package_old_book: /药板|药片|数字纸条/,
+        package_medicine_blister: /旧书|数字纸条/,
+        package_numeric_note: /旧书|药板|药片/,
+      };
+      const unrelatedPackageItemRule = action.target
+        ? unrelatedPackageItemRules[action.target]
+        : undefined;
+      if (unrelatedPackageItemRule?.test(text)) {
+        issues.push(`included unrelated package items for ${action.target}`);
       }
       const facts = action.target ? confirmedFactsForTarget(resolution, action.target) : [];
       const confirmsNoAnomaly = facts.some((fact) => (
@@ -131,6 +145,9 @@ function actionNarrationGroundingIssues(
 function actionTargetLabel(target?: string) {
   const labels: Record<string, string> = {
     package: '包裹',
+    package_old_book: '包裹里的旧书',
+    package_medicine_blister: '包裹里的药板',
+    package_numeric_note: '包裹里的数字纸条',
     front_door: '门',
     window: '窗户',
     bed: '床底',

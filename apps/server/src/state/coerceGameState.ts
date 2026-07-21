@@ -2,6 +2,12 @@ import { clueBook } from '@murder-loop-ai/content';
 import { createInitialGameState, normalizeLoopMemory } from '@murder-loop-ai/game-core';
 import type { GameState } from '@murder-loop-ai/shared';
 
+const PACKAGE_CHILD_IDS = [
+  'package_old_book',
+  'package_medicine_blister',
+  'package_numeric_note',
+] as const;
+
 export function coerceClues(rawClues: unknown, fallback: GameState): GameState['clues'] {
   if (!Array.isArray(rawClues)) return fallback.clues;
   return rawClues.flatMap((clue, index) => {
@@ -48,7 +54,7 @@ export function coerceGameState(rawState: unknown): GameState {
       ...fallback.player,
       ...(raw.player ?? {}),
     },
-    room: raw.room ?? fallback.room,
+    room: coerceRoom(raw.room, fallback.room),
     killerKnowledge: {
       ...fallback.killerKnowledge,
       ...(raw.killerKnowledge ?? {}),
@@ -66,6 +72,32 @@ export function coerceGameState(rawState: unknown): GameState {
   };
 
   return state;
+}
+
+function coerceRoom(rawRoom: unknown, fallbackRoom: GameState['room']): GameState['room'] {
+  const room = structuredClone(fallbackRoom);
+  if (rawRoom && typeof rawRoom === 'object') {
+    for (const [id, value] of Object.entries(rawRoom)) {
+      if (!value || typeof value !== 'object') continue;
+      const rawObject = value as GameState['room'][string];
+      const fallbackObject = fallbackRoom[id];
+      room[id] = fallbackObject
+        ? {
+            ...fallbackObject,
+            ...rawObject,
+            state: {
+              ...fallbackObject.state,
+              ...(rawObject.state ?? {}),
+            },
+          }
+        : structuredClone(rawObject);
+    }
+  }
+
+  if (room.package?.state.opened === true) {
+    for (const childId of PACKAGE_CHILD_IDS) room[childId].visible = true;
+  }
+  return room;
 }
 
 export function normalizeDynamicClueId(value: string) {

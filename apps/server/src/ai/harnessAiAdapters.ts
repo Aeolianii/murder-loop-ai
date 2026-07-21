@@ -140,6 +140,7 @@ async function narrateActionAi(context: NarrationContext): Promise<Narration> {
     '   confirmedFacts 已确认 no_anomaly 或 no_new_clue 时，必须明确写“没有发现异常或新线索”，可以补充不改变事实的感官细节。',
     '   只有 confirmedFacts 已确认某条线索或可见物品时，才能在正文中写出并在 JSON 中附带 clue；不得仅凭场景常识实时编造新线索。',
     '   玩家在锁门 → 不能插入书脊/包裹/纸条线索。玩家在检查包裹且事实已确认内容物 → 才能写包裹内的线索。',
+    '   包裹首次打开后，旧书、药板、数字纸条是三个独立检查目标。检查其中一件时，只写该物品对应的 confirmedFacts；禁止重复整段拆包内容或混入另外两件物品。',
     '   不重复已有线索。如果呈现已确认线索，在 JSON 中加 clue 字段：',
     '   {"id":"ai_gen_xxx","title":"线索标题","detail":"具体描述","weight":10}',
     '',
