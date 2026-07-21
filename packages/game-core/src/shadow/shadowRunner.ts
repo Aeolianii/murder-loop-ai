@@ -418,6 +418,7 @@ function buildCompactPlayerContext(
       ...Object.values(state.room).filter((item) => item.visible).map((item) => item.id),
     ])],
     capabilities: [
+      'act',
       'inspect',
       'communicate',
       'secure_entry',

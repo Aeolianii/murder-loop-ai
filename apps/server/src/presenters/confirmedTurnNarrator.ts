@@ -330,18 +330,23 @@ export async function narrateConfirmedTurn(
   resolution: TurnResolution,
   adapters: AiAdapters,
 ): Promise<ConfirmedTurnNarration> {
+  const preservesAiActionJudgement = resolution.plan.actions.some((action) => action.intent === 'act');
   const context = buildNarratorContext({
     state: resolution.finalState,
     playerResult: resolution.playerResult,
     killerResult: resolution.killerResult,
   });
   const [action, ambient, npc] = await Promise.all([
-    runNarratorSlot('actionNarration', adapters.narrateAction ?? adapters.narrate, context),
+    preservesAiActionJudgement
+      ? Promise.resolve<{ narration?: Narration; warnings: string[] }>({ warnings: [] })
+      : runNarratorSlot('actionNarration', adapters.narrateAction ?? adapters.narrate, context),
     runNarratorSlot('ambientNarration', adapters.narrateAmbient ?? adapters.narrate, context),
     runConfirmedNpcReply(resolution, adapters),
   ]);
 
-  let actionNarration = action.narration ?? confirmedActionFallback(resolution);
+  let actionNarration = preservesAiActionJudgement
+    ? confirmedActionFallback(resolution)
+    : action.narration ?? confirmedActionFallback(resolution);
   if (actionNarration) {
     const groundingIssues = actionNarrationGroundingIssues(actionNarration, resolution);
     if (groundingIssues.length > 0) {

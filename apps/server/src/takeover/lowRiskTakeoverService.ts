@@ -4,6 +4,7 @@ import type {
   Fact,
   HighRiskDecision,
   Proposal,
+  ProposedEvent,
   SpecialistCandidate,
 } from '@murder-loop-ai/ai-contracts';
 import {
@@ -134,16 +135,23 @@ export function createLowRiskTakeoverService(
       const gate = validateDeterministicTurnBriefGate(session, wave);
       if (gate.status === 'bypassed') return gate;
 
+      const aiPlayerOutcomes = arbitrationCanPublishCreativeOutputs(wave)
+        ? selectAiPlayerOutcomes(wave)
+        : [];
+
       const preparation = prepareLowRiskTurn({
         state,
         brief: gate.brief,
+        aiPlayerOutcomes,
         allowHighRiskContinuation: highRiskTakeoverEnabled,
       });
       if (preparation.status === 'not_eligible') {
         return {
           status: 'bypassed',
           reason: preparation.reason,
-          fallbackMode: 'formal_rejection',
+          fallbackMode: preparation.reason === 'ai_outcome_required'
+            ? 'ai_unavailable'
+            : 'formal_rejection',
         };
       }
 
@@ -504,6 +512,25 @@ function proposalCanAuthorEvent(
     allowedKinds?.has(event.kind)
     && event.actorId === proposal.actorId,
   );
+}
+
+function selectAiPlayerOutcomes(wave: ShadowCandidateWave): ProposedEvent[] {
+  const selectedProposalIds = new Set(wave.arbitration?.selectedProposalIds ?? []);
+  return [
+    ...wave.mainProposals,
+    ...wave.specialistCandidates,
+  ]
+    .filter((proposal) => (
+      proposal.domain === 'player'
+      && selectedProposalIds.has(proposal.id)
+    ))
+    .flatMap((proposal) => proposal.proposedEvents)
+    .filter((event) => (
+      event.actorId === 'player'
+      && event.riskClass === 'reversible'
+      && event.status !== 'attempted'
+      && (event.visibility.includes('player') || event.visibility.includes('public'))
+    ));
 }
 
 function arbitrationCanPublishCreativeOutputs(wave: ShadowCandidateWave): boolean {

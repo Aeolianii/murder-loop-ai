@@ -230,3 +230,48 @@ assert(
   medicineNarration.warnings.some((warning) => warning.includes('package_medicine_blister')),
   'a repeated package overview must be rejected for a medicine-blister inspection',
 );
+
+const openActionSummary = '你打开手机浏览了一会社区动态，几分钟过去了，没有看到与当前危险直接相关的新消息。';
+let openActionNarratorCalled = false;
+const openActionNarration = await narrateConfirmedTurn({
+  ...resolution,
+  plan: {
+    id: 'open-action-plan',
+    raw: '打开手机浏览社区动态',
+    summary: '使用手机',
+    actions: [{
+      id: 'open-action',
+      raw: '打开手机浏览社区动态',
+      intent: 'act',
+      target: 'phone',
+      method: 'social.feed',
+      confidence: 1,
+      timeCost: 1,
+      noise: 0,
+      risk: 'low',
+    }],
+    confidence: 1,
+    warnings: [],
+  },
+  playerResult: {
+    ...playerResult,
+    title: '行动已确认',
+    text: openActionSummary,
+    state,
+    domainEvents: [{
+      eventType: 'player_action_completed',
+      subject: 'phone',
+      facts: ['fact.player.open_action.valid'],
+    }],
+  } as RuleResult & {
+    domainEvents: Array<{ eventType: string; subject: string; facts: string[] }>;
+  },
+}, {
+  narrateAction: async () => {
+    openActionNarratorCalled = true;
+    return { title: '错误改写', text: '你没有执行刚才请求的动作。' };
+  },
+  narrateAmbient: adapters.narrateAmbient,
+});
+assert.equal(openActionNarratorCalled, false, 'AI adjudication result must not be rewritten by another action narrator');
+assert.equal(openActionNarration.actionNarration?.text, openActionSummary);

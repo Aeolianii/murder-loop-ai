@@ -256,6 +256,43 @@ if (deterministicOnly.status !== 'prepared') {
   throw new Error('expected deterministic TurnBrief preparation');
 }
 
+const openActionBrief = brief('act', ['phone']);
+openActionBrief.orderedActions[0].originalSpan = {
+  start: 0,
+  end: 10,
+  text: '打开手机浏览社区动态',
+};
+const openActionProposal = playerProposal();
+openActionProposal.operation = 'act';
+openActionProposal.targetIds = ['phone'];
+openActionProposal.proposedEvents = [{
+  ...openActionProposal.proposedEvents[0],
+  id: 'event.proposal.open-action',
+  operation: 'act',
+  targetIds: ['phone'],
+  status: 'completed',
+  summary: '你打开手机浏览了一会社区动态，没有看到与当前危险直接相关的新消息。',
+}];
+const openActionWave = wave(openActionBrief, openActionProposal);
+const openActionService = createLowRiskTakeoverService();
+const openActionPrepared = await openActionService.prepare(session(openActionWave), state);
+assert.equal(openActionPrepared.status, 'prepared');
+if (openActionPrepared.status !== 'prepared') throw new Error('expected AI-judged open action');
+assert.match(openActionPrepared.prepared.playerResult.text, /浏览.*社区动态/);
+
+const missingOpenActionWave = wave(openActionBrief, openActionProposal);
+missingOpenActionWave.arbitration!.selectedProposalIds = [];
+const missingOpenActionService = createLowRiskTakeoverService();
+const missingOpenAction = await missingOpenActionService.prepare(
+  session(missingOpenActionWave),
+  state,
+);
+assert.equal(missingOpenAction.status, 'bypassed');
+if (missingOpenAction.status === 'bypassed') {
+  assert.equal(missingOpenAction.reason, 'ai_outcome_required');
+  assert.equal(missingOpenAction.fallbackMode, 'ai_unavailable');
+}
+
 function clueProposal(
   proposalId: string,
   clueId: 'package_photo' | 'wrong_package',

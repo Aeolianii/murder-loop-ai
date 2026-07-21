@@ -33,6 +33,7 @@ const LOW_RISK_OPERATIONS = new Map<string, LowRiskOperation>([
   ['pick_up', 'pick_up'],
   ['use_item', 'use_item'],
   ['wait', 'wait'],
+  ['act', 'act'],
 ]);
 
 const ORDINARY_ITEM_IDS = new Set([
@@ -60,7 +61,7 @@ const PACKAGE_CHILD_IDS = [
 
 type PackageChildId = typeof PACKAGE_CHILD_IDS[number];
 
-type LowRiskOperation = 'inspect' | 'preserve_evidence' | 'communicate' | 'secure_entry' | 'pick_up' | 'use_item' | 'wait';
+type LowRiskOperation = 'inspect' | 'preserve_evidence' | 'communicate' | 'secure_entry' | 'pick_up' | 'use_item' | 'wait' | 'act';
 
 export type LowRiskTakeoverRejectReason =
   | 'compiler_fallback'
@@ -70,6 +71,7 @@ export type LowRiskTakeoverRejectReason =
   | 'unsupported_actor'
   | 'unsupported_operation'
   | 'unsupported_target'
+  | 'ai_outcome_required'
   | 'observation_scope_not_low_risk'
   | 'high_risk_boundary';
 
@@ -103,9 +105,14 @@ interface AppliedLowRiskAction {
 export function prepareLowRiskTurn(input: {
   state: GameState;
   brief: TurnBrief;
+  aiPlayerOutcomes?: ProposedEvent[];
   allowHighRiskContinuation?: boolean;
 }): LowRiskTakeoverPreparation {
-  const eligibility = validateTurnEligibility(input.state, input.brief);
+  const eligibility = validateTurnEligibility(
+    input.state,
+    input.brief,
+    input.aiPlayerOutcomes ?? [],
+  );
   if (eligibility) return { status: 'not_eligible', reason: eligibility };
   if (
     !input.allowHighRiskContinuation
@@ -150,6 +157,7 @@ export function prepareLowRiskTurn(input: {
       eventId,
       causalParentIds,
       envelope: input.brief,
+      aiOutcome: aiOutcomeForAction(input.aiPlayerOutcomes ?? [], action),
       sharesPackagePhoto: state.room.package.state.photographed === true
         && [...attachmentHandleIds].some((handleId) => packagePhotoHandleIds.has(handleId)),
     });
@@ -284,7 +292,11 @@ export async function commitPreparedLowRiskTurn(input: {
   };
 }
 
-function validateTurnEligibility(state: GameState, brief: TurnBrief): LowRiskTakeoverRejectReason | undefined {
+function validateTurnEligibility(
+  state: GameState,
+  brief: TurnBrief,
+  aiPlayerOutcomes: ProposedEvent[],
+): LowRiskTakeoverRejectReason | undefined {
   if (brief.compilerVersion.includes('fallback')) return 'compiler_fallback';
   if (brief.utteranceMode !== 'command') return 'clarification_required';
   if (brief.ambiguities.some((ambiguity) => ambiguity.requiresClarification)) return 'clarification_required';
@@ -333,6 +345,18 @@ function validateTurnEligibility(state: GameState, brief: TurnBrief): LowRiskTak
     }
     if (operation === 'use_item') {
       if (action.targetIds.length !== 1 || !['phone_charger', 'tape'].includes(action.targetIds[0])) return 'unsupported_target';
+    }
+    if (operation === 'act') {
+      if (
+        action.targetIds.length === 0
+        || action.targetIds.some((targetId) => (
+          !['room', 'player', 'self'].includes(targetId)
+          && !state.room[targetId]?.visible
+        ))
+      ) {
+        return 'unsupported_target';
+      }
+      if (!aiOutcomeForAction(aiPlayerOutcomes, action)) return 'ai_outcome_required';
     }
     if (
       operation === 'wait'
@@ -409,6 +433,7 @@ function applyLowRiskAction(input: {
   eventId: string;
   causalParentIds: string[];
   envelope: TurnEnvelope;
+  aiOutcome?: ProposedEvent;
   sharesPackagePhoto: boolean;
 }): AppliedLowRiskAction {
   const { state, action, operation } = input;
@@ -420,7 +445,17 @@ function applyLowRiskAction(input: {
   let status: ProposedEvent['status'] = 'completed';
   let ruleKind: RuleEvent['kind'] = 'action';
 
-  if (operation === 'inspect') {
+  if (operation === 'act') {
+    const resourceFailure = genericResourceFailure(state, action);
+    const aiOutcome = input.aiOutcome!;
+    status = resourceFailure ? 'failed' : aiOutcome.status;
+    eventType = status === 'completed' ? 'player_action_completed' : 'player_action_failed';
+    summary = resourceFailure ?? aiOutcome.summary;
+    facts = [
+      `action_adjudicated:${action.actionId}`,
+      `fact.player.open_action.${status === 'completed' ? 'valid' : 'invalid'}`,
+    ];
+  } else if (operation === 'inspect') {
     for (const targetId of targetIds) {
       if (targetId !== 'room') state.room[targetId].inspected = true;
     }
@@ -662,6 +697,37 @@ function inspectsPackageInterior(action: TurnBrief['orderedActions'][number]): b
     action.method,
     action.originalSpan.text,
   ].filter(Boolean).join(' '));
+}
+
+function aiOutcomeForAction(
+  outcomes: ProposedEvent[],
+  action: TurnBrief['orderedActions'][number],
+): ProposedEvent | undefined {
+  return outcomes.find((outcome) => (
+    outcome.actorId === 'player'
+    && outcome.operation === 'act'
+    && outcome.riskClass === 'reversible'
+    && outcome.status !== 'attempted'
+    && outcome.sourceActionIds.includes(action.actionId)
+    && action.targetIds.every((targetId) => outcome.targetIds.includes(targetId))
+    && (outcome.visibility.includes('player') || outcome.visibility.includes('public'))
+    && isChineseDisplayText(outcome.summary)
+  ));
+}
+
+function genericResourceFailure(
+  state: GameState,
+  action: TurnBrief['orderedActions'][number],
+): string | undefined {
+  if (!action.targetIds.includes('phone')) return undefined;
+  if (state.phoneBattery <= 0) {
+    return '手机已经没电，屏幕无法亮起，因此无法完成这个动作。';
+  }
+  return undefined;
+}
+
+function isChineseDisplayText(text: string): boolean {
+  return /[\u3400-\u9fff]/.test(text) && !/[A-Za-z]/.test(text);
 }
 
 function isPackageChildId(targetId: string): targetId is PackageChildId {

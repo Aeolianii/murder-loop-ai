@@ -75,7 +75,7 @@ export function createInitialWorldState(): WorldState {
         'player',
         'room_503',
         40,
-        ['move', 'inspect', 'communicate', 'photograph', 'secure_entry', 'use_item', 'wait'],
+        ['move', 'inspect', 'communicate', 'photograph', 'secure_entry', 'use_item', 'wait', 'act'],
         ['survive', 'preserve_evidence'],
       ),
       chen_huaimin: character(

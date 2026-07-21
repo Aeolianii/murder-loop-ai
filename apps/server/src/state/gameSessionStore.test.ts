@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createInitialGameState } from '@murder-loop-ai/game-core';
+import { createInitialGameState, createInitialWorldState } from '@murder-loop-ai/game-core';
 import { coerceGameState } from './coerceGameState';
 import { createInMemoryGameSessionStore } from './gameSessionStore';
 
@@ -75,5 +75,15 @@ assert.equal(migrated.room.package.state.opened, true);
 assert.equal(migrated.room.package_old_book.visible, true);
 assert.equal(migrated.room.package_medicine_blister.visible, true);
 assert.equal(migrated.room.package_numeric_note.visible, true);
+
+const legacyCapabilityState = structuredClone(initial);
+legacyCapabilityState.world = createInitialWorldState();
+legacyCapabilityState.world.characters.player.capabilities = legacyCapabilityState.world.characters.player.capabilities
+  .filter((capability) => capability !== 'act');
+const migratedCapabilities = coerceGameState(legacyCapabilityState);
+assert(
+  migratedCapabilities.world?.characters.player.capabilities.includes('act'),
+  'existing saves must receive the generic AI-adjudicated action capability',
+);
 
 console.log('gameSessionStore.test.ts passed');

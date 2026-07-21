@@ -71,6 +71,13 @@ export function coerceGameState(rawState: unknown): GameState {
     endingReason: raw.endingReason ?? fallback.endingReason,
   };
 
+  if (state.world?.characters.player) {
+    state.world = structuredClone(state.world);
+    state.world.characters.player.capabilities = [
+      ...new Set([...state.world.characters.player.capabilities, 'act']),
+    ];
+  }
+
   return state;
 }
 

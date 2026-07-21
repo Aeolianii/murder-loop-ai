@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
+import type { ProposedEvent, TurnBrief } from '@murder-loop-ai/ai-contracts';
 import { DEADLINE_MINUTE } from '@murder-loop-ai/shared';
 import { InMemoryAtomicTurnStore } from '../commit/atomicTurnCommit';
 import { createInitialGameState } from '../state/createInitialState';
@@ -274,6 +274,112 @@ const ordinaryWait = prepareLowRiskTurn({
   brief: brief([action('wait-player', 'wait', ['player'])]),
 });
 assert.equal(ordinaryWait.status, 'prepared');
+
+function aiActionOutcome(
+  actionId: string,
+  status: ProposedEvent['status'],
+  summary: string,
+): ProposedEvent {
+  return {
+    id: `event.ai-action.${actionId}`,
+    kind: 'action',
+    sourceActionIds: [actionId],
+    actorId: 'player',
+    operation: 'act',
+    targetIds: ['phone'],
+    status,
+    summary,
+    assertions: [{
+      id: `assertion.ai-action.${actionId}`,
+      subject: 'player',
+      predicate: status === 'completed' ? 'action_completed' : 'action_unavailable',
+      value: true,
+      visibleTo: ['player'],
+    }],
+    visibility: ['player'],
+    riskClass: 'reversible',
+    evidenceRefs: ['fact.player.phone_functional'],
+    causalParentIds: [],
+  };
+}
+
+const browseAction = action('browse-social-feed', 'act', ['phone'], { scope: 'social.feed' });
+browseAction.originalSpan = { start: 0, end: 10, text: '打开手机浏览社区动态' };
+const aiApprovedOpenAction = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: brief([browseAction]),
+  aiPlayerOutcomes: [aiActionOutcome(
+    browseAction.actionId,
+    'completed',
+    '你打开手机浏览了一会社区动态，几分钟过去了，没有看到与门外动静直接相关的新消息。',
+  )],
+});
+assert.equal(aiApprovedOpenAction.status, 'prepared');
+if (aiApprovedOpenAction.status !== 'prepared') throw new Error('expected AI-approved open action');
+assert.equal(aiApprovedOpenAction.plan.actions[0]?.intent, 'act');
+assert.match(aiApprovedOpenAction.playerResult.text, /浏览.*社区动态/);
+assert(aiApprovedOpenAction.playerResult.domainEvents.some((event) => (
+  event.eventType === 'player_action_completed'
+  && event.subject === 'phone'
+)));
+
+const aiRejectedOpenAction = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: brief([browseAction]),
+  aiPlayerOutcomes: [aiActionOutcome(
+    browseAction.actionId,
+    'failed',
+    '你无法完成这个动作，因为当前场景中没有可用的网络连接。',
+  )],
+});
+assert.equal(aiRejectedOpenAction.status, 'prepared');
+if (aiRejectedOpenAction.status !== 'prepared') throw new Error('expected AI-rejected open action result');
+assert.match(aiRejectedOpenAction.playerResult.text, /无法.*因为/);
+assert.equal(aiRejectedOpenAction.eventCandidates[0]?.event.status, 'failed');
+
+const powerlessPhoneState = createInitialGameState();
+powerlessPhoneState.phoneBattery = 0;
+powerlessPhoneState.phoneFunctional = false;
+powerlessPhoneState.room.phone.state.battery = 0;
+const ruleCorrectedOpenAction = prepareLowRiskTurn({
+  state: powerlessPhoneState,
+  brief: brief([browseAction]),
+  aiPlayerOutcomes: [aiActionOutcome(
+    browseAction.actionId,
+    'completed',
+    '你成功打开手机并浏览了社区动态。',
+  )],
+});
+assert.equal(ruleCorrectedOpenAction.status, 'prepared');
+if (ruleCorrectedOpenAction.status !== 'prepared') throw new Error('expected resource-corrected open action');
+assert.match(ruleCorrectedOpenAction.playerResult.text, /手机.*没电|手机.*无法使用/);
+assert.doesNotMatch(ruleCorrectedOpenAction.playerResult.text, /成功打开/);
+assert.equal(ruleCorrectedOpenAction.eventCandidates[0]?.event.status, 'failed');
+
+const poweredPhoneState = createInitialGameState();
+poweredPhoneState.phoneFunctional = false;
+const aiOwnsNonPowerFeasibility = prepareLowRiskTurn({
+  state: poweredPhoneState,
+  brief: brief([browseAction]),
+  aiPlayerOutcomes: [aiActionOutcome(
+    browseAction.actionId,
+    'completed',
+    '你打开手机浏览了一会儿社区动态，没有发现新的异常。',
+  )],
+});
+assert.equal(aiOwnsNonPowerFeasibility.status, 'prepared');
+if (aiOwnsNonPowerFeasibility.status !== 'prepared') throw new Error('expected AI-owned feasibility result');
+assert.equal(aiOwnsNonPowerFeasibility.eventCandidates[0]?.event.status, 'completed');
+assert.match(aiOwnsNonPowerFeasibility.playerResult.text, /浏览.*社区动态/);
+
+const missingAiOpenAction = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: brief([browseAction]),
+});
+assert.equal(missingAiOpenAction.status, 'not_eligible');
+if (missingAiOpenAction.status === 'not_eligible') {
+  assert.equal(missingAiOpenAction.reason, 'ai_outcome_required');
+}
 
 const depletedBatteryState = structuredClone(state);
 depletedBatteryState.phoneBattery = 1;

@@ -95,7 +95,7 @@ assert(calls[0].system.includes('Use [] for every array field that has no ground
 assert(calls[0].system.includes('Do not add keys that are not shown in the contract.'));
 assert(
   calls[0].system.includes(
-    'Canonical executable operation IDs: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait.',
+    'Canonical executable operation IDs: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait, act.',
   ),
   'Semantic Compiler prompt must align operation IDs with the generic local reducer vocabulary.',
 );
@@ -128,6 +128,12 @@ assert(
     'scope, method, and desiredOutcome are optional; when absent, omit the key entirely and never output null.',
   ),
   'Semantic Compiler prompt must distinguish omitted optional fields from null values.',
+);
+assert(
+  calls[0].system.includes(
+    'For any other ordinary, nonviolent, reversible player behavior, use operation="act"',
+  ),
+  'Semantic Compiler must route open-ended harmless behavior through one generic operation.',
 );
 assert(
   calls[0].system.includes(
@@ -313,6 +319,18 @@ assert.deepEqual(
     'recommendation-specialist',
   ],
 );
+
+const player = adapters.specialists.find((registration) => registration.id === 'player-specialist');
+await player?.generate({ facts: [], conditionalSignals: [], turnBrief: brief }, {
+  envelope: request,
+  signal: controller.signal,
+});
+assert.equal(calls.at(-1)?.role, 'player_specialist');
+assert(calls.at(-1)?.system.includes('For operation="act", first judge feasibility'));
+assert(calls.at(-1)?.system.includes('status="completed"'));
+assert(calls.at(-1)?.system.includes('status="blocked"/"failed"'));
+assert(calls.at(-1)?.system.includes('Simplified Chinese'));
+assert(calls.at(-1)?.system.includes('what cannot be done and why'));
 
 const killer = adapters.specialists.find((registration) => registration.id === 'killer-specialist');
 await killer?.generate({ facts: [], conditionalSignals: [] }, {
