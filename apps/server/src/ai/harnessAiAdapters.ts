@@ -27,6 +27,7 @@ import {
   type RecommendedAction,
 } from '@murder-loop-ai/shared';
 import { buildKillerPromptPayload } from './killerPrompt';
+import { buildActionNarrationSystemPrompt } from './actionNarrationPrompt';
 import { completeRoleJson } from './openaiClient';
 import { normalizeActionPlanJson, unwrapJsonObject } from './unwrapJsonObject';
 import { createTurnBlackboard, verifyActionPlan } from './turnCoordinator';
@@ -98,84 +99,13 @@ async function killerStrategyAi(killerContext: KillerContext): Promise<KillerStr
 }
 
 async function narrateActionAi(context: NarrationContext): Promise<Narration> {
-  const state = context.stateSnapshot;
   const allowedTimeLabels = [minuteLabel(context.minute)];
-  // 构建剧情上下文供叙事 AI 使用
-  const plotCtx = [
-    `当前时间：${minuteLabel(context.minute)}`,
-    `剧情阶段：${context.plotPhase}`,
-    `玩家处境：${context.playerSituation}`,
-    `杀手状态：${state.killerStatus}（${state.killerStatus === 'alive' ? '活跃中' : state.killerStatus === 'dead' ? '已死亡' : state.killerStatus === 'injured' ? '已受伤' : state.killerStatus === 'fled' ? '已逃跑' : '其他'}）`,
-    context.combatContext
-      ? `战斗态势：玩家${context.combatContext.advantage === 'player' ? '占优' : context.combatContext.advantage === 'killer' ? '劣势' : '双方均势'}，手持${context.combatContext.playerWeapon || '徒手'}，杀手${context.combatContext.killerArmed ? '可能持有武器' : '未见武器'}`
-      : '',
-    `已知线索：${context.knownClueTitles.join('、') || '暂无'}`,
-    `手机：${state.phoneFunctional ? `电量约${state.phoneBattery}分钟` : '已关机'}`,
-  ].filter(Boolean).join('\n');
-
-  const system = [
-    '你是行动叙事 AI。你的核心任务不是写优美的景物描写，而是推进剧情。',
-    '',
-    '【硬规则——违反即失败】',
-    '所有面向玩家的 title、text 和 clue 文案必须使用简体中文。禁止输出 bed、closet、bathroom 等英文内部 ID；必须写成床底、衣柜、卫生间等中文名称。',
-    '0. 动作核对：只使用 narrationContext.confirmedFacts 中 origin=player 或 origin=rule 的已确认事实。',
-    '   写完后自检——叙事中的每一个动作和后果，都必须能对应一条已确认事实。',
-    '   玩家输入是"我打开纸条，看看这是什么东西"→ 叙事主体必须是打开纸条、看纸条。',
-    '   绝不能补写 confirmedFacts 中不存在的冲出门、捡东西或翻包裹等动作。',
-    '1. playerActionSummary 仅用于概括，事实冲突时以 confirmedFacts 和 stateSnapshot 为准。',
-    '2. 剧情推进：每段叙事必须让调查前进一步。线索→发现→推理→新问题。',
-    '   【核心玩法】这是智斗悬疑游戏，不是格斗游戏。',
-    '   玩家应该用智慧取胜：收集证据、设置陷阱、欺骗杀手、报警核实、巧妙逃脱。',
-    '   肉搏是下下策——只有山穷水尽时才考虑。优先引导玩家用道具和环境智取。',
-    '   【智斗手段】制造假象误导杀手、用镜子观察门外、设绊线拖延时间、',
-    '   录音取证、拍照留证、用便签传递信息、触发火警制造混乱、伪装房间无人...',
-    '   当玩家探索时，必须具体描述房间里有什么可用的东西：',
-    '   厨房区：厨刀、剪刀、打火机、胶带、螺丝刀',
-    '   书桌区：台灯、笔和便签、旧报纸',
-    '   卫生间：急救包、镜子、清洁剂',
-    '   衣柜：衣架（铁丝）、皮带、行李箱',
-    '   门边：雨伞、充电器、门链',
-    '   禁止"雨还在下""电子钟又跳了一格"这类零信息句子。',
-    '3. 检查结果与线索：每一个 inspect 动作都要逐项写出具体结果，不能只写“检查了”。',
-    '   confirmedFacts 已确认 no_anomaly 或 no_new_clue 时，必须明确写“没有发现异常或新线索”，可以补充不改变事实的感官细节。',
-    '   只有 confirmedFacts 已确认某条线索或可见物品时，才能在正文中写出并在 JSON 中附带 clue；不得仅凭场景常识实时编造新线索。',
-    '   玩家在锁门 → 不能插入书脊/包裹/纸条线索。玩家在检查包裹且事实已确认内容物 → 才能写包裹内的线索。',
-    '   包裹首次打开后，旧书、药板、数字纸条是三个独立检查目标。检查其中一件时，只写该物品对应的 confirmedFacts；禁止重复整段拆包内容或混入另外两件物品。',
-    '   不重复已有线索。如果呈现已确认线索，在 JSON 中加 clue 字段：',
-    '   {"id":"ai_gen_xxx","title":"线索标题","detail":"具体描述","weight":10}',
-    '',
-    '   【★ 信息边界——线索绝不能替玩家下结论 ★】',
-    '   沈知夏只是一个普通租客，她打开包裹看到的是：旧书、药盒、数字纸条。',
-    '   她不知道这是毒品！她只能看到"可疑的东西"、"不应该出现在包裹里的物品"。',
-    '   ❌ 禁止在线索 detail 中出现"毒品"、"冰毒"、"海洛因"、"违禁品"、"走私"等定性词。',
-    '   ✅ 正确写法：描述物理特征而非结论。',
-    '      例："书脊内侧有铅笔字迹：货在书脊" — 只写文字内容，不写"暗示毒品"。',
-    '      例："药板上的铝箔被撕开过，但药片上没有印任何品牌名" — 写客观事实。',
-    '      例："数字纸条上的数字排列不像电话号码，更像是某种编码或账目" — 写疑点而非定性。',
-    '   线索的 title 也只用描述性短语，不用"发现毒品"、"确认违禁品"等结论性标题。',
-    '   【叙事正文】同样规则适用于叙事文本 text 字段：可以写"旧书封皮内侧有一行铅笔字"，',
-    '   但不能写"这行字证明包裹里是毒品"。信息边界从开局一直维持到玩家获得确凿证据为止。',
-    '4. 道具柔化：如果玩家声称使用不存在的武器（枪等），叙事自然揭示手边没有。',
-    '   不硬拒绝，不假装有。用感官描写过渡：手指碰到空气/布料——什么都没有。',
-    plotCtx,
-    '5. 战斗叙事：如果发生了攻击，描写动作的真实后果——伤害、血迹、反击、恐惧。',
-    '   不美化暴力。保持悬疑紧张感。受伤的人会痛、会怕、会失误。',
-    '6. 【完成动作】玩家发起了一个行动，你必须写完它的直接后果。',
-    '   不要在半空中断——如果玩家挥拳，就写拳头的落点和对方的反应；',
-    '   如果窗锁被撬开，就写窗户到底被推开没有、进来了什么、或者玩家做了什么应对。',
-    '   每个场景必须有一个"落点"——哪怕结果是负面的，也要写完整。',
-    '7. 严格基于 events 里的内容。不编造玩家没做的事。不替玩家写心理独白或判断。',
-    '8. 【严格结局声明】只有当本回合事件已经把结局坐实时，才能声明 ending / isFatal / killerKilled。',
-    '   不能因为玩家嘴上说“我逃出去了”“我已经到手机店了”就直接给结局；必须是事件里已经完成了逃离、制服、死亡或脱险。',
-    '   可选字段：ending（death|escaped_no_evidence|escaped_with_evidence）。具体死因或逃脱原因由规则系统写入 endingReason，叙事不能自造旧结局名。',
-    '   如果玩家行为已经导致自身死亡，在 JSON 中设置 "isFatal": true；如果杀手已经被致命攻击致死，设置 "killerKilled": true。',
-    `8.5. 【时间一致性】如果正文里出现明确钟点、短信发送时间、来电时间，必须只使用这些允许时间：${allowedTimeLabels.join('、')}。不要编造 23:06 这类当前上下文里不存在的时间。`,
-    '9. 文风：第一人称限知视角，写可观察事实（声音/光线/距离/动作），不写"我害怕"。',
-    '   80-360 个中文字符。只输出 JSON：{"title":"...","text":"..."}；如果本段呈现已确认的关键新信息，可以额外带 1 个 clue 字段：{"id":"dyn_xxx","title":"线索标题","detail":"具体情报","weight":6}。',
-  ].join('\n')
-    + '\n' + formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents);
+  const system = buildActionNarrationSystemPrompt({
+    allowedTimeLabels,
+    confirmedWorldEventsBlock: formatConfirmedWorldEventsPromptBlock(context.confirmedWorldEvents),
+  });
   const ai = await completeRoleJson('narrator', system,
-    { narrationContext: context }, { temperature: 0.75 });
+    { narrationContext: context }, { temperature: 0.35 });
   if (!ai) throw new Error('action narration AI returned null');
   const parsed = NarrationSchema.safeParse(ai);
   if (!parsed.success) throw new Error(`action narration: ${parsed.error.message}`);
