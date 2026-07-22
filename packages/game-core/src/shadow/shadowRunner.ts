@@ -99,11 +99,28 @@ export interface RunShadowCandidateWaveInput {
   state: GameState;
   rawInput: string;
   envelope: TurnEnvelope;
+  precompiledBrief?: TurnBrief;
+  signal?: AbortSignal;
   adapters: ShadowRunAdapters;
   npcIds: string[];
   canonicalConstraints: string[];
   compilerTimeoutMs?: number;
   mainFactAuthorizationMode?: ShadowFactAuthorizationMode;
+}
+
+export interface CompileShadowTurnBriefInput {
+  state: GameState;
+  rawInput: string;
+  envelope: TurnEnvelope;
+  semanticCompiler: SemanticCompiler;
+  npcIds: string[];
+  compilerTimeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface ShadowSemanticCompilation {
+  record: ShadowSemanticRecord;
+  brief?: TurnBrief;
 }
 
 export interface SemanticDifference {
@@ -167,13 +184,14 @@ export async function runShadowCandidateWave(
     rawInput: input.rawInput,
     playerContext: buildCompactPlayerContext(input.state, knowledge),
   };
-  const compiler = await runCompiler(
+  const prefetched = input.precompiledBrief
+    ? validatePrecompiledBrief(input.precompiledBrief, input.envelope, compilerRequest)
+    : undefined;
+  const compiler = prefetched ?? await runCompiler(
     input.adapters.semanticCompiler,
     compilerRequest,
-    Math.min(
-      input.compilerTimeoutMs ?? 1_000,
-      Math.max(0, Date.parse(input.envelope.deadlineAt) - Date.now()),
-    ),
+    compilerTimeout(input.compilerTimeoutMs, input.envelope),
+    input.signal,
   );
 
   if (!compiler.brief && compiler.record.status === 'clarification_required') {
@@ -200,6 +218,9 @@ export async function runShadowCandidateWave(
     conditionalSignals: compilerFallback ? [] : buildConditionalSignals(turnBrief),
   });
   const controller = new AbortController();
+  const cancelFromCaller = () => controller.abort(input.signal?.reason ?? 'shadow_cancelled');
+  if (input.signal?.aborted) cancelFromCaller();
+  else input.signal?.addEventListener('abort', cancelFromCaller, { once: true });
   const deadlineMs = Date.parse(input.envelope.deadlineAt);
   const remainingMs = Math.max(0, deadlineMs - Date.now());
   const deadlineTimer = setTimeout(() => controller.abort('shadow_hard_deadline'), remainingMs);
@@ -235,6 +256,7 @@ export async function runShadowCandidateWave(
 
   const [mainResult, ...specialistResults] = await Promise.all([mainCall, ...specialistCalls]);
   clearTimeout(deadlineTimer);
+  input.signal?.removeEventListener('abort', cancelFromCaller);
   const completedAt = new Date();
   const mainProposals = mainResult.proposals;
   const specialistCandidates = specialistResults.flatMap((result) => result.candidates);
@@ -278,6 +300,28 @@ export async function runShadowCandidateWave(
     arbitration,
     completedAt,
   };
+}
+
+export async function compileShadowTurnBrief(
+  input: CompileShadowTurnBriefInput,
+): Promise<ShadowSemanticCompilation> {
+  const ledger = buildFactLedgerFromGameState(input.state, {
+    loopId: input.envelope.loopId,
+    turnId: input.envelope.turnId,
+    stateVersion: input.envelope.inputStateVersion,
+  });
+  const knowledge = buildKnowledgeProjections(ledger, input.npcIds);
+  const request: SemanticCompilerRequest = {
+    ...input.envelope,
+    rawInput: input.rawInput,
+    playerContext: buildCompactPlayerContext(input.state, knowledge),
+  };
+  return runCompiler(
+    input.semanticCompiler,
+    request,
+    compilerTimeout(input.compilerTimeoutMs, input.envelope),
+    input.signal,
+  );
 }
 
 export function finalizeShadowRun(input: FinalizeShadowRunInput): ShadowRunReport {
@@ -460,8 +504,18 @@ async function runCompiler(
   compiler: SemanticCompiler,
   request: SemanticCompilerRequest,
   timeoutMs: number,
-): Promise<{ record: ShadowSemanticRecord; brief?: TurnBrief }> {
+  externalSignal?: AbortSignal,
+): Promise<ShadowSemanticCompilation> {
   const startedAt = Date.now();
+  if (externalSignal?.aborted) {
+    return {
+      record: {
+        status: 'failed',
+        durationMs: 0,
+        issues: ['semantic_compiler_cancelled'],
+      },
+    };
+  }
   const controller = new AbortController();
   const timeout = Math.max(0, timeoutMs);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -471,16 +525,29 @@ async function runCompiler(
       resolve({ kind: 'timeout' });
     }, timeout);
   });
+  let resolveCancelled!: (value: { kind: 'cancelled' }) => void;
+  const cancelled = new Promise<{ kind: 'cancelled' }>((resolve) => {
+    resolveCancelled = resolve;
+  });
+  const cancelFromCaller = () => {
+    controller.abort(externalSignal?.reason ?? 'semantic_compiler_cancelled');
+    resolveCancelled({ kind: 'cancelled' });
+  };
+  externalSignal?.addEventListener('abort', cancelFromCaller, { once: true });
   const execution = Promise.resolve()
     .then(() => compiler.compile(request, { signal: controller.signal }))
     .then((value) => ({ kind: 'value' as const, value }))
     .catch((error: unknown) => ({ kind: 'error' as const, error }));
-  const outcome = await Promise.race([execution, timedOut]);
+  const outcome = await Promise.race([execution, timedOut, cancelled]);
   if (timer) clearTimeout(timer);
+  externalSignal?.removeEventListener('abort', cancelFromCaller);
   const durationMs = Date.now() - startedAt;
 
   if (outcome.kind === 'timeout') {
     return { record: { status: 'timed_out', durationMs, issues: ['semantic_compiler_timeout'] } };
+  }
+  if (outcome.kind === 'cancelled') {
+    return { record: { status: 'failed', durationMs, issues: ['semantic_compiler_cancelled'] } };
   }
   if (outcome.kind === 'error') {
     return {
@@ -523,6 +590,31 @@ async function runCompiler(
     record: { status: 'compiled', durationMs, issues: [] },
     brief: validation.brief,
   };
+}
+
+function validatePrecompiledBrief(
+  brief: TurnBrief,
+  envelope: TurnEnvelope,
+  request: SemanticCompilerRequest,
+): ShadowSemanticCompilation | undefined {
+  const rebound = { ...brief, ...envelope };
+  const validation = validateTurnBrief(rebound, request);
+  if (!validation.valid || !validation.brief) return undefined;
+  return {
+    record: {
+      status: 'compiled',
+      durationMs: 0,
+      issues: ['semantic_prefetch_hit'],
+    },
+    brief: validation.brief,
+  };
+}
+
+function compilerTimeout(timeoutMs: number | undefined, envelope: TurnEnvelope): number {
+  return Math.min(
+    timeoutMs ?? 1_000,
+    Math.max(0, Date.parse(envelope.deadlineAt) - Date.now()),
+  );
 }
 
 async function runCandidateCall(input: {

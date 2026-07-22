@@ -11,6 +11,7 @@ import {
 import type { ActionPlan } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
 import {
+  compileShadowTurnBrief,
   finalizeShadowRun,
   runShadowCandidateWave,
   type ShadowCandidateAdapter,
@@ -258,6 +259,81 @@ function registrations(
   assert.equal(report.replay.semantic.status, 'compiled');
   assert.equal(report.replay.callRecords.length, 8);
   assert.equal(typeof report.replay.completedAt, 'string');
+}
+
+{
+  const prefetchedEnvelope = envelope(new Date(Date.now() + 1_000).toISOString());
+  const formalEnvelope: TurnEnvelope = {
+    ...prefetchedEnvelope,
+    turnId: 'shadow-turn-prefetch-hit',
+    deadlineAt: new Date(Date.now() + 2_000).toISOString(),
+  };
+  let compilerCalls = 0;
+  let observedBrief: TurnBrief | undefined;
+  const specialists = registrations(async (id, domain) => (
+    [specialistCandidate(formalEnvelope, id, domain)]
+  ));
+
+  const wave = await runShadowCandidateWave({
+    state: createInitialGameState(),
+    rawInput: '等待',
+    envelope: formalEnvelope,
+    precompiledBrief: brief(prefetchedEnvelope),
+    adapters: {
+      semanticCompiler: {
+        async compile() {
+          compilerCalls += 1;
+          throw new Error('a validated prefetched brief must skip semantic compilation');
+        },
+      },
+      mainWorldModel: async (projection) => {
+        observedBrief = (projection as { turnBrief?: TurnBrief }).turnBrief;
+        return [proposal(formalEnvelope, 'main-world-model', 'player')];
+      },
+      specialists,
+    },
+    npcIds: ['lin_yue', 'police_dispatch'],
+    canonicalConstraints: [],
+    compilerTimeoutMs: 20,
+  });
+
+  assert.equal(compilerCalls, 0, 'a semantic prefetch hit must remove the compiler from the formal critical path');
+  assert.equal(wave.semantic.status, 'compiled');
+  assert.ok(wave.semantic.issues.includes('semantic_prefetch_hit'));
+  assert.equal(wave.turnBrief?.turnId, formalEnvelope.turnId);
+  assert.equal(wave.turnBrief?.deadlineAt, formalEnvelope.deadlineAt);
+  assert.equal(observedBrief?.turnId, formalEnvelope.turnId);
+}
+
+{
+  const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
+  const controller = new AbortController();
+  let observedAbort = false;
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  const pending = new Promise<never>(() => undefined);
+  const compilation = compileShadowTurnBrief({
+    state: createInitialGameState(),
+    rawInput: '等待',
+    envelope: turnEnvelope,
+    semanticCompiler: {
+      async compile(_request, context) {
+        context?.signal.addEventListener('abort', () => { observedAbort = true; }, { once: true });
+        markStarted();
+        return pending;
+      },
+    },
+    npcIds: ['lin_yue', 'police_dispatch'],
+    compilerTimeoutMs: 1_000,
+    signal: controller.signal,
+  });
+
+  await started;
+  controller.abort('natural_language_submitted');
+  const result = await compilation;
+  assert.equal(result.brief, undefined);
+  assert.ok(result.record.issues.includes('semantic_compiler_cancelled'));
+  assert.equal(observedAbort, true, 'cancelling semantic prefetch must reach the compiler adapter');
 }
 
 {
