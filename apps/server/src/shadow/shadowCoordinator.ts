@@ -46,7 +46,7 @@ export interface ShadowRunCoordinator {
     inputStateVersion?: number;
     precompiledBrief?: TurnBrief;
   }): ShadowRunSession;
-  complete(session: ShadowRunSession, resolution: TurnResolution): Promise<void>;
+  complete(session: ShadowRunSession, resolution?: TurnResolution): Promise<void>;
 }
 
 export interface ShadowRunCoordinatorOptions {
@@ -120,6 +120,18 @@ export function createShadowRunCoordinator(
     async complete(session, resolution) {
       try {
         const wave = await session.wave;
+        if (wave.status === 'non_action') {
+          if (!wave.turnBrief) {
+            throw new Error('A non-action shadow wave requires its compiled TurnBrief.');
+          }
+          store.complete(session.envelope.turnId, {
+            kind: 'non_action',
+            envelope: session.envelope,
+            semantic: wave.semantic,
+            turnBrief: wave.turnBrief,
+          });
+          return;
+        }
         if (wave.status === 'compiler_unavailable') {
           store.complete(session.envelope.turnId, {
             kind: 'compiler_unavailable',
@@ -127,6 +139,9 @@ export function createShadowRunCoordinator(
             semantic: wave.semantic,
           });
           return;
+        }
+        if (!resolution) {
+          throw new Error('A completed shadow wave requires a formal turn resolution.');
         }
         const report = finalize({
           wave,

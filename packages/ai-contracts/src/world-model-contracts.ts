@@ -120,7 +120,7 @@ export const TurnAmbiguitySchema = z.object({
 export const TurnBriefSchema = TurnEnvelopeSchema.extend({
   compilerVersion: IdSchema,
   schemaVersion: IdSchema,
-  utteranceMode: z.enum(['command', 'question', 'hypothetical', 'mixed', 'clarification_required']),
+  utteranceMode: z.enum(['command', 'question', 'hypothetical', 'mixed', 'clarification_required', 'non_action']),
   resolvedReferences: z.array(ResolvedReferenceSchema),
   orderedActions: z.array(OrderedActionSchema),
   globalConstraints: z.array(IntentConstraintSchema),

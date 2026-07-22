@@ -1,4 +1,4 @@
-import type { TurnEnvelope } from '@murder-loop-ai/ai-contracts';
+import type { TurnBrief, TurnEnvelope } from '@murder-loop-ai/ai-contracts';
 import type { ShadowRunReport, ShadowSemanticRecord } from '@murder-loop-ai/game-core';
 
 export type ShadowStoredPayload =
@@ -7,6 +7,12 @@ export type ShadowStoredPayload =
       kind: 'compiler_unavailable';
       envelope: TurnEnvelope;
       semantic: ShadowSemanticRecord;
+    }
+  | {
+      kind: 'non_action';
+      envelope: TurnEnvelope;
+      semantic: ShadowSemanticRecord;
+      turnBrief: TurnBrief;
     };
 
 export interface ShadowReportRecord {

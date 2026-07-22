@@ -91,6 +91,23 @@ const brief: TurnBrief = {
   assert(result.issues.some((issue) => issue.includes('loopId')));
 }
 
+{
+  const nonAction: TurnBrief = {
+    ...brief,
+    utteranceMode: 'non_action',
+    resolvedReferences: [],
+    orderedActions: [],
+    communications: [],
+    candidateHandles: [],
+  };
+  assert.equal(validateTurnBrief(nonAction, nonAction).valid, true);
+
+  const invalid = { ...nonAction, orderedActions: brief.orderedActions };
+  const result = validateTurnBrief(invalid, invalid);
+  assert.equal(result.valid, false);
+  assert(result.issues.some((issue) => issue.includes('non_action')));
+}
+
 const targetContext = {
   facts: [],
   accessibleEntityIds: ['player', 'front_door', 'chair'],

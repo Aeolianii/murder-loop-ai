@@ -731,6 +731,23 @@ if (clarification.status === 'bypassed') {
   assert.equal(clarification.fallbackMode, 'clarification_required');
 }
 
+const nonActionBrief: TurnBrief = {
+  ...brief(),
+  utteranceMode: 'non_action',
+  orderedActions: [],
+};
+const nonActionWave = wave(nonActionBrief);
+nonActionWave.status = 'non_action';
+nonActionWave.mainProposals = [];
+nonActionWave.specialistCandidates = [];
+nonActionWave.callRecords = [];
+nonActionWave.arbitration = undefined;
+const nonAction = await service.prepare(session(nonActionWave), state);
+assert.equal(nonAction.status, 'non_action');
+if (nonAction.status === 'non_action') {
+  assert.equal(nonAction.brief.utteranceMode, 'non_action');
+}
+
 const phaseSixService = createLowRiskTakeoverService({ legacyMainPathExitEnabled: true });
 assert.equal(phaseSixService.legacyMainPathExitEnabled, true);
 assert.equal(phaseSixService.highRiskTakeoverEnabled, true);

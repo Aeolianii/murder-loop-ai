@@ -84,7 +84,7 @@ export interface ShadowSemanticRecord {
 }
 
 export interface ShadowCandidateWave {
-  status: 'completed' | 'compiler_unavailable';
+  status: 'completed' | 'compiler_unavailable' | 'non_action';
   envelope: TurnEnvelope;
   semantic: ShadowSemanticRecord;
   turnBrief?: TurnBrief;
@@ -199,6 +199,19 @@ export async function runShadowCandidateWave(
       status: 'compiler_unavailable',
       envelope: input.envelope,
       semantic: compiler.record,
+      mainProposals: [],
+      specialistCandidates: [],
+      callRecords: [],
+      completedAt: new Date(),
+    };
+  }
+
+  if (compiler.brief?.utteranceMode === 'non_action') {
+    return {
+      status: 'non_action',
+      envelope: input.envelope,
+      semantic: compiler.record,
+      turnBrief: compiler.brief,
       mainProposals: [],
       specialistCandidates: [],
       callRecords: [],

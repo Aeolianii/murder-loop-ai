@@ -931,6 +931,93 @@ async function testRecommendationClickReusesPrefetchedBrief() {
   await app.close();
 }
 
+async function testMeaninglessInputReturnsSuccessfulNonActionTurn() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, false, true);
+  const nonActionBrief: TurnBrief = {
+    ...takeoverBrief(),
+    utteranceMode: 'non_action',
+    orderedActions: [],
+  };
+  let shadowStartInput: Parameters<ShadowRunCoordinator['start']>[0] | undefined;
+  let commitCalls = 0;
+  let completeCalls = 0;
+  const scheduled: SemanticPrefetchScheduleInput[] = [];
+  const shadowCoordinator: ShadowRunCoordinator = {
+    start: (input) => {
+      shadowStartInput = input;
+      return {
+        envelope: nonActionBrief,
+        wave: Promise.resolve({
+          status: 'non_action',
+          envelope: nonActionBrief,
+          semantic: { status: 'compiled', durationMs: 12, issues: [] },
+          turnBrief: nonActionBrief,
+          mainProposals: [],
+          specialistCandidates: [],
+          callRecords: [],
+          completedAt: new Date(),
+        }),
+      };
+    },
+    complete: async () => { completeCalls += 1; },
+  };
+  const lowRiskTakeoverService: LowRiskTakeoverService = {
+    ...fixture.lowRiskTakeoverService,
+    legacyMainPathExitEnabled: false,
+    prepare: async () => ({ status: 'non_action', brief: nonActionBrief }),
+    commit: async (...args) => {
+      commitCalls += 1;
+      return fixture.lowRiskTakeoverService.commit(...args);
+    },
+  };
+  const semanticPrefetchService: SemanticPrefetchService = {
+    schedule: (input) => { scheduled.push(input); },
+    claim: async () => ({ status: 'miss' }),
+    cancelSession: () => 0,
+    pendingCount: () => 0,
+    metrics: emptyPrefetchMetrics,
+  };
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator,
+    lowRiskTakeoverService,
+    semanticPrefetchService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'sdsad',
+      state: baseState,
+      gameSessionId: 'session-non-action',
+      inputStateVersion: 0,
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(shadowStartInput?.rawInput, 'sdsad', 'meaningless input must still reach the Semantic Compiler path');
+  assert.equal(body.inputStateVersion, 0);
+  assert.equal(body.outputStateVersion, 0);
+  assert.equal(body.coreState.minute, baseState.minute);
+  assert.equal(body.storyLog[0].type, 'action_result');
+  assert.equal(body.storyLog[0].content, '用户没有进行任何行动。');
+  assert.ok(body.storyLog[0].recommendedActions.length >= 1);
+  assert.ok(body.storyLog[0].recommendedActions.length <= 3);
+  assert.equal(body.coordination.semanticInput.status, 'non_action');
+  assert.equal(commitCalls, 0, 'non_action must not enter the formal commit path');
+  assert.equal(completeCalls, 1, 'non_action must close its Shadow observation without formal finalization');
+  assert.equal(fixture.calls().parserCalls, 0);
+  assert.equal(fixture.calls().killerStrategyCalls, 0);
+  assert.equal(fixture.calls().actionNarrationCalls, 0);
+  assert.equal(fixture.calls().ambientNarrationCalls, 0);
+  assert.equal(scheduled.length, 1, 'the no-op response recommendations should be prefetched');
+  assert.equal(scheduled[0].stateVersion, 0);
+  await app.close();
+}
+
 async function testLegacyMainPathExitRendersReadOnlyPostCommitNarration() {
   const app = Fastify({ logger: false });
   const fixture = takeoverFixture('committed', false, false, true, true);
@@ -2201,6 +2288,7 @@ await testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarration();
 await testLegacyMainPathExitPublishesAcceptedRecommendations();
 await testCommittedTurnSchedulesDisplayedRecommendationSemantics();
 await testRecommendationClickReusesPrefetchedBrief();
+await testMeaninglessInputReturnsSuccessfulNonActionTurn();
 await testLegacyMainPathExitRendersReadOnlyPostCommitNarration();
 await testLegacyMainPathExitRejectsUngroundedActionNarration();
 await testLegacyMainPathExitPublishesConfirmedNpcReply();

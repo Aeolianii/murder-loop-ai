@@ -209,6 +209,42 @@ const unavailableSession = unavailableCoordinator.start({ rawInput: 'wait', stat
 await unavailableCoordinator.complete(unavailableSession, resolution);
 assert.equal(unavailableStore.get('shadow-unavailable')?.payload?.kind, 'compiler_unavailable');
 
+const nonActionStore = new ShadowReportStore(2);
+const nonActionCoordinator = createShadowRunCoordinator({
+  adapters: {
+    semanticCompiler: { compile: async () => { throw new Error('unused test adapter'); } },
+    mainWorldModel: async () => ({ proposals: [] }),
+    specialists: [],
+  },
+  store: nonActionStore,
+  createTurnId: () => 'shadow-non-action',
+  runCandidateWave: async (input) => ({
+    status: 'non_action',
+    envelope: input.envelope,
+    semantic: { status: 'compiled', durationMs: 3, issues: [] },
+    turnBrief: {
+      ...input.envelope,
+      compilerVersion: 'semantic-compiler-v1',
+      schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
+      utteranceMode: 'non_action',
+      resolvedReferences: [],
+      orderedActions: [],
+      globalConstraints: [],
+      scopedConstraints: [],
+      communications: [],
+      candidateHandles: [],
+      ambiguities: [],
+    },
+    mainProposals: [],
+    specialistCandidates: [],
+    callRecords: [],
+    completedAt: new Date(),
+  }),
+});
+const nonActionSession = nonActionCoordinator.start({ rawInput: 'sdsad', state });
+await nonActionCoordinator.complete(nonActionSession);
+assert.equal(nonActionStore.get('shadow-non-action')?.payload?.kind, 'non_action');
+
 let latestFinalizeInput: FinalizeShadowRunInput | undefined;
 let nextId = 0;
 const latestCoordinator = createShadowRunCoordinator({

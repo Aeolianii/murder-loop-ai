@@ -94,6 +94,22 @@ for (const requiredField of [
 assert(calls[0].system.includes('Use [] for every array field that has no grounded items.'));
 assert(calls[0].system.includes('Do not add keys that are not shown in the contract.'));
 assert(
+  calls[0].system.includes('Treat meaningful Chinese and English input as equally executable'),
+  'Semantic Compiler prompt must send meaningful English actions through the same AI path.',
+);
+assert(
+  calls[0].system.includes('Keep rawInput and every originalSpan.text in the exact source language'),
+  'English source spans must remain byte-for-byte aligned with the player input.',
+);
+assert(
+  calls[0].system.includes('utteranceMode="non_action"'),
+  'Semantic Compiler prompt must classify meaningless input explicitly.',
+);
+assert(
+  calls[0].system.includes('Never translate meaningless input into wait or act'),
+  'Meaningless input must not advance the world through a fabricated action.',
+);
+assert(
   calls[0].system.includes(
     'Canonical executable operation IDs: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait, act.',
   ),

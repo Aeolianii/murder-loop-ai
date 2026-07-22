@@ -6,6 +6,7 @@ import type {
   Proposal,
   ProposedEvent,
   SpecialistCandidate,
+  TurnBrief,
 } from '@murder-loop-ai/ai-contracts';
 import {
   InMemoryAtomicTurnStore,
@@ -34,6 +35,9 @@ export type LowRiskTakeoverPrepareResult = {
   status: 'prepared';
   prepared: PreparedLowRiskTurn;
   recommendedActions: RecommendedAction[];
+} | {
+  status: 'non_action';
+  brief: TurnBrief;
 } | {
   status: 'bypassed';
   reason: LowRiskTakeoverBypassReason;
@@ -134,6 +138,9 @@ export function createLowRiskTakeoverService(
       }
       const gate = validateDeterministicTurnBriefGate(session, wave);
       if (gate.status === 'bypassed') return gate;
+      if (gate.brief.utteranceMode === 'non_action') {
+        return { status: 'non_action', brief: gate.brief };
+      }
 
       const aiPlayerOutcomes = arbitrationCanPublishCreativeOutputs(wave)
         ? selectAiPlayerOutcomes(wave)
@@ -569,7 +576,11 @@ function validateDeterministicTurnBriefGate(
   reason: LowRiskTakeoverBypassReason;
   fallbackMode: 'ai_unavailable' | 'clarification_required' | 'formal_rejection';
 } {
-  if (wave.status !== 'completed' || wave.semantic.status !== 'compiled' || !wave.turnBrief) {
+  if (
+    !['completed', 'non_action'].includes(wave.status)
+    || wave.semantic.status !== 'compiled'
+    || !wave.turnBrief
+  ) {
     return {
       status: 'bypassed',
       reason: 'shadow_incomplete',

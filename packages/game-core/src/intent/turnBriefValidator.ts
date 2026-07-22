@@ -65,6 +65,7 @@ export function validateTurnBrief(
   const brief = parsed.data;
   const issues: string[] = [];
   validateEnvelope(brief, expectedEnvelope, issues);
+  validateUtteranceMode(brief, issues);
   validateActionGraph(brief, issues);
   validateCandidateHandles(brief, issues);
   validateReferences(brief, issues);
@@ -72,6 +73,22 @@ export function validateTurnBrief(
   return issues.length > 0
     ? { valid: false, issues }
     : { valid: true, brief, issues: [] };
+}
+
+function validateUtteranceMode(brief: TurnBrief, issues: string[]): void {
+  if (brief.utteranceMode !== 'non_action') return;
+  const populatedFields = [
+    ['resolvedReferences', brief.resolvedReferences],
+    ['orderedActions', brief.orderedActions],
+    ['globalConstraints', brief.globalConstraints],
+    ['scopedConstraints', brief.scopedConstraints],
+    ['communications', brief.communications],
+    ['candidateHandles', brief.candidateHandles],
+    ['ambiguities', brief.ambiguities],
+  ] as const;
+  for (const [field, values] of populatedFields) {
+    if (values.length > 0) issues.push(`non_action TurnBrief must keep ${field} empty.`);
+  }
 }
 
 export function validateTurnBriefTargetContract(

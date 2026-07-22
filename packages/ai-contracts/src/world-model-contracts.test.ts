@@ -226,6 +226,20 @@ describe('AI-first phase-one contracts', () => {
       state: { killerKnowledge: { knowsEverything: true } },
     }).success).toBe(false);
     expect(SemanticCompilerResultSchema.parse({ status: 'compiled', brief }).status).toBe('compiled');
+
+    const nonActionBrief = {
+      ...brief,
+      utteranceMode: 'non_action',
+      resolvedReferences: [],
+      orderedActions: [],
+      globalConstraints: [],
+      scopedConstraints: [],
+      candidateHandles: [],
+    };
+    expect(
+      TurnBriefSchema.safeParse(nonActionBrief).success,
+      'the compiler contract must represent an AI-classified input with no executable action',
+    ).toBe(true);
   });
 
   it('requires proposal provenance, ranking, evidence, risk, and version fields', () => {

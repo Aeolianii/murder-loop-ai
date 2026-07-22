@@ -444,3 +444,42 @@ function registrations(
   );
   assert.ok(wave.turnBrief?.compilerVersion.includes('fallback'));
 }
+
+{
+  const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
+  const compiledBrief: TurnBrief = {
+    ...brief(turnEnvelope),
+    utteranceMode: 'non_action',
+    orderedActions: [],
+  };
+  let downstreamCalls = 0;
+  const wave = await runShadowCandidateWave({
+    state: createInitialGameState(),
+    rawInput: 'sdsad',
+    envelope: turnEnvelope,
+    adapters: {
+      semanticCompiler: {
+        async compile(request) {
+          assert.equal(request.rawInput, 'sdsad');
+          return { status: 'compiled', brief: compiledBrief };
+        },
+      },
+      mainWorldModel: async () => {
+        downstreamCalls += 1;
+        return {};
+      },
+      specialists: registrations(async () => {
+        downstreamCalls += 1;
+        return {};
+      }),
+    },
+    npcIds: ['lin_yue', 'police_dispatch'],
+    canonicalConstraints: [],
+  });
+
+  assert.equal(wave.status, 'non_action');
+  assert.equal(wave.turnBrief?.utteranceMode, 'non_action');
+  assert.equal(wave.callRecords.length, 0);
+  assert.equal(wave.arbitration, undefined);
+  assert.equal(downstreamCalls, 0, 'non_action must skip Main and every Specialist');
+}

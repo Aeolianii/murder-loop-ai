@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
 import {
   activatePlayerKnowledge,
   atomicLoopReset, createHarness, normalizeLoopMemory, prepareDeathLoopReset,
@@ -664,6 +665,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     let highRiskTakeoverCoordination: Record<string, unknown> | undefined;
     let legacyMainPathExitCoordination: Record<string, unknown> | undefined;
     let confirmedTurnNarration: ConfirmedTurnNarration | undefined;
+    let semanticNonActionBrief: TurnBrief | undefined;
     let minimumFallbackReason: string | undefined;
     let phaseSixBlockingFailure: {
       reason: string;
@@ -675,7 +677,28 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         const preparation = await lowRiskTakeoverService.prepare(shadowSession, state, {
           store: openedSession.store,
         });
-        if (preparation.status === 'prepared') {
+        if (preparation.status === 'non_action') {
+          semanticNonActionBrief = preparation.brief;
+          lowRiskTakeoverCoordination = {
+            status: 'non_action',
+            turnId: shadowSession.envelope.turnId,
+            durationMs: lowRiskTakeoverDuration(),
+          };
+          if (highRiskTakeoverActive) {
+            highRiskTakeoverCoordination = {
+              status: 'skipped',
+              reason: 'non_action',
+            };
+          }
+          if (legacyMainPathExitActive) {
+            legacyMainPathExitCoordination = {
+              status: 'non_action',
+              storyNodeAuthority: 'deterministic_non_action',
+              keywordFallbackAuthority: 'disabled',
+              minimumPlayableFallback: 'ai_unavailable_only',
+            };
+          }
+        } else if (preparation.status === 'prepared') {
           const ruleCommitStartedAt = performance.now();
           resolution = legacyMainPathExitActive
             ? buildConfirmedAiFirstResolution({
@@ -931,6 +954,87 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       if (legacyMainPathExitActive) minimumFallbackReason = 'shadow_unavailable';
     } else if (legacyMainPathExitActive) {
       minimumFallbackReason = 'takeover_service_unavailable';
+    }
+
+    if (!resolution && semanticNonActionBrief) {
+      const recommendedActions = buildDisplayedRecommendedActions([], state);
+      if (semanticPrefetchService && recommendedActions.length > 0) {
+        try {
+          semanticPrefetchService.schedule({
+            gameSessionId,
+            loopId: sessionLoopId,
+            stateVersion: sessionStateVersion,
+            state,
+            recommendations: recommendedActions,
+          });
+        } catch (error) {
+          routeWarnings.push(`Semantic prefetch scheduling failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (shadowTimingPromise) await shadowTimingPromise;
+      if (shadowCoordinator && shadowSession) {
+        await shadowCoordinator.complete(shadowSession);
+      }
+      const sidebar = await buildSidebarPayload(createAiHarness(harnessOptions), state);
+      const turnTiming = buildTurnTimingSummary(
+        turnTimingEntries,
+        performance.now() - requestStartedAt,
+      );
+      const storyLog: FrontendStoryNode[] = [{
+        id: `non-action-${shadowSession?.envelope.turnId ?? randomUUID()}`,
+        type: 'action_result',
+        content: '用户没有进行任何行动。',
+        timestamp: minuteLabel(state.minute),
+        recommendedActions,
+      }];
+      return {
+        gameSessionId,
+        inputStateVersion: sessionStateVersion,
+        outputStateVersion: sessionStateVersion,
+        recap,
+        coreState: state,
+        time: minuteLabel(state.minute),
+        location: '青荷公寓 503 室',
+        phase: state.phase,
+        clues: toFrontendClues(state),
+        audioCue: null,
+        ending: state.ending,
+        deathTitle: null,
+        deathSummary: null,
+        deathMethod: null,
+        worldTickTrace: [],
+        storyLog,
+        agentTrace: [],
+        coordination: {
+          warnings: routeWarnings,
+          trace: [],
+          agentTiming: buildAgentTimingSummary([]),
+          turnTiming,
+          judgements: routeJudgements,
+          semanticInput: {
+            status: 'non_action',
+            source: 'semantic_compiler',
+          },
+          ...(shadowSession ? {
+            shadowRun: { turnId: shadowSession.envelope.turnId, status: 'non_action' as const },
+          } : {}),
+          ...(lowRiskTakeoverCoordination ? { lowRiskTakeover: lowRiskTakeoverCoordination } : {}),
+          ...(highRiskTakeoverCoordination ? { highRiskTakeover: highRiskTakeoverCoordination } : {}),
+          ...(legacyMainPathExitCoordination ? {
+            legacyMainPathExit: legacyMainPathExitCoordination,
+          } : {}),
+          ...(semanticPrefetchService ? {
+            semanticPrefetch: {
+              status: cancelledSemanticPrefetchCount > 0 ? 'cancelled' : 'standard',
+              ...(cancelledSemanticPrefetchCount > 0
+                ? { cancelledCount: cancelledSemanticPrefetchCount }
+                : {}),
+              metrics: semanticPrefetchService.metrics(),
+            },
+          } : {}),
+        },
+        sidebar,
+      };
     }
 
     if (!resolution && legacyMainPathExitActive && phaseSixBlockingFailure) {
