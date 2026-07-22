@@ -53,6 +53,9 @@ export function createInitialGameState(): GameState {
     phoneBattery: 61,
     phoneFunctional: true,
     reviveProtectionTurns: 0,
+    activatedKnowledge: [],
+    currentRunKnowledge: [],
+    discoveredClueIds: [],
   };
 }
 

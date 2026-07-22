@@ -262,6 +262,12 @@ export interface GameState {
   policeArrivalMinute?: number;
   /** Optional Behavior Network snapshot while legacy GameState remains authoritative. */
   world?: WorldState;
+  /** v3: 跨循环已激活的玩家知识 */
+  activatedKnowledge: PlayerKnowledge[];
+  /** v3: 本轮新激活的知识 */
+  currentRunKnowledge: PlayerKnowledge[];
+  /** v3: 跨循环已发现的线索 ID */
+  discoveredClueIds: string[];
 }
 
 export interface RuleEvent {
@@ -431,4 +437,64 @@ export interface AmbientResolution {
   killerResult: RuleResult;
   narration: Narration;
   finalState: GameState;
+}
+
+// ===== v3 结局系统类型 =====
+
+export type DeathPathType = 'suppression' | 'enforcement' | 'cleanup' | 'frameup';
+
+export interface DeathPathResult {
+  path: DeathPathType;
+  killer: 'chen_huaimin' | 'fake_police' | 'zhao_hongyuan';
+  rationale: string;
+  triggeredBy: string[];
+}
+
+export interface PlayerKnowledge {
+  id: string;
+  label: string;
+  activatedAt: { run: number; minute: number };
+  sourceClueIds: string[];
+  truthLayerContribution: number;
+  excludes: string[];
+}
+
+export interface KnowledgeDefinition {
+  id: string;
+  label: string;
+  requiredClueIds: string[];
+  anyOf?: { clueIds: string[]; count: number };
+  excludes: string[];
+  truthLayerContribution: number;
+  unlocksDirection: string;
+}
+
+export type EndingTier = 'S' | 'A' | 'B' | 'C' | 'D';
+
+export interface EndingTierResult {
+  tier: EndingTier;
+  totalScore: number;
+  breakdown: {
+    truthLayer: number;
+    evidenceStrength: number;
+    externalReach: number;
+    survivors: number;
+    cycleCost: number;
+  };
+  narrative: string;
+  backtrackHint: string | null;
+}
+
+export interface DeductionClaim {
+  statement: string;
+  knowledgeId: string | null;
+  verdict: 'confirmed' | 'contradicted' | 'unrecognized';
+}
+
+export interface DeductionResult {
+  claims: DeductionClaim[];
+  confirmedCount: number;
+  totalAsked: number;
+  passed: boolean;
+  consecutiveFailures: number;
 }
