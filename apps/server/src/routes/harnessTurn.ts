@@ -5,7 +5,7 @@ import {
   activatePlayerKnowledge,
   atomicLoopReset, createHarness, normalizeLoopMemory, prepareDeathLoopReset,
   compileShadowTurnBrief,
-  resolveLegacyTurnHarness, resolveMinimumPlayableTurn,
+  resolveLegacyTurnHarness, resolveMinimumPlayableTurn, resolveRecoverableIntentTurn,
   resolveTurnHarnessFromPreparedPlayerTurn,
   type AiAdapters,
   type HarnessOptions,
@@ -1038,24 +1038,19 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
 
     if (!resolution && legacyMainPathExitActive && phaseSixBlockingFailure) {
-      const clarification = phaseSixBlockingFailure.fallbackMode === 'clarification_required';
-      return reply.code(clarification ? 422 : 503).send({
-        error: clarification ? 'ai_first_clarification_required' : 'ai_first_turn_rejected',
-        coordination: {
-          warnings: routeWarnings,
-          legacyMainPathExit: {
-            status: 'not_committed',
-            reason: phaseSixBlockingFailure.reason,
-            fallbackMode: phaseSixBlockingFailure.fallbackMode,
-            storyNodeAuthority: 'material_only',
-            keywordFallbackAuthority: 'disabled',
-            minimumPlayableFallback: 'ai_unavailable_only',
-          },
-          ...(shadowSession ? {
-            shadowRun: { turnId: shadowSession.envelope.turnId, status: 'scheduled' as const },
-          } : {}),
-        },
-      });
+      resolution = resolveRecoverableIntentTurn(
+        state,
+        input,
+        phaseSixBlockingFailure.reason,
+      );
+      legacyMainPathExitCoordination = {
+        status: 'recoverable_fallback',
+        reason: phaseSixBlockingFailure.reason,
+        fallbackMode: phaseSixBlockingFailure.fallbackMode,
+        storyNodeAuthority: 'system_fallback_only',
+        keywordFallbackAuthority: 'disabled',
+        minimumPlayableFallback: 'recoverable_state_safe_hold',
+      };
     }
     if (!resolution && legacyMainPathExitActive && minimumFallbackReason) {
       resolution = resolveMinimumPlayableTurn(state, input);
