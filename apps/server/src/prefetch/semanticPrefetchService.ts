@@ -210,13 +210,21 @@ export function createSemanticPrefetchService(
       const key = cacheKey({ ...input, labelHash, compilerVersion });
       const entry = entries.get(key);
       if (!entry) {
-        const stale = [...entries.values()].some((candidate) => (
+        const sessionEntries = [...entries.values()].filter((candidate) => (
+          candidate.gameSessionId === input.gameSessionId
+        ));
+        const stale = sessionEntries.some((candidate) => (
           candidate.gameSessionId === input.gameSessionId
           && candidate.recommendationId === input.recommendationId
         ));
+        if (sessionEntries.length > 0) {
+          cancelSession(
+            input.gameSessionId,
+            stale ? 'semantic_prefetch_stale' : 'semantic_prefetch_miss',
+          );
+        }
         if (stale) {
           counters.semantic_prefetch_stale += 1;
-          cancelSession(input.gameSessionId, 'semantic_prefetch_stale');
           return { status: 'stale' };
         }
         counters.semantic_prefetch_miss += 1;

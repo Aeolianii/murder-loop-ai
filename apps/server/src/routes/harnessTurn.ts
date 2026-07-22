@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   activatePlayerKnowledge,
   atomicLoopReset, createHarness, normalizeLoopMemory, prepareDeathLoopReset,
+  compileShadowTurnBrief,
   resolveLegacyTurnHarness, resolveMinimumPlayableTurn,
   resolveTurnHarnessFromPreparedPlayerTurn,
   type AiAdapters,
@@ -19,6 +20,7 @@ import {
 import { completeRoleJson } from '../ai/openaiClient';
 import { selectPrimaryActionAudioCue } from '../ai/audioCueSelector';
 import { createAiHarness, createAiHarnessAdapters } from '../ai/harnessAiAdapters';
+import { createAiShadowAdapters } from '../ai/shadowAiAdapters';
 import { env } from '../env';
 import {
   applyConfirmedTurnNarration,
@@ -48,6 +50,11 @@ import {
   type LowRiskTakeoverService,
 } from '../takeover/lowRiskTakeoverService';
 import { buildConfirmedAiFirstResolution } from '../takeover/confirmedAiFirstResolution';
+import {
+  createSemanticPrefetchService,
+  type SemanticPrefetchClaim,
+  type SemanticPrefetchService,
+} from '../prefetch/semanticPrefetchService';
 
 export interface HarnessTurnRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -65,6 +72,7 @@ export interface HarnessTurnRouteOptions {
   }) => Promise<ActionAudioCue | null>;
   shadowCoordinator?: ShadowRunCoordinator | null;
   lowRiskTakeoverService?: LowRiskTakeoverService | null;
+  semanticPrefetchService?: SemanticPrefetchService | null;
   gameSessionStore?: GameSessionStore;
 }
 
@@ -384,6 +392,11 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         })
       : null
     : options.shadowCoordinator;
+  const semanticPrefetchService = options.semanticPrefetchService === undefined
+    ? env.aiSemanticPrefetchEnabled && shadowCoordinator
+      ? createDefaultSemanticPrefetchService()
+      : null
+    : options.semanticPrefetchService;
   const highRiskTakeoverActive = lowRiskTakeoverService === null
     ? false
     : lowRiskTakeoverService?.highRiskTakeoverEnabled
@@ -395,12 +408,14 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
 
   app.post('/api/harness/turn', async (request, reply) => {
     const requestStartedAt = performance.now();
+    let cancelledSemanticPrefetchCount = 0;
     const body = request.body as {
       operation?: 'turn' | 'reset_loop';
       input?: string;
       state?: GameState;
       gameSessionId?: string;
       inputStateVersion?: number;
+      recommendationId?: string;
     };
     const operation = body.operation ?? 'turn';
     if (operation !== 'turn' && operation !== 'reset_loop') {
@@ -408,10 +423,19 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
     const input = body.input?.trim() ?? '';
     const bootstrapState = coerceGameState(body.state);
+    const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
+    const recommendationId = body.recommendationId?.trim() || undefined;
+    if (semanticPrefetchService && (!recommendationId || operation === 'reset_loop')) {
+      cancelledSemanticPrefetchCount = semanticPrefetchService.cancelSession(
+        gameSessionId,
+        operation === 'reset_loop' ? 'loop_reset_submitted' : 'natural_language_submitted',
+      );
+    }
 
     // v3: 断案检测——管道前拦截
     const isAccusation = input.includes('指认') || input.includes('断案') || input.includes('真相') || input.includes('凶手是') || input.includes('赵鸿远');
     if (isAccusation && operation === 'turn' && canAccuse(bootstrapState)) {
+      semanticPrefetchService?.cancelSession(gameSessionId, 'deduction_submitted');
       const deductionResult = validateDeductionClaims(bootstrapState, input);
       if (deductionResult.passed) {
         const ending = scoreEnding(bootstrapState);
@@ -436,7 +460,6 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       });
     }
 
-    const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
     const requestedStateVersion = body.inputStateVersion ?? 0;
     if (!Number.isInteger(requestedStateVersion) || requestedStateVersion < 0) {
       return reply.code(400).send({
@@ -567,10 +590,29 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       };
     }
 
+    let semanticPrefetchClaim: SemanticPrefetchClaim | undefined;
+    let semanticPrefetchWarning: string | undefined;
+    if (recommendationId && semanticPrefetchService) {
+      try {
+        semanticPrefetchClaim = await semanticPrefetchService.claim({
+          gameSessionId,
+          loopId: sessionLoopId,
+          stateVersion: sessionStateVersion,
+          recommendationId,
+          label: input,
+        });
+      } catch (error) {
+        semanticPrefetchWarning = `Semantic prefetch claim failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+
     const adapterBundle = options.createAiAdapters?.(input, state);
     const aiAdapters = adapterBundle?.aiAdapters ?? createAiHarnessAdapters();
     const harness = createHarness(aiAdapters, harnessOptions);
-    const routeWarnings = [...(adapterBundle?.coordination?.warnings ?? [])];
+    const routeWarnings = [
+      ...(adapterBundle?.coordination?.warnings ?? []),
+      ...(semanticPrefetchWarning ? [semanticPrefetchWarning] : []),
+    ];
     const routeJudgements = adapterBundle?.coordination?.judgements ?? {};
     const turnTimingEntries: TurnTimingEntry[] = [];
     let shadowTimingPromise: Promise<void> | undefined;
@@ -583,6 +625,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           state,
           loopId: sessionLoopId,
           inputStateVersion: sessionStateVersion,
+          precompiledBrief: semanticPrefetchClaim?.brief,
         });
         shadowTimingPromise = shadowSession.wave.then((wave) => {
           if (wave.semantic && Number.isFinite(wave.semantic.durationMs)) {
@@ -1061,9 +1104,30 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     );
 
     // v3: post-commit 知识激活 + 死亡路径
+    const committedStateForPrefetch = resolution.finalState;
     const knowledgeResult = activatePlayerKnowledge(resolution.finalState);
     resolution = { ...resolution, finalState: knowledgeResult.state };
     const deathPath = shouldTriggerDeath(resolution.finalState) ? resolveDeathPath(resolution.finalState) : null;
+
+    if (semanticPrefetchService && !resolution.finalState.ending) {
+      const recommendations = [...storyLog]
+        .reverse()
+        .find((node) => node.recommendedActions?.length)
+        ?.recommendedActions ?? [];
+      if (recommendations.length > 0) {
+        try {
+          semanticPrefetchService.schedule({
+            gameSessionId,
+            loopId: sessionLoopId,
+            stateVersion: outputStateVersion,
+            state: committedStateForPrefetch,
+            recommendations,
+          });
+        } catch (error) {
+          routeWarnings.push(`Semantic prefetch scheduling failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
 
     return {
       gameSessionId,
@@ -1107,8 +1171,47 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         ...(legacyMainPathExitCoordination ? {
           legacyMainPathExit: legacyMainPathExitCoordination,
         } : {}),
+        ...(semanticPrefetchService ? {
+          semanticPrefetch: {
+            status: semanticPrefetchClaim?.status
+              ?? (recommendationId
+                ? 'miss'
+                : cancelledSemanticPrefetchCount > 0
+                  ? 'cancelled'
+                  : 'standard'),
+            ...(semanticPrefetchClaim?.savedCompilerMs === undefined
+              ? {}
+              : { savedCompilerMs: semanticPrefetchClaim.savedCompilerMs }),
+            ...(cancelledSemanticPrefetchCount > 0
+              ? { cancelledCount: cancelledSemanticPrefetchCount }
+              : {}),
+            metrics: semanticPrefetchService.metrics(),
+          },
+        } : {}),
       },
       sidebar,
     };
+  });
+}
+
+function createDefaultSemanticPrefetchService(): SemanticPrefetchService {
+  const semanticCompiler = createAiShadowAdapters().semanticCompiler;
+  return createSemanticPrefetchService({
+    ttlMs: env.aiSemanticPrefetchTtlMs,
+    compile: async ({ state, recommendation, envelope, signal }) => {
+      const result = await compileShadowTurnBrief({
+        state,
+        rawInput: recommendation.label,
+        envelope,
+        semanticCompiler,
+        npcIds: ['lin_yue', 'police_dispatch'],
+        compilerTimeoutMs: env.aiShadowCompilerTimeoutMs,
+        signal,
+      });
+      return {
+        brief: result.brief,
+        durationMs: result.record.durationMs,
+      };
+    },
   });
 }

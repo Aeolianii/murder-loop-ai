@@ -76,6 +76,19 @@ export interface TurnTimingState {
 export interface CoordinationState {
   warnings: string[];
   facts?: unknown;
+  semanticPrefetch?: {
+    status: 'ready_hit' | 'inflight_hit' | 'miss' | 'stale' | 'cancelled' | 'standard';
+    savedCompilerMs?: number;
+    cancelledCount?: number;
+    metrics: {
+      semantic_prefetch_ready_hit: number;
+      semantic_prefetch_inflight_hit: number;
+      semantic_prefetch_miss: number;
+      semantic_prefetch_cancelled: number;
+      semantic_prefetch_stale: number;
+      savedCompilerMs: number;
+    };
+  };
   trace?: Array<{
     taskId: string;
     agentId?: string;

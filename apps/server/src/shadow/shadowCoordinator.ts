@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { TurnEnvelope } from '@murder-loop-ai/ai-contracts';
+import type { TurnBrief, TurnEnvelope } from '@murder-loop-ai/ai-contracts';
 import {
   finalizeShadowRun,
   runShadowCandidateWave,
@@ -44,6 +44,7 @@ export interface ShadowRunCoordinator {
     state: GameState;
     loopId?: string;
     inputStateVersion?: number;
+    precompiledBrief?: TurnBrief;
   }): ShadowRunSession;
   complete(session: ShadowRunSession, resolution: TurnResolution): Promise<void>;
 }
@@ -80,7 +81,7 @@ export function createShadowRunCoordinator(
   } | undefined;
 
   return {
-    start({ rawInput, state, loopId, inputStateVersion }) {
+    start({ rawInput, state, loopId, inputStateVersion, precompiledBrief }) {
       const startedAt = now();
       const envelope: TurnEnvelope = {
         loopId: loopId ?? `legacy-run-${state.run}`,
@@ -106,6 +107,7 @@ export function createShadowRunCoordinator(
         state: structuredClone(state),
         rawInput,
         envelope,
+        precompiledBrief,
         adapters,
         npcIds: SHADOW_NPC_IDS,
         canonicalConstraints: CANONICAL_SHADOW_CONSTRAINTS,

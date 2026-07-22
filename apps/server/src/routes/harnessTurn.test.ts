@@ -10,6 +10,11 @@ import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
 import type { ActionAudioCue, ActionPlan, GameState, KillerStrategy, Narration, TurnResolution } from '@murder-loop-ai/shared';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy } from '../ai/turnCoordinator';
 import type { ShadowRunCoordinator } from '../shadow/shadowCoordinator';
+import type {
+  SemanticPrefetchMetrics,
+  SemanticPrefetchScheduleInput,
+  SemanticPrefetchService,
+} from '../prefetch/semanticPrefetchService';
 import type { LowRiskTakeoverService } from '../takeover/lowRiskTakeoverService';
 import { harnessTurnRoute } from './harnessTurn';
 
@@ -21,8 +26,20 @@ function registerTestHarnessRoute(
     selectActionAudioCue: async () => null,
     shadowCoordinator: null,
     lowRiskTakeoverService: null,
+    semanticPrefetchService: null,
     ...options,
   });
+}
+
+function emptyPrefetchMetrics(): SemanticPrefetchMetrics {
+  return {
+    semantic_prefetch_ready_hit: 0,
+    semantic_prefetch_inflight_hit: 0,
+    semantic_prefetch_miss: 0,
+    semantic_prefetch_cancelled: 0,
+    semantic_prefetch_stale: 0,
+    savedCompilerMs: 0,
+  };
 }
 
 type HarnessTurnResolution = TurnResolution & {
@@ -800,6 +817,117 @@ async function testLegacyMainPathExitPublishesAcceptedRecommendations() {
     label: '拍摄并保存包裹标签',
     rationale: '先保存包裹标签的可见信息，可以为后续核对寄件情况保留依据。',
   }]);
+  await app.close();
+}
+
+async function testCommittedTurnSchedulesDisplayedRecommendationSemantics() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, false, true, true);
+  const scheduled: SemanticPrefetchScheduleInput[] = [];
+  const cancelled: string[] = [];
+  const service: SemanticPrefetchService = {
+    schedule: (input) => { scheduled.push(input); },
+    claim: async () => ({ status: 'miss' }),
+    cancelSession: (gameSessionId) => {
+      cancelled.push(gameSessionId);
+      return 0;
+    },
+    pendingCount: () => 0,
+    metrics: emptyPrefetchMetrics,
+  };
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    semanticPrefetchService: service,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'lock and barricade the door',
+      state: baseState,
+      gameSessionId: 'session-prefetch-schedule',
+      inputStateVersion: 0,
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(cancelled, ['session-prefetch-schedule'], 'natural-language input must cancel older speculative work before the formal turn');
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].stateVersion, response.json().outputStateVersion);
+  assert.equal(scheduled[0].gameSessionId, 'session-prefetch-schedule');
+  assert.deepEqual(scheduled[0].recommendations, [{
+    id: 'recommendation.accepted',
+    label: '拍摄并保存包裹标签',
+    rationale: '先保存包裹标签的可见信息，可以为后续核对寄件情况保留依据。',
+  }]);
+  await app.close();
+}
+
+async function testRecommendationClickReusesPrefetchedBrief() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, false, true, true);
+  const prefetchedBrief = {
+    ...takeoverBrief(),
+    turnId: 'prefetched-recommendation-template',
+  };
+  let claimed: Parameters<SemanticPrefetchService['claim']>[0] | undefined;
+  let shadowStartInput: Parameters<ShadowRunCoordinator['start']>[0] | undefined;
+  const semanticPrefetchService: SemanticPrefetchService = {
+    schedule: () => undefined,
+    claim: async (input) => {
+      claimed = input;
+      return { status: 'ready_hit', brief: prefetchedBrief, savedCompilerMs: 870 };
+    },
+    cancelSession: () => 0,
+    pendingCount: () => 0,
+    metrics: () => ({
+      ...emptyPrefetchMetrics(),
+      semantic_prefetch_ready_hit: 1,
+      savedCompilerMs: 870,
+    }),
+  };
+  const shadowCoordinator: ShadowRunCoordinator = {
+    ...fixture.shadowCoordinator,
+    start: (input) => {
+      shadowStartInput = input;
+      return fixture.shadowCoordinator.start(input);
+    },
+  };
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    semanticPrefetchService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: '拍摄并保存包裹标签',
+      recommendationId: 'recommendation.accepted',
+      state: baseState,
+      gameSessionId: 'session-prefetch-hit',
+      inputStateVersion: 0,
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(claimed?.recommendationId, 'recommendation.accepted');
+  assert.equal(claimed?.label, '拍摄并保存包裹标签');
+  assert.equal(shadowStartInput?.precompiledBrief, prefetchedBrief);
+  assert.deepEqual(response.json().coordination.semanticPrefetch, {
+    status: 'ready_hit',
+    savedCompilerMs: 870,
+    metrics: {
+      ...emptyPrefetchMetrics(),
+      semantic_prefetch_ready_hit: 1,
+      savedCompilerMs: 870,
+    },
+  });
   await app.close();
 }
 
@@ -2066,6 +2194,8 @@ await testKnowledgeClueTakeoverDisablesNarratorClueAuthority();
 await testHighRiskTakeoverPublishesOnlyConfirmedOutcome();
 await testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarration();
 await testLegacyMainPathExitPublishesAcceptedRecommendations();
+await testCommittedTurnSchedulesDisplayedRecommendationSemantics();
+await testRecommendationClickReusesPrefetchedBrief();
 await testLegacyMainPathExitRendersReadOnlyPostCommitNarration();
 await testLegacyMainPathExitRejectsUngroundedActionNarration();
 await testLegacyMainPathExitPublishesConfirmedNpcReply();

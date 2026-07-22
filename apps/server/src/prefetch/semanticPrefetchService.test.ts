@@ -170,6 +170,14 @@ const recommendations = [
   assert.equal(stale.brief, undefined);
   assert.equal(service.metrics().semantic_prefetch_stale, 1);
 
+  service.schedule({
+    gameSessionId: 'session-miss',
+    loopId: 'loop-1',
+    stateVersion: 1,
+    state,
+    recommendations: [recommendations[1]],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
   const miss = await service.claim({
     gameSessionId: 'session-miss',
     loopId: 'loop-1',
@@ -179,4 +187,5 @@ const recommendations = [
   });
   assert.equal(miss.status, 'miss');
   assert.equal(service.metrics().semantic_prefetch_miss, 1);
+  assert.equal(service.pendingCount(), 0, 'a recommendation miss must clear competing speculative work before the formal path starts');
 }

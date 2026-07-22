@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { WORLD_MODEL_SCHEMA_VERSION, type TurnBrief } from '@murder-loop-ai/ai-contracts';
 import {
   createInitialGameState,
   type FinalizeShadowRunInput,
@@ -93,6 +94,7 @@ const report = {
 
 let waveInputState = state;
 let waveInputFactAuthorizationMode: string | undefined;
+let waveInputPrecompiledBrief: TurnBrief | undefined;
 let finalizeInput: FinalizeShadowRunInput | undefined;
 const store = new ShadowReportStore(5);
 const coordinator = createShadowRunCoordinator({
@@ -110,6 +112,7 @@ const coordinator = createShadowRunCoordinator({
   runCandidateWave: async (input) => {
     waveInputState = input.state;
     waveInputFactAuthorizationMode = input.mainFactAuthorizationMode;
+    waveInputPrecompiledBrief = input.precompiledBrief;
     return {
       status: 'completed',
       envelope: input.envelope,
@@ -126,9 +129,26 @@ const coordinator = createShadowRunCoordinator({
   },
 });
 
-const session = coordinator.start({ rawInput: 'wait', state });
+const prefetchedBrief: TurnBrief = {
+  loopId: 'prefetch-loop',
+  turnId: 'prefetch-turn',
+  inputStateVersion: 0,
+  deadlineAt: '2026-07-20T12:00:05.000Z',
+  compilerVersion: 'semantic-compiler-v1',
+  schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
+  utteranceMode: 'command',
+  resolvedReferences: [],
+  orderedActions: [],
+  globalConstraints: [],
+  scopedConstraints: [],
+  communications: [],
+  candidateHandles: [],
+  ambiguities: [],
+};
+const session = coordinator.start({ rawInput: 'wait', state, precompiledBrief: prefetchedBrief });
 assert.notEqual(waveInputState, state, 'Shadow must run from a detached legacy-state snapshot');
 assert.equal(waveInputFactAuthorizationMode, 'advisory_for_reversible_player');
+assert.equal(waveInputPrecompiledBrief, prefetchedBrief);
 assert.equal(session.envelope.loopId, `legacy-run-${state.run}`);
 assert.equal(session.envelope.turnId, 'shadow-turn-1');
 assert.equal(session.envelope.inputStateVersion, deriveLegacyShadowStateVersion(state));

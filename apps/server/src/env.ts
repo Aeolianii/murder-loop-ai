@@ -55,6 +55,8 @@ export const env = {
   aiShadowMainFactAuthorizationMode: process.env.AI_SHADOW_MAIN_FACT_AUTH_MODE === 'advisory_for_reversible_player'
     ? 'advisory_for_reversible_player' as const
     : 'strict' as const,
+  aiSemanticPrefetchEnabled: process.env.AI_SEMANTIC_PREFETCH_ENABLED === 'true',
+  aiSemanticPrefetchTtlMs: positiveInteger(process.env.AI_SEMANTIC_PREFETCH_TTL_MS, 120_000),
 };
 
 function positiveInteger(value: string | undefined, fallback: number): number {
