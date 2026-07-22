@@ -1,4 +1,4 @@
-import type { HarnessTurnResponse } from './api/harnessTurnClient';
+import { HarnessTurnRequestError, type HarnessTurnResponse } from './api/harnessTurnClient';
 import type { GameState, StoryNode } from './types';
 
 function nonInputStoryNodes(response: HarnessTurnResponse): StoryNode[] {
@@ -30,7 +30,7 @@ export function applyHarnessTurnResponse(
         {
           id: `sys-${Date.now()}`,
           type: 'system',
-          content: '后端暂时没有回应，行动未写入循环。',
+          content: playerFacingTurnError(error),
         },
       ],
     };
@@ -57,6 +57,18 @@ export function applyHarnessTurnResponse(
     sidebar: response.sidebar ?? state.sidebar,
     storyLog: [...state.storyLog, ...nonInputStoryNodes(response)],
   };
+}
+
+function playerFacingTurnError(error: unknown): string {
+  if (error instanceof HarnessTurnRequestError) {
+    if (error.status === 422 || error.code === 'ai_first_clarification_required') {
+      return '行动含义还不够明确，请换一种更具体的说法。';
+    }
+    if (error.status === 503 || error.code === 'ai_first_turn_rejected') {
+      return '行动解析暂时失败，本次行动没有写入循环。';
+    }
+  }
+  return '后端暂时没有回应，行动未写入循环。';
 }
 
 export function rewindFrontendStateFromResponse(state: GameState, response: HarnessTurnResponse): GameState {

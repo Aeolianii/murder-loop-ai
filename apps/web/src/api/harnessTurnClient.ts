@@ -16,6 +16,20 @@ export interface HarnessTurnResponse extends Partial<FrontendGameState> {
 
 export type HarnessTurnOperation = 'turn' | 'reset_loop';
 
+export class HarnessTurnRequestError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly payload?: unknown;
+
+  constructor(status: number, code?: string, payload?: unknown) {
+    super(`harness turn failed: ${status}${code ? ` (${code})` : ''}`);
+    this.name = 'HarnessTurnRequestError';
+    this.status = status;
+    this.code = code;
+    this.payload = payload;
+  }
+}
+
 export async function postHarnessTurn(
   input: string,
   state: unknown,
@@ -36,6 +50,21 @@ export async function postHarnessTurn(
       ...(recommendationId ? { recommendationId } : {}),
     }),
   });
-  if (!response.ok) throw new Error(`harness turn failed: ${response.status}`);
+  if (!response.ok) {
+    const payload = await readErrorPayload(response);
+    const code = payload && typeof payload === 'object' && 'error' in payload
+      && typeof payload.error === 'string'
+      ? payload.error
+      : undefined;
+    throw new HarnessTurnRequestError(response.status, code, payload);
+  }
   return (await response.json()) as HarnessTurnResponse;
+}
+
+async function readErrorPayload(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
 }

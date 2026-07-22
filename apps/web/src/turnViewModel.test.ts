@@ -1,4 +1,4 @@
-import type { HarnessTurnResponse } from './api/harnessTurnClient';
+import { HarnessTurnRequestError, type HarnessTurnResponse } from './api/harnessTurnClient';
 import { INITIAL_STATE } from './constants';
 import { applyHarnessTurnResponse, beginHarnessTurn, rewindFrontendStateFromResponse } from './turnViewModel';
 import type { GameState } from './types';
@@ -61,6 +61,26 @@ assert(errorState.isParsing === false, 'applyHarnessTurnResponse should clear pa
 assert(errorState.storyLog.at(-1)?.type === 'system', 'applyHarnessTurnResponse should append system message on error');
 assert(errorState.storyLog.at(-1)?.content === '后端暂时没有回应，行动未写入循环。', 'error message should remain player-facing Chinese copy');
 assert(!/[A-Za-z]/.test(errorState.storyLog.at(-1)?.content ?? ''), 'technical English errors must not leak into the UI');
+
+const clarificationState = applyHarnessTurnResponse(
+  pending,
+  response,
+  new HarnessTurnRequestError(422, 'ai_first_clarification_required'),
+);
+assert(
+  clarificationState.storyLog.at(-1)?.content === '行动含义还不够明确，请换一种更具体的说法。',
+  'semantic clarification should not be presented as a disconnected backend',
+);
+
+const rejectedState = applyHarnessTurnResponse(
+  pending,
+  response,
+  new HarnessTurnRequestError(503, 'ai_first_turn_rejected'),
+);
+assert(
+  rejectedState.storyLog.at(-1)?.content === '行动解析暂时失败，本次行动没有写入循环。',
+  'a server-side semantic rejection should remain distinct from a network failure',
+);
 
 const rewindState = rewindFrontendStateFromResponse({
   ...next,

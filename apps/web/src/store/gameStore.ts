@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import type { HarnessTurnResponse } from '../api/harnessTurnClient';
-import { postHarnessTurn } from '../api/harnessTurnClient';
+import { HarnessTurnRequestError, type HarnessTurnResponse, postHarnessTurn } from '../api/harnessTurnClient';
 import { freshFrontendState, loadFrontendState, persistFrontendState, resetFrontendProgress } from '../frontendState';
 import { applyHarnessTurnResponse, beginHarnessTurn, rewindFrontendStateFromResponse } from '../turnViewModel';
 import type { GameState, RecommendedAction } from '../types';
@@ -57,7 +56,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     } catch (error) {
       const errorState = applyHarnessTurnResponse(pendingState, {}, error);
       setAndPersist(set, errorState);
-      set({ serverStatus: 'fallback', lastTurnDebug: error });
+      set({
+        serverStatus: error instanceof HarnessTurnRequestError ? 'online' : 'fallback',
+        lastTurnDebug: error,
+      });
       return null;
     } finally {
       set({ inputBusy: false, busy: false });
@@ -90,7 +92,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         return result;
       } catch (error) {
         setAndPersist(set, current);
-        set({ serverStatus: 'fallback', lastTurnDebug: error });
+        set({
+          serverStatus: error instanceof HarnessTurnRequestError ? 'online' : 'fallback',
+          lastTurnDebug: error,
+        });
         return null;
       } finally {
         set({ inputBusy: false, busy: false });

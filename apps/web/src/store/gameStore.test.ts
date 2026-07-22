@@ -26,6 +26,13 @@ function mockHarnessResponse(response: HarnessTurnResponse, requests: unknown[] 
   }) as typeof fetch;
 }
 
+function mockHarnessError(status: number, error: string) {
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })) as typeof fetch;
+}
+
 resetStore();
 const gameSessionId = useGameStore.getState().frontendState.gameSessionId;
 
@@ -134,3 +141,14 @@ assert(afterReset.frontendState.time === '23:00', 'reset should restore opening 
 assert(afterReset.frontendState.phase === 'intro', 'reset should restore intro phase');
 assert(afterReset.frontendState.gameSessionId !== gameSessionId, 'reset should start a new authoritative game session');
 assert(afterReset.lastTurnDebug === null, 'reset should clear lastTurnDebug');
+
+resetStore();
+mockHarnessError(422, 'ai_first_clarification_required');
+const clarificationResult = await useGameStore.getState().submitAction('这个那个');
+const afterClarification = useGameStore.getState();
+assert(clarificationResult === null, 'clarification responses should not commit a turn');
+assert(afterClarification.serverStatus === 'online', 'an HTTP clarification proves that the server is online');
+assert(
+  afterClarification.frontendState.storyLog.at(-1)?.content === '行动含义还不够明确，请换一种更具体的说法。',
+  'the store should preserve the semantic clarification message',
+);
