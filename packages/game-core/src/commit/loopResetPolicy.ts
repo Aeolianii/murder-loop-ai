@@ -4,7 +4,7 @@ import type { AtomicTurnStore } from './atomicTurnCommit';
 export const DEFAULT_LOOP_RESET_POLICY = {
   preserve: ['canonical_truth', 'story_identity', 'space_structure', 'allowed_endings'],
   restoreFromCheckpoint: ['physical_state', 'resources', 'npc_state', 'killer_state', 'npc_knowledge', 'killer_knowledge'],
-  retainFromPreviousLoop: ['player_cross_loop_memory', 'persistent_player_clues'],
+  retainFromPreviousLoop: ['player_cross_loop_memory', 'persistent_player_clues', 'player_knowledge', 'discovered_clue_ids'],
   rebuild: ['facts', 'player', 'killer', 'npc', 'clue', 'recommendation'],
   invalidate: ['model_requests', 'async_reviews', 'late_results'],
 } as const;
@@ -55,6 +55,8 @@ export function prepareGameLoopReset(
   state.memory.crossRun = structuredClone(current.memory.crossRun);
   state.memory.characters.player = structuredClone(current.memory.characters.player);
   state.clues = structuredClone(current.clues.filter((clue) => clue.isPersistent));
+  state.activatedKnowledge = structuredClone(current.activatedKnowledge ?? []);
+  state.discoveredClueIds = [...new Set([...(checkpoint.discoveredClueIds ?? []), ...(current.discoveredClueIds ?? [])])];
   const retainedObservationIds = new Set(state.clues.flatMap((clue) => clue.basedOnObservationIds ?? []));
   state.observations = structuredClone(
     current.observations.filter((observation) => retainedObservationIds.has(observation.id)),

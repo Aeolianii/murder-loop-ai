@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
+  activatePlayerKnowledge,
   atomicLoopReset, createHarness, normalizeLoopMemory, prepareDeathLoopReset,
   resolveLegacyTurnHarness, resolveMinimumPlayableTurn,
   resolveTurnHarnessFromPreparedPlayerTurn,
   type AiAdapters,
   type HarnessOptions,
+  canAccuse, buildDeductionPrompt, validateDeductionClaims,
+  buildDeductionResponse, scoreEnding, generateEpiphanyHint,
+  resolveDeathPath, shouldTriggerDeath,
 } from '@murder-loop-ai/game-core';
 import {
   minuteLabel,
@@ -404,6 +408,34 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
     const input = body.input?.trim() ?? '';
     const bootstrapState = coerceGameState(body.state);
+
+    // v3: 断案检测——管道前拦截
+    const isAccusation = input.includes('指认') || input.includes('断案') || input.includes('真相') || input.includes('凶手是') || input.includes('赵鸿远');
+    if (isAccusation && operation === 'turn' && canAccuse(bootstrapState)) {
+      const deductionResult = validateDeductionClaims(bootstrapState, input);
+      if (deductionResult.passed) {
+        const ending = scoreEnding(bootstrapState);
+        return reply.send({
+          recap: generateRecap(bootstrapState), coreState: bootstrapState,
+          time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',
+          phase: bootstrapState.phase, ending, deduction: deductionResult,
+          deductionResponse: buildDeductionResponse(deductionResult),
+          storyLog: [], clues: bootstrapState.clues, audioCue: null, worldTickTrace: [],
+          coordination: { warnings: [], trace: [], agentTiming: { totalMs: 0, slowest: null, entries: [] }, turnTiming: [], judgements: {} },
+        });
+      }
+      return reply.send({
+        recap: generateRecap(bootstrapState), coreState: bootstrapState,
+        time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',
+        phase: bootstrapState.phase, deduction: deductionResult,
+        deductionPrompt: buildDeductionPrompt(bootstrapState),
+        deductionResponse: buildDeductionResponse(deductionResult),
+        epiphany: generateEpiphanyHint(bootstrapState, 1),
+        storyLog: [], clues: bootstrapState.clues, audioCue: null, worldTickTrace: [],
+        coordination: { warnings: [], trace: [], agentTiming: { totalMs: 0, slowest: null, entries: [] }, turnTiming: [], judgements: {} },
+      });
+    }
+
     const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
     const requestedStateVersion = body.inputStateVersion ?? 0;
     if (!Number.isInteger(requestedStateVersion) || requestedStateVersion < 0) {
@@ -1028,6 +1060,11 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       resolution,
     );
 
+    // v3: post-commit 知识激活 + 死亡路径
+    const knowledgeResult = activatePlayerKnowledge(resolution.finalState);
+    resolution = { ...resolution, finalState: knowledgeResult.state };
+    const deathPath = shouldTriggerDeath(resolution.finalState) ? resolveDeathPath(resolution.finalState) : null;
+
     return {
       gameSessionId,
       inputStateVersion: sessionStateVersion,
@@ -1040,6 +1077,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       deathTitle: resolution.finalState.phase === 'death' ? endingEntry?.title ?? '23:47' : null,
       deathSummary: resolution.finalState.phase === 'death' ? endingEntry?.text ?? null : null,
       deathMethod: null, score: resolution.finalState.score,
+      deathPath: deathPath ?? null,
       worldTickTrace: resolution.worldTickTrace ?? [],
       storyLog: storyLog satisfies FrontendStoryNode[],
       turn: {
