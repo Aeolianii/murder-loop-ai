@@ -9,7 +9,7 @@
     "start": "tsx src/index.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/ai/worldInfoPrompt.test.ts && tsx src/ai/killerPrompt.test.ts && tsx src/ai/parserPrompt.test.ts && tsx src/ai/actionNarrationPrompt.test.ts && tsx src/ai/shadowAiAdapters.test.ts && tsx src/shadow/shadowReportStore.test.ts && tsx src/shadow/shadowCoordinator.test.ts && tsx src/state/gameSessionStore.test.ts && tsx src/takeover/lowRiskTakeoverService.test.ts && tsx src/presenters/frontendTurnPresenter.test.ts && tsx src/presenters/confirmedTurnNarrator.test.ts && tsx src/routes/shadowReports.test.ts && tsx src/routes/harnessTurn.test.ts && tsx src/routes/frontendAdapter.test.ts"
+    "test": "tsx src/ai/worldInfoPrompt.test.ts && tsx src/ai/killerPrompt.test.ts && tsx src/ai/parserPrompt.test.ts && tsx src/ai/actionNarrationPrompt.test.ts && tsx src/ai/shadowAiAdapters.test.ts && tsx src/shadow/shadowReportStore.test.ts && tsx src/shadow/shadowCoordinator.test.ts && tsx src/state/gameSessionStore.test.ts && tsx src/prefetch/semanticPrefetchService.test.ts && tsx src/takeover/lowRiskTakeoverService.test.ts && tsx src/presenters/frontendTurnPresenter.test.ts && tsx src/presenters/confirmedTurnNarrator.test.ts && tsx src/routes/shadowReports.test.ts && tsx src/routes/harnessTurn.test.ts && tsx src/routes/frontendAdapter.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
