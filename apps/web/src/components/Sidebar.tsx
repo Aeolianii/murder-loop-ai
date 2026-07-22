@@ -88,7 +88,7 @@ export function InventoryItem({ sidebar }: InventoryItemProps) {
 }
 
 export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect, turnTiming }: SidebarProps) {
-  const [showMemories, setShowMemories] = useState(false);
+  const [showMemories, setShowMemories] = useState(true);
 
   return (
     <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-white/5 bg-[#0a0a0c] lg:h-[calc(100vh-65px)] lg:w-80">

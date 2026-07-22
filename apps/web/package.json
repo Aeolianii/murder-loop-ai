@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/components/StoryPanel.test.tsx && tsx src/components/TurnTimingPanel.test.tsx && tsx src/clueRevealState.test.ts && tsx src/frontendState.test.ts && tsx src/turnViewModel.test.ts && tsx src/store/gameStore.test.ts",
+    "test": "tsx src/components/StoryPanel.test.tsx && tsx src/components/Sidebar.test.tsx && tsx src/components/TurnTimingPanel.test.tsx && tsx src/clueRevealState.test.ts && tsx src/frontendState.test.ts && tsx src/turnViewModel.test.ts && tsx src/store/gameStore.test.ts",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
