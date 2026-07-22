@@ -21,6 +21,7 @@ import {
 import { buildNarrationContext } from '../narration/buildNarrationContext';
 import { buildDirectorContext, buildKillerContext, buildNarratorContext, buildNpcVisibleContext, buildParserContext, type DirectorContext, type KillerContext } from '../context/ContextBuilder';
 import { advanceAmbientTurn } from '../ambient/advanceAmbientTurn';
+import { transitionGamePhaseTo } from '../machines/gamePhaseMachine';
 import { GameEventBus } from '../events/EventBus';
 import { AgentRegistry } from '../events/AgentRegistry';
 import { HarnessDispatcher } from '../events/HarnessDispatcher';
@@ -103,7 +104,7 @@ function buildStoryNodeTurnResolution(
     finalState.player.stress = Math.max(0, Math.min(100, finalState.player.stress + storyNode.stressDelta));
   }
   if (storyNode.phase) {
-    finalState.phase = storyNode.phase;
+    finalState.phase = transitionGamePhaseTo(finalState.phase, storyNode.phase);
   }
   storyNode.statePatch?.(finalState);
 

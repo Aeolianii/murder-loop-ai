@@ -18,6 +18,7 @@ import { scoreRun } from '../scoring/scoreRun';
 import { evaluateShadowHighRiskGate } from '../shadow/shadowArbiter';
 import { ensureWorldState } from '../world/syncGameWorld';
 import { assertionValue } from '../facts/eventAssertions';
+import { reconcileGamePhase, transitionGamePhase } from '../machines/gamePhaseMachine';
 
 const HIGH_RISK_INVARIANT_REFS = [
   'invariant.arrest.requires_police_presence',
@@ -275,7 +276,7 @@ function applyConfirmedEvent(
         return { status: 'rejected', reason: 'entry_actor_invalid' };
       }
       state.killerPhase = 'forced_entry';
-      state.phase = state.phase === 'death' || state.phase === 'survived' ? state.phase : 'killer_pressure';
+      state.phase = transitionGamePhase(state.phase, 'PRESSURE');
       state.threat = Math.min(100, state.threat + 2);
       state.world!.threat = state.threat;
       return { status: 'applied' };
@@ -440,7 +441,7 @@ function applyActorEntered(
     state.killerStatus = 'confronting';
     state.killerPhase = 'forced_entry';
   }
-  state.phase = 'confrontation';
+  state.phase = transitionGamePhase(state.phase, 'CONFRONT');
   state.threat = Math.min(100, state.threat + 10);
   state.world!.threat = state.threat;
   return { status: 'applied' };
@@ -474,7 +475,7 @@ function applyAttackAttempted(state: GameState, event: ProposedEvent): ApplyResu
   }
   state.combatTriggered = true;
   state.killerPhase = attackerId === 'chen_huaimin' ? 'violence' : state.killerPhase;
-  state.phase = 'confrontation';
+  state.phase = transitionGamePhase(state.phase, 'CONFRONT');
   return { status: 'applied' };
 }
 
@@ -838,9 +839,10 @@ function applyEnding(
     if (!validReason) return { status: 'rejected', reason: 'ending_reason_mismatch' };
   }
 
+  const previousPhase = state.phase;
   state.ending = ending;
   state.endingReason = reason;
-  state.phase = ending === 'death' ? 'death' : 'survived';
+  state.phase = reconcileGamePhase(previousPhase, state);
   state.score = scoreRun(state);
   return { status: 'applied' };
 }

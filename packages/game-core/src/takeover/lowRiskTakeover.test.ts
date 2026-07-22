@@ -476,6 +476,13 @@ assert.equal(
   'prepared',
   'phase five must own the downstream deadline outcome instead of falling back to legacy rules',
 );
+if (phaseFiveDeadlinePreparation.status === 'prepared') {
+  assert.equal(
+    phaseFiveDeadlinePreparation.playerResult.state.phase,
+    'post_2347_escalation',
+    'a confirmed turn reaching 23:47 must progress through the phase machine without regressing',
+  );
+}
 
 const store = new InMemoryAtomicTurnStore({
   loopId: prepared.envelope.loopId,

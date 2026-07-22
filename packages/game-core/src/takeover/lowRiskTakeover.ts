@@ -14,6 +14,7 @@ import {
 } from '../commit/atomicTurnCommit';
 import type { DomainEvent } from '../domain/domainEvents';
 import { assertionIds } from '../facts/eventAssertions';
+import { reconcileGamePhase } from '../machines/gamePhaseMachine';
 import {
   buildLowRiskKnowledgeClueCandidates,
   type KnowledgeClueProjectionCandidates,
@@ -197,15 +198,9 @@ export function prepareLowRiskTurn(input: {
     ));
   }
 
-  state.phase = state.minute >= DEADLINE_MINUTE - 5
-    ? 'pre_2347_countdown'
-    : state.policePhase === 'real_police_en_route'
-      ? 'confrontation'
-      : state.policePhase !== 'not_contacted'
-        ? 'police_called'
-        : state.threat >= 48
-          ? 'killer_pressure'
-          : 'investigating';
+  state.phase = reconcileGamePhase(input.state.phase, state, {
+    activityConfirmed: actionEvents.length > 0,
+  });
 
   const allEvents = [...actionEvents, ...supplementalEvents];
   const knowledgeClueCandidates = buildLowRiskKnowledgeClueCandidates(
