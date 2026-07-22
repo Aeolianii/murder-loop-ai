@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { StoryNode } from '../types';
+import type { RecommendedAction, StoryNode } from '../types';
 
 interface StoryPanelProps {
   log: StoryNode[];
-  onRecommendedAction: (label: string) => void;
+  onRecommendedAction: (action: RecommendedAction) => void;
   recommendationsDisabled: boolean;
 }
 
@@ -74,7 +74,7 @@ export function StoryPanel({
                             translate="no"
                             aria-label={`执行建议：${action.label}`}
                             disabled={recommendationsDisabled || index !== latestActionResultIndex}
-                            onClick={() => onRecommendedAction(action.label)}
+                            onClick={() => onRecommendedAction(action)}
                             className="notranslate block w-full rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-900/70 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <div className="text-xs leading-relaxed text-zinc-300 md:text-sm">{action.label}</div>

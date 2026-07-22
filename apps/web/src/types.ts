@@ -36,18 +36,20 @@ export type KillerStatus =
   | 'arrested'
   | 'fled';
 
+export interface RecommendedAction {
+  id: string;
+  label: string;
+  rationale: string;
+  intent?: string;
+  target?: string;
+}
+
 export interface StoryNode {
   id: string;
   type: 'narrative' | 'action_result' | 'system' | 'player_input';
   content: string;
   timestamp?: string; // e.g. "23:00"
-  recommendedActions?: Array<{
-    id: string;
-    label: string;
-    rationale: string;
-    intent?: string;
-    target?: string;
-  }>;
+  recommendedActions?: RecommendedAction[];
 }
 
 export interface Clue {

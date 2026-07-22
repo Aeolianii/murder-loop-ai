@@ -56,6 +56,7 @@ assert(submitted?.time === turnResponse.time, 'submitAction should return the ha
 assert((submitRequests[0] as { debug?: unknown }).debug === undefined, 'submitAction should not send a World Tick debug switch');
 assert((submitRequests[0] as { gameSessionId?: unknown }).gameSessionId === gameSessionId, 'submitAction should send the persisted game session id');
 assert((submitRequests[0] as { inputStateVersion?: unknown }).inputStateVersion === 0, 'submitAction should send the current state version');
+assert((submitRequests[0] as { recommendationId?: unknown }).recommendationId === undefined, 'natural-language input must not impersonate a recommendation click');
 assert(afterSubmit.frontendState.time === '23:08', 'submitAction should merge response into frontendState');
 assert(afterSubmit.frontendState.stateVersion === 1, 'submitAction should advance to the committed output version');
 assert((afterSubmit.frontendState.coreState as { minute: number }).minute === 1388, 'submitAction should preserve returned coreState');
@@ -64,6 +65,32 @@ assert(afterSubmit.frontendState.storyLog.at(-1)?.id === 'server-narration', 'su
 assert(afterSubmit.busy === false && afterSubmit.inputBusy === false, 'submitAction should clear busy flags');
 assert(afterSubmit.serverStatus === 'online', 'submitAction should mark server online');
 assert((afterSubmit.lastTurnDebug as HarnessTurnResponse).time === turnResponse.time, 'submitAction should store the last turn response for debugging');
+
+const recommendationRequests: unknown[] = [];
+mockHarnessResponse({
+  ...turnResponse,
+  inputStateVersion: 1,
+  outputStateVersion: 2,
+}, recommendationRequests);
+const recommendation = {
+  id: 'recommendation.photo-package',
+  label: '拍下包裹上的标签',
+  rationale: '先保留肉眼可见的证据。',
+};
+const recommended = await useGameStore.getState().submitRecommendedAction(recommendation);
+
+assert(recommended?.time === turnResponse.time, 'submitRecommendedAction should return the harness response');
+assert((recommendationRequests[0] as { input?: unknown }).input === recommendation.label, 'recommendation clicks must retain the Chinese label as fallback input');
+assert((recommendationRequests[0] as { recommendationId?: unknown }).recommendationId === recommendation.id, 'recommendation clicks must send the stable recommendation id');
+assert((recommendationRequests[0] as { inputStateVersion?: unknown }).inputStateVersion === 1, 'recommendation clicks must bind the prefetch lookup to the current state version');
+
+useGameStore.setState({
+  frontendState: afterSubmit.frontendState,
+  busy: false,
+  inputBusy: false,
+  serverStatus: 'online',
+  lastTurnDebug: turnResponse,
+});
 
 const rewindResponse: HarnessTurnResponse = {
   gameSessionId,

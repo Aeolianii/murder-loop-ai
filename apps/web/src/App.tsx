@@ -16,7 +16,7 @@ import { RainPlayer } from './components/RainPlayer';
 import { VolumeControl } from './components/VolumeControl';
 import { useGameAudio } from './audio/hooks';
 import { audio } from './audio/engine';
-import { Clue, GameState } from './types';
+import { Clue, GameState, type RecommendedAction } from './types';
 import { Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { getClueAsset } from './clueAssets';
@@ -38,6 +38,7 @@ function shouldShowIntroCinematic(state: GameState) {
 export default function App() {
   const state = useGameStore(store => store.frontendState);
   const submitAction = useGameStore(store => store.submitAction);
+  const submitRecommendedAction = useGameStore(store => store.submitRecommendedAction);
   const rewind = useGameStore(store => store.rewind);
   const reset = useGameStore(store => store.reset);
   const setFrontendState = useGameStore(store => store.setFrontendState);
@@ -69,11 +70,13 @@ export default function App() {
     void audio.init();
   }, []);
 
-  const handleActionSubmit = async (actionText: string) => {
+  const handleActionSubmit = async (actionText: string, recommendation?: RecommendedAction) => {
     const previousState = state;
     const previousClues = state.clues;
 
-    const result = await submitAction(actionText);
+    const result = recommendation
+      ? await submitRecommendedAction(recommendation)
+      : await submitAction(actionText);
     if (!result) return;
 
     const resultClues = result.clues ?? previousClues;
@@ -206,7 +209,7 @@ export default function App() {
         <main className="relative flex min-w-0 flex-1 flex-col bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-zinc-900/10 via-[#08080a] to-[#08080a] lg:border-r lg:border-white/5">
           <StoryPanel
             log={state.storyLog}
-            onRecommendedAction={handleActionSubmit}
+            onRecommendedAction={(action) => { void handleActionSubmit(action.label, action); }}
             recommendationsDisabled={state.isParsing || Boolean(state.ending)}
           />
 
