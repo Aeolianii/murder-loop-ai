@@ -145,6 +145,54 @@ assert.equal(projectedPhotoShare.state.world?.objects.package_photo.flags.shared
 assert.equal(projectedPhotoShare.state.world?.knowledge.lin_yue.facts.package_photo.source, 'message');
 assert(projectedPhotoShare.state.clues.some((clue) => clue.id === 'linyue_has_photo'));
 
+const localQuestionBrief = brief([
+  action('ask-through-door', 'communicate', ['front_door'], {
+    method: 'speak loudly through the closed door',
+  }),
+]);
+localQuestionBrief.utteranceMode = 'question';
+localQuestionBrief.communications = [Object.assign({
+  id: 'communication-through-door',
+  actionId: 'ask-through-door',
+  senderId: 'player',
+  recipientIds: [],
+  channel: 'local_voice',
+  contentSummary: '询问门外是谁',
+  attachmentHandleIds: [],
+  intendedAudience: [],
+}, {
+  situatedAudience: {
+    anchorEntityIds: ['front_door'],
+    description: '门外能够听见玩家声音的任何人',
+  },
+})];
+const noPhoneState = structuredClone(state);
+noPhoneState.phoneFunctional = false;
+noPhoneState.phoneBattery = 0;
+const preparedLocalQuestion = prepareLowRiskTurn({
+  state: noPhoneState,
+  brief: localQuestionBrief,
+});
+assert.equal(
+  preparedLocalQuestion.status,
+  'prepared',
+  'a question containing an executable communication action must enter the turn',
+);
+if (preparedLocalQuestion.status !== 'prepared') throw new Error('expected a prepared local question');
+assert(
+  preparedLocalQuestion.playerResult.domainEvents.some((event) => (
+    event.eventType === 'communication_emitted'
+  )),
+  'local speech must be confirmed independently from phone availability',
+);
+assert(
+  preparedLocalQuestion.eventCandidates.some(({ event }) => (
+    event.operation === 'communicate' && event.status === 'completed'
+  )),
+  'the situated communication event must be commit-ready',
+);
+assert.doesNotMatch(preparedLocalQuestion.playerResult.text, /消息发送|手机当前无法使用/);
+
 const unsupportedAttack = prepareLowRiskTurn({
   state,
   brief: brief([action('attack', 'attack', ['chen_huaimin'])]),

@@ -208,8 +208,8 @@ const barricadeBrief: TurnBrief = {
     activeCommunicationActorIds: ['lin_yue', 'chen_huaimin'],
   });
   assert(
-    issues.some((issue) => issue.message.includes('exactly one active communication actor')),
-    'Each communication action must identify exactly one active recipient.',
+    issues.some((issue) => issue.message.includes('matching communication intent')),
+    'Each communication action must carry structured recipient or situated-audience semantics.',
   );
 }
 

@@ -242,6 +242,73 @@ describe('AI-first phase-one contracts', () => {
     ).toBe(true);
   });
 
+  it('represents situated communication without inventing a known recipient', () => {
+    const brief = {
+      ...envelope,
+      compilerVersion: 'semantic-compiler-v1',
+      schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
+      utteranceMode: 'question',
+      resolvedReferences: [],
+      orderedActions: [{
+        actionId: 'action-call-through-door',
+        actorId: 'player',
+        operation: 'communicate',
+        targetIds: ['front_door'],
+        method: 'speak loudly through the closed door',
+        dependsOnActionIds: [],
+        inputHandleIds: [],
+        outputHandleIds: [],
+        originalSpan: { start: 0, end: 8, text: '门外面有人吗？是谁？' },
+        intendedAudience: [],
+        desiredOutcome: '确认门外是否有人以及对方身份',
+      }],
+      globalConstraints: [],
+      scopedConstraints: [],
+      communications: [{
+        id: 'communication-call-through-door',
+        actionId: 'action-call-through-door',
+        senderId: 'player',
+        recipientIds: [],
+        channel: 'local_voice',
+        contentSummary: '询问门外是否有人以及对方身份',
+        attachmentHandleIds: [],
+        intendedAudience: [],
+        situatedAudience: {
+          anchorEntityIds: ['front_door'],
+          description: '门外能够听见玩家声音的任何人',
+        },
+      }],
+      candidateHandles: [],
+      ambiguities: [],
+    };
+
+    expect(
+      TurnBriefSchema.safeParse(brief).success,
+      'an unresolved local audience must remain representable without guessing an NPC identity',
+    ).toBe(true);
+    expect(TurnBriefSchema.safeParse({
+      ...brief,
+      communications: [{
+        ...brief.communications[0],
+        intendedAudience: ['chen_huaimin'],
+      }],
+    }).success).toBe(false);
+
+    const { situatedAudience: _situatedAudience, ...identifiedCommunication } = brief.communications[0];
+    expect(TurnBriefSchema.safeParse({
+      ...brief,
+      orderedActions: [{
+        ...brief.orderedActions[0],
+        targetIds: ['lin_yue', 'police_dispatch'],
+      }],
+      communications: [{
+        ...identifiedCommunication,
+        recipientIds: ['lin_yue', 'police_dispatch'],
+        intendedAudience: ['lin_yue', 'police_dispatch'],
+      }],
+    }).success).toBe(true);
+  });
+
   it('requires proposal provenance, ranking, evidence, risk, and version fields', () => {
     expect(ProposalSchema.parse(proposal)).toEqual(proposal);
     const { evidenceRefs: _evidenceRefs, ...withoutEvidence } = proposal;

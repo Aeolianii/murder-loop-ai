@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const IdSchema = z.string().min(1);
 const StateVersionSchema = z.number().int().nonnegative();
-export const WORLD_MODEL_SCHEMA_VERSION = 'world-model-v3';
+export const WORLD_MODEL_SCHEMA_VERSION = 'world-model-v4';
 const JsonValueSchema = z.union([
   z.string(),
   z.number(),
@@ -91,16 +91,39 @@ export const IntentConstraintSchema = z.object({
   originalSpan: SourceSpanSchema,
 }).strict();
 
+export const SituatedAudienceSchema = z.object({
+  anchorEntityIds: z.array(IdSchema).min(1),
+  description: z.string().min(1),
+}).strict();
+
 export const CommunicationIntentSchema = z.object({
   id: IdSchema,
   actionId: IdSchema,
   senderId: IdSchema,
-  recipientIds: z.array(IdSchema).min(1),
+  recipientIds: z.array(IdSchema),
   channel: IdSchema,
   contentSummary: z.string().min(1),
   attachmentHandleIds: z.array(IdSchema),
   intendedAudience: z.array(IdSchema),
-}).strict();
+  situatedAudience: SituatedAudienceSchema.optional(),
+}).strict().superRefine((communication, context) => {
+  const hasRecipients = communication.recipientIds.length > 0;
+  const hasSituatedAudience = communication.situatedAudience !== undefined;
+  if (hasRecipients === hasSituatedAudience) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['recipientIds'],
+      message: 'Communication must identify recipients or one situated audience, but not both.',
+    });
+  }
+  if (hasSituatedAudience && communication.intendedAudience.length > 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['intendedAudience'],
+      message: 'Situated communication cannot claim identified intended-audience actors.',
+    });
+  }
+});
 
 export const CandidateHandleSchema = z.object({
   id: IdSchema,
