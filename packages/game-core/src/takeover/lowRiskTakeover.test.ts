@@ -192,6 +192,11 @@ assert(
   'the situated communication event must be commit-ready',
 );
 assert.doesNotMatch(preparedLocalQuestion.playerResult.text, /消息发送|手机当前无法使用/);
+assert.doesNotMatch(
+  preparedLocalQuestion.playerResult.text,
+  /说道：“询问/,
+  'a semantic content summary must not be presented as a verbatim player quote',
+);
 
 const unsupportedAttack = prepareLowRiskTurn({
   state,

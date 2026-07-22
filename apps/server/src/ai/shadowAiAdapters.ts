@@ -218,6 +218,7 @@ function semanticCompilerPrompt(): string {
     'Canonical executable operation IDs: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait, act. Use a specific canonical operation whenever its meaning matches. For any other ordinary, nonviolent, reversible player behavior, use operation="act" instead of inventing an application-specific operation. For self-directed high-impact or irreversible behavior, also use operation="act" so the Player Specialist can adjudicate feasibility and consequences; do not invent a story-specific operation. Preserve the requested means in method. Include "player" in targetIds whenever the requested behavior can change the player physical state, and include only accessible environment or resource entities whose state also changes.',
     'When a requested behavior requires a physical resource absent from playerContext.accessibleEntityIds, do not invent an inaccessible entity ID or discard the request. Use operation="act" with targetIds=["player"], preserve the requested resource and attempted behavior in method and originalSpan, and let the Player Specialist adjudicate a blocked or failed outcome.',
     'All outgoing speech, questions, replies, calls, and messages use operation="communicate"; use operation="photograph" for image capture. A question carried by a message is communication content, not a separate action. Put its recipients, channel, attachments, audience, and contentSummary in one communications item tied to that actionId.',
+    ...compoundSpeechPromptLines(),
     'For speech aimed at whoever may be near an accessible place, do not invent a named NPC. Use channel="local_voice", recipientIds=[], and situatedAudience with accessible anchorEntityIds plus a grounded description. The action targetIds must equal those anchorEntityIds.',
     'targetIds must contain every accessible entity whose state or location the action changes. Physical target IDs must come from playerContext.accessibleEntityIds; communication recipients must come from playerContext.activeCommunicationActorIds.',
     'method describes technique only and must never be the only place where a state-changing entity appears.',
@@ -454,6 +455,7 @@ function semanticCompilerActionableRecoveryPrompt(): string {
     'ACTIONABLE RECOVERY: actionabilityReview has already confirmed that rawInput contains an executable player intent. You must compile that intent; non_action is not an allowed output.',
     'Read only rawInput and playerContext. Do not infer whether an action succeeds or invent observations, replies, clues, time changes, death, or endings.',
     'Asking, speaking, signaling, attempting, inspecting, moving, waiting, or expressing another executable intent is actionable even when its outcome is unknown.',
+    ...compoundSpeechPromptLines(),
     'Compile meaningful Chinese and English input. Preserve rawInput exactly in originalSpan.text and use exact JavaScript string offsets.',
     'Allowed operations: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait, act. Use act for ordinary executable behavior without a more specific operation.',
     'Use only accessibleEntityIds for physical targets and activeCommunicationActorIds for identified recipients.',
@@ -501,6 +503,52 @@ function semanticCompilerActionableRecoveryPrompt(): string {
     'FULL SITUATED QUESTION OUTPUT EXAMPLE (copy its structure, never its IDs or text):',
     situatedQuestionOutputExample(),
   ].join('\n');
+}
+
+function compoundSpeechPromptLines(): string[] {
+  return [
+    'Physical staging around speech remains a separate ordered action. If the player explicitly knocks, waves, points, opens, moves, or performs another physical behavior before or while speaking, emit that physical action plus one communicate action in source order; never turn the staging instruction into dialogue.',
+    'A colon, quotation marks, or a speech verb separates the spoken content from its narration. communication.contentSummary describes only what is spoken or signaled, excluding staging verbs such as knock-and-shout.',
+    `Compound speech example: rawInput="敲两下桌面并喊：有人吗？" has this semantic structure: ${JSON.stringify({
+      orderedActions: [{
+        actionId: 'action-knock-table',
+        actorId: 'player',
+        operation: 'act',
+        targetIds: ['accessible-table-id'],
+        method: '敲击桌面两次',
+        dependsOnActionIds: [],
+        inputHandleIds: [],
+        outputHandleIds: [],
+        originalSpan: { start: 0, end: 5, text: '敲两下桌面' },
+        intendedAudience: [],
+      }, {
+        actionId: 'action-call-out',
+        actorId: 'player',
+        operation: 'communicate',
+        targetIds: ['accessible-room-anchor-id'],
+        method: '大声询问',
+        dependsOnActionIds: ['action-knock-table'],
+        inputHandleIds: [],
+        outputHandleIds: [],
+        originalSpan: { start: 6, end: 12, text: '喊：有人吗？' },
+        intendedAudience: [],
+      }],
+      communications: [{
+        id: 'communication-call-out',
+        actionId: 'action-call-out',
+        senderId: 'player',
+        recipientIds: [],
+        channel: 'local_voice',
+        contentSummary: '询问是否有人',
+        attachmentHandleIds: [],
+        intendedAudience: [],
+        situatedAudience: {
+          anchorEntityIds: ['accessible-room-anchor-id'],
+          description: '能够听见玩家声音的任何人',
+        },
+      }],
+    })}`,
+  ];
 }
 
 function proposalPrompt(sourceAgent: string, domain: string): string {

@@ -123,6 +123,12 @@ assert(
 );
 assert(
   calls[0].system.includes(
+    'Physical staging around speech remains a separate ordered action.',
+  ),
+  'Semantic Compiler prompt must not collapse an explicit physical action into spoken content.',
+);
+assert(
+  calls[0].system.includes(
     'A meaningful question with an executable communication action must never use utteranceMode="non_action".',
   ),
   'Semantic Compiler prompt must keep player questions executable.',
@@ -705,6 +711,11 @@ assert(
 assert.deepEqual(nonActionReviewCalls[1].user, situatedQuestionRequest);
 assert(nonActionReviewCalls[2].system.includes('ACTIONABLE RECOVERY'));
 assert(nonActionReviewCalls[2].system.includes('FULL SITUATED QUESTION OUTPUT EXAMPLE'));
+assert(
+  nonActionReviewCalls[2].system.includes(
+    'Physical staging around speech remains a separate ordered action.',
+  ),
+);
 assert(
   !nonActionReviewCalls[2].system.includes('For truly meaningless input only'),
   'Actionable recovery must not offer non_action as a copyable output.',

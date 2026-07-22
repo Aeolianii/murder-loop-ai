@@ -530,7 +530,7 @@ function applyLowRiskAction(input: {
       const anchorLabel = audience.anchorEntityIds.map(actionTargetLabel).join('、');
       eventType = 'communication_emitted';
       subject = canonicalActionTarget(audience.anchorEntityIds);
-      summary = `你朝着${anchorLabel}附近开口说道：“${input.communication.contentSummary}”`;
+      summary = `你朝着${anchorLabel}附近开口，表达了这层意思：${input.communication.contentSummary}`;
       facts = [
         `communication_emitted:${input.communication.channel}`,
         ...audience.anchorEntityIds.map((anchorId) => `communication_anchor:${anchorId}`),
