@@ -49,17 +49,24 @@ export const env = {
   aiLowRiskTakeoverEnabled: process.env.AI_LOW_RISK_TAKEOVER_ENABLED === 'true',
   aiKnowledgeClueTakeoverEnabled: process.env.AI_KNOWLEDGE_CLUE_TAKEOVER_ENABLED === 'true',
   aiHighRiskTakeoverEnabled: process.env.AI_HIGH_RISK_TAKEOVER_ENABLED === 'true',
-  aiLegacyMainPathExitEnabled: process.env.AI_LEGACY_MAIN_PATH_EXIT_ENABLED === 'true',
+  aiLegacyMainPathExitEnabled: booleanFlag(process.env.AI_LEGACY_MAIN_PATH_EXIT_ENABLED, true),
   aiShadowDeadlineMs: positiveInteger(process.env.AI_SHADOW_DEADLINE_MS, 6_000),
   aiShadowCompilerTimeoutMs: positiveInteger(process.env.AI_SHADOW_COMPILER_TIMEOUT_MS, 1_000),
   aiShadowMainFactAuthorizationMode: process.env.AI_SHADOW_MAIN_FACT_AUTH_MODE === 'advisory_for_reversible_player'
     ? 'advisory_for_reversible_player' as const
     : 'strict' as const,
-  aiSemanticPrefetchEnabled: process.env.AI_SEMANTIC_PREFETCH_ENABLED === 'true',
+  aiSemanticPrefetchEnabled: booleanFlag(process.env.AI_SEMANTIC_PREFETCH_ENABLED, true),
   aiSemanticPrefetchTtlMs: positiveInteger(process.env.AI_SEMANTIC_PREFETCH_TTL_MS, 120_000),
 };
 
 function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function booleanFlag(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value.trim() === '') return fallback;
+  if (value.trim().toLowerCase() === 'true') return true;
+  if (value.trim().toLowerCase() === 'false') return false;
+  return fallback;
 }

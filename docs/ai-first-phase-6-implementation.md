@@ -54,10 +54,10 @@ Semantic Compiler
 默认配置：
 
 ```dotenv
-AI_LEGACY_MAIN_PATH_EXIT_ENABLED=false
+AI_LEGACY_MAIN_PATH_EXIT_ENABLED=true
 ```
 
-设置 `AI_LEGACY_MAIN_PATH_EXIT_ENABLED=true` 会自动依赖并启用阶段二至阶段五的同一主链能力：
+该开关未配置时也默认为 `true`，会自动依赖并启用阶段二至阶段五的同一主链能力：
 
 - Shadow Run 与 Semantic Compiler；
 - 低风险玩家动作接管；
@@ -71,7 +71,7 @@ AI_LEGACY_MAIN_PATH_EXIT_ENABLED=false
 - `keywordFallbackAuthority=disabled`；
 - `minimumPlayableFallback=ai_unavailable_only`。
 
-关闭阶段六开关并重启 Server 即恢复阶段五稳定路径：`/api/harness/turn` 重新使用阶段三至五的兼容预计算，legacy API 继续使用 `resolveLegacyTurnHarness`。Shadow 数据、Trace 和回归测试不会删除。
+显式设置 `AI_LEGACY_MAIN_PATH_EXIT_ENABLED=false` 并重启 Server，即可恢复阶段五稳定路径：`/api/harness/turn` 重新使用阶段三至五的兼容预计算，legacy API 继续使用 `resolveLegacyTurnHarness`。Shadow 数据、Trace 和回归测试不会删除。
 
 ## 代码入口
 
