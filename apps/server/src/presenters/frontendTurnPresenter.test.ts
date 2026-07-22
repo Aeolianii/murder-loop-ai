@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHarness, createInitialGameState } from '@murder-loop-ai/game-core';
 import {
+  buildDisplayedRecommendedActions,
   buildSidebarPayload,
   presentRecommendedActionsInChinese,
 } from './frontendTurnPresenter';
@@ -74,12 +75,21 @@ const presentedRecommendations = presentRecommendedActionsInChinese([
 
 assert.deepEqual(
   presentedRecommendations.map((action) => action.label),
-  ['拍摄并保存包裹标签', '检查桌上的包裹', '检查窗户', '检查床底', '检查衣柜', '检查卫生间水箱', '检查房间'],
+  ['拍摄并保存包裹标签', '检查桌上的包裹', '检查窗户'],
+  'the UI must publish at most three recommendations even when the Specialist returns more',
 );
 for (const action of presentedRecommendations) {
   assert.doesNotMatch(action.label, /[A-Za-z]/);
   assert.doesNotMatch(action.rationale, /[A-Za-z]/);
 }
+
+const fallbackRecommendations = buildDisplayedRecommendedActions([], createInitialGameState());
+assert.deepEqual(
+  fallbackRecommendations.map((action) => action.id),
+  ['fallback.inspect-package', 'fallback.secure-front-door', 'fallback.inspect-window'],
+  'an active turn with no accepted AI recommendations must receive grounded visible-state fallbacks',
+);
+assert.ok(fallbackRecommendations.length >= 1 && fallbackRecommendations.length <= 3);
 
 const alreadyChinese = [{
   id: 'secure-door',

@@ -1028,6 +1028,11 @@ async function testLegacyMainPathExitRejectsUngroundedActionNarration() {
   assert.match(actionResult?.content ?? '', /锁好门锁.*扣上门链.*椅子抵住了入户门/);
   assert.doesNotMatch(actionResult?.content ?? '', /撕开封口|翻开包裹/);
   assert.ok(
+    actionResult?.recommendedActions?.length >= 1
+      && actionResult.recommendedActions.length <= 3,
+    'every successful active turn must publish between one and three recommendations',
+  );
+  assert.ok(
     body.coordination.warnings.some((warning: string) => warning.includes('not grounded')),
   );
   await app.close();

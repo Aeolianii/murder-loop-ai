@@ -99,6 +99,8 @@ function chineseCopyForRecommendation(action: RecommendedAction): ChineseRecomme
 export function presentRecommendedActionsInChinese(
   actions: RecommendedAction[],
 ): RecommendedAction[] {
+  const seenIds = new Set<string>();
+  const seenLabels = new Set<string>();
   return actions.map((action) => {
     const fallback = chineseCopyForRecommendation(action);
     return {
@@ -106,7 +108,95 @@ export function presentRecommendedActionsInChinese(
       label: isChineseUiCopy(action.label) ? action.label : fallback.label,
       rationale: isChineseUiCopy(action.rationale) ? action.rationale : fallback.rationale,
     };
-  });
+  }).filter((action) => {
+    const id = action.id.trim();
+    const label = action.label.trim();
+    if (!id || !label || seenIds.has(id) || seenLabels.has(label)) return false;
+    seenIds.add(id);
+    seenLabels.add(label);
+    return true;
+  }).slice(0, 3);
+}
+
+export function buildDisplayedRecommendedActions(
+  actions: RecommendedAction[],
+  state: GameState,
+): RecommendedAction[] {
+  if (state.ending) return [];
+  const accepted = presentRecommendedActionsInChinese(actions);
+  if (accepted.length > 0) return accepted;
+  return presentRecommendedActionsInChinese(buildVisibleStateFallbacks(state));
+}
+
+function buildVisibleStateFallbacks(state: GameState): RecommendedAction[] {
+  const fallbacks: RecommendedAction[] = [];
+  const add = (action: RecommendedAction) => {
+    if (fallbacks.length < 3) fallbacks.push(action);
+  };
+  const packageObject = state.room.package;
+  if (packageObject?.visible && !packageObject.inspected) {
+    add({
+      id: 'fallback.inspect-package',
+      label: '检查桌上的包裹',
+      rationale: '包裹仍未确认，从外观和标签开始检查可以获得下一步依据。',
+      intent: 'inspect',
+      target: 'package',
+    });
+  }
+
+  const frontDoor = state.room.front_door;
+  if (frontDoor?.visible) {
+    const secured = Boolean(frontDoor.state.locked && frontDoor.state.chainLocked);
+    add(secured
+      ? {
+          id: 'fallback.inspect-front-door',
+          label: '检查前门门锁',
+          rationale: '确认门锁、门链和门外动静，可以及时发现入口风险。',
+          intent: 'inspect',
+          target: 'front_door',
+        }
+      : {
+          id: 'fallback.secure-front-door',
+          label: '锁好并加固前门',
+          rationale: '入口尚未完全锁好，先确保前门安全可以降低他人进入的风险。',
+          intent: 'secure_entry',
+          target: 'front_door',
+        });
+  }
+
+  const window = state.room.window;
+  if (window?.visible && (!window.inspected || window.state.checked !== true)) {
+    add({
+      id: 'fallback.inspect-window',
+      label: '检查窗户',
+      rationale: '确认窗户是否锁好，可以排除另一个可能的出入口风险。',
+      intent: 'inspect',
+      target: 'window',
+    });
+  }
+
+  for (const object of Object.values(state.room)) {
+    if (fallbacks.length >= 3) break;
+    if (!object.visible || object.inspected || ['package', 'front_door', 'window'].includes(object.id)) continue;
+    add({
+      id: `fallback.inspect-${object.id}`,
+      label: `检查${object.name}`,
+      rationale: '这个可见区域仍未确认，检查后可能发现可用物品或新的异常。',
+      intent: 'inspect',
+      target: object.id,
+    });
+  }
+
+  if (fallbacks.length === 0) {
+    add({
+      id: 'fallback.observe-surroundings',
+      label: '留在安全位置观察周围动静',
+      rationale: '暂时没有明确的新目标时，先确认环境变化再行动更稳妥。',
+      intent: 'wait',
+      target: 'player',
+    });
+  }
+  return fallbacks;
 }
 
 export async function buildSidebarPayload(

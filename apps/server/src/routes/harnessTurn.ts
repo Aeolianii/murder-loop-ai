@@ -24,8 +24,8 @@ import { createAiShadowAdapters } from '../ai/shadowAiAdapters';
 import { env } from '../env';
 import {
   applyConfirmedTurnNarration,
+  buildDisplayedRecommendedActions,
   buildSidebarPayload,
-  presentRecommendedActionsInChinese,
   toFrontendClues,
   toFrontendNode,
   type FrontendStoryNode,
@@ -344,8 +344,11 @@ function attachRecommendedActions(
   nodes: FrontendStoryNode[],
   resolution: TurnResolution,
 ): FrontendStoryNode[] {
-  if (!resolution.recommendedActions?.length) return nodes;
-  const recommendedActions = presentRecommendedActionsInChinese(resolution.recommendedActions);
+  const recommendedActions = buildDisplayedRecommendedActions(
+    resolution.recommendedActions ?? [],
+    resolution.finalState,
+  );
+  if (recommendedActions.length === 0) return nodes;
   let index = -1;
   for (let i = nodes.length - 1; i >= 0; i -= 1) {
     if (nodes[i].type === 'action_result') {
