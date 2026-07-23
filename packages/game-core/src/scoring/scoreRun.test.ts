@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createClueFromTemplate } from '@murder-loop-ai/content';
 import type { GameState } from '@murder-loop-ai/shared';
 import { createInitialGameState } from '../state/createInitialState';
+import { activatePlayerKnowledge } from '../knowledge/playerKnowledge';
 import { scoreRun } from './scoreRun';
 
 function addClue(state: GameState, clueId: string) {
@@ -10,7 +11,7 @@ function addClue(state: GameState, clueId: string) {
   state.clues.push(clue);
 }
 
-function testNewStoryNodeCluesImproveTruthScore() {
+function testLegacyRawCluesDoNotBypassConclusionInference() {
   const state = createInitialGameState();
   addClue(state, 'wrong_package');
   addClue(state, 'room_403_receipt');
@@ -19,7 +20,32 @@ function testNewStoryNodeCluesImproveTruthScore() {
 
   const score = scoreRun(state);
 
-  assert.equal(score.truth, 20);
+  assert.equal(score.truth, 0);
+}
+
+function addAtomicClue(state: GameState, clueId: string) {
+  state.clues.push({
+    id: clueId,
+    title: clueId,
+    detail: clueId,
+    source: 'player_discovered',
+    weight: 1,
+    discoveredAt: { run: state.run, minute: state.minute },
+    isPersistent: true,
+  });
+}
+
+function testTruthScoreComesFromConfirmedConclusionsOnly() {
+  const state = createInitialGameState();
+  addAtomicClue(state, 'package_label_fragment');
+  addAtomicClue(state, 'no_matching_order');
+
+  const activated = activatePlayerKnowledge(state).state;
+  assert.equal(scoreRun(activated).truth, 1);
+
+  const legacy = createInitialGameState();
+  addClue(legacy, 'police_verified');
+  assert.equal(scoreRun(legacy).truth, 0);
 }
 
 function testLinYuePoliceAssistScoresBetterThanDanger() {
@@ -47,6 +73,7 @@ function testHandoffAndExternalAssistImproveEvidenceScore() {
   assert.equal(score.evidence, 20);
 }
 
-testNewStoryNodeCluesImproveTruthScore();
+testLegacyRawCluesDoNotBypassConclusionInference();
+testTruthScoreComesFromConfirmedConclusionsOnly();
 testLinYuePoliceAssistScoresBetterThanDanger();
 testHandoffAndExternalAssistImproveEvidenceScore();

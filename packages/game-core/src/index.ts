@@ -33,6 +33,7 @@ export * from './facts/eventAssertions';
 export * from './facts/knowledgeProjection';
 export * from './intent/IntentProjector';
 export * from './knowledge/knowledgeDefinitions';
+export * from './knowledge/knowledgeInference';
 export * from './knowledge/playerKnowledge';
 export * from './scoring/multiDimensionScorer';
 export * from './death/deathPathResolver';

@@ -1,4 +1,5 @@
 import type { DeductionClaim, DeductionResult, GameState } from '@murder-loop-ai/shared';
+import { deriveTruth } from '../knowledge/knowledgeInference';
 import { getActivatedClueFragments } from '../knowledge/playerKnowledge';
 
 export function buildDeductionPrompt(state: GameState): string {
@@ -8,7 +9,14 @@ export function buildDeductionPrompt(state: GameState): string {
 }
 
 export function validateDeductionClaims(state: GameState, playerText: string): DeductionResult {
-  const activatedLabels = new Map(state.activatedKnowledge.map((k) => [k.id, k.label]));
+  const confirmedKnowledgeIds = new Set(
+    deriveTruth(state.activatedKnowledge).confirmedKnowledgeIds,
+  );
+  const activatedLabels = new Map(
+    state.activatedKnowledge
+      .filter((knowledge) => confirmedKnowledgeIds.has(knowledge.id))
+      .map((knowledge) => [knowledge.id, knowledge.label]),
+  );
   const rawClaims = playerText.split(/[。；\n]/).map((s) => s.trim()).filter((s) => s.length >= 4);
 
   const claims: DeductionClaim[] = rawClaims.map((statement) => {

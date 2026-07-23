@@ -1,5 +1,5 @@
 import type { EndingTier, EndingTierResult, GameState } from '@murder-loop-ai/shared';
-import { computeTruthLayer } from '../knowledge/knowledgeDefinitions';
+import { deriveTruth } from '../knowledge/knowledgeInference';
 import { hasConvictingEvidence } from '../rules/endingRules';
 
 function scoreEvidenceStrength(state: GameState): number {
@@ -17,7 +17,7 @@ function scoreExternalReach(state: GameState): number {
   if (state.clues.some((c) => c.id === 'linyue_has_photo') || ['calling_police', 'safe'].includes(state.linYuePhase)) score += 40;
   if (['arrived', 'real_police_en_route'].includes(state.policePhase) || state.clues.some((c) => c.id === 'police_verified')) score += 30;
   if (state.clues.some((c) => c.id === 'recording_pressure')) score += 20;
-  if (state.activatedKnowledge.some((k) => k.id === 'org_has_inside_man')) score = Math.round(score * 0.8);
+  if (state.activatedKnowledge.some((k) => k.id === 'organization_has_police_insider')) score = Math.round(score * 0.8);
   return Math.min(100, score);
 }
 
@@ -56,13 +56,12 @@ const NARRATIVES: Record<EndingTier, string> = {
 };
 
 export function scoreEnding(state: GameState): EndingTierResult {
-  const activatedIds = state.activatedKnowledge.map((k) => k.id);
-  const truthLayer = computeTruthLayer(activatedIds);
+  const truthLayer = deriveTruth(state.activatedKnowledge).truthLayer;
   const evidenceStrength = scoreEvidenceStrength(state);
   const externalReach = scoreExternalReach(state);
   const survivors = scoreSurvivors(state);
   const cycleCost = scoreCycleCost(state);
-  const totalScore = Math.round(truthLayer * 0.35 + evidenceStrength * 0.30 + externalReach * 0.25 + survivors * 0.15 + cycleCost * 0.05);
+  const totalScore = Math.max(0, Math.min(100, Math.round(truthLayer * 0.35 + evidenceStrength * 0.30 + externalReach * 0.25 + survivors * 0.15 + cycleCost * 0.05)));
   const tier = TIERS.find((t) => totalScore >= t.min)?.tier ?? 'D';
   return { tier, totalScore, breakdown: { truthLayer, evidenceStrength, externalReach, survivors, cycleCost }, narrative: NARRATIVES[tier], backtrackHint: tier === 'S' ? null : HINTS[tier] };
 }

@@ -454,19 +454,53 @@ export interface PlayerKnowledge {
   id: string;
   label: string;
   activatedAt: { run: number; minute: number };
+  /** All leaf clues supporting this conclusion, including clues inherited through other conclusions. */
   sourceClueIds: string[];
+  /** Clues referenced directly by this conclusion's rule. */
+  directSourceClueIds?: string[];
+  /** Conclusions referenced directly by this conclusion's rule. */
+  sourceKnowledgeIds?: string[];
   truthLayerContribution: number;
   excludes: string[];
+  category?: KnowledgeCategory;
+  stage?: KnowledgeStage;
+  ruleVersion?: number;
 }
+
+export type KnowledgeCategory = 'conclusion' | 'hypothesis';
+export type KnowledgeStage = 0 | 1 | 2 | 3 | 4;
+export type TruthStage = 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
+
+export type KnowledgeRequirement =
+  | { kind: 'clue'; id: string }
+  | { kind: 'knowledge'; id: string }
+  | { kind: 'all'; requirements: KnowledgeRequirement[] }
+  | { kind: 'any'; requirements: KnowledgeRequirement[]; minimum?: number };
 
 export interface KnowledgeDefinition {
   id: string;
   label: string;
-  requiredClueIds: string[];
+  category: KnowledgeCategory;
+  stage: KnowledgeStage;
+  requirement: KnowledgeRequirement;
+  /** Compatibility fields for old saves and callers; new rules use requirement. */
+  requiredClueIds?: string[];
   anyOf?: { clueIds: string[]; count: number };
   excludes: string[];
+  invalidatedBy?: KnowledgeRequirement;
   truthLayerContribution: number;
   unlocksDirection: string;
+  ruleVersion?: number;
+}
+
+export interface TruthDerivation {
+  truthLayer: number;
+  stage: TruthStage;
+  confirmedKnowledgeIds: string[];
+  hypothesisIds: string[];
+  topLevelKnowledgeIds: string[];
+  supportingClueIds: string[];
+  unlockedDirections: string[];
 }
 
 export type EndingTier = 'S' | 'A' | 'B' | 'C' | 'D';

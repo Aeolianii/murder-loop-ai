@@ -1,4 +1,5 @@
 import type { GameState, ScoreResult } from '@murder-loop-ai/shared';
+import { deriveTruth } from '../knowledge/knowledgeInference';
 
 function hasClue(state: GameState, id: string) {
   return state.clues.some(c => c.id === id);
@@ -8,16 +9,6 @@ export function scoreRun(state: GameState): ScoreResult {
   // 更新结局判定：把新的结局 id 也纳入"存活"范围
   const survived = state.ending !== null && state.ending !== 'death';
   const survival = survived ? (state.player.injury === 'none' ? 20 : 12) : 0;
-  const truthClues = [
-    'wrong_package',
-    'unknown_number_probe',
-    'police_verified',
-    'door_scratch',
-    'chen_phone_found',
-    'room_403_receipt',
-    'false_police_overknows',
-    'handoff_failed_2347',
-  ];
   const evidenceClues = [
     'package_photo',
     'linyue_has_photo',
@@ -25,7 +16,7 @@ export function scoreRun(state: GameState): ScoreResult {
     'self_defense_evidence',
     'handoff_failed_2347',
   ];
-  const truth = Math.min(20, state.clues.filter(c => truthClues.includes(c.id)).length * 5);
+  const truth = Math.round(deriveTruth(state.activatedKnowledge).truthLayer * 0.2);
   const evidence = Math.min(20, state.clues.filter(c => evidenceClues.includes(c.id)).length * 7);
   const npc = state.linYuePhase === 'dead'
     ? 0
@@ -41,14 +32,20 @@ export function scoreRun(state: GameState): ScoreResult {
               ? 14
               : 10;
   const injury = state.player.injury === 'none' ? 10 : state.player.injury === 'minor' ? 7 : state.player.injury === 'leg_injured' ? 4 : 2;
-  const riskControl = Math.min(15, [state.room.front_door.state.barricaded, state.room.window.state.locked, hasClue(state, 'police_verified')].filter(Boolean).length * 5);
+  const riskControl = Math.min(15, [
+    state.room.front_door.state.barricaded,
+    state.room.window.state.locked,
+    ['real_police_en_route', 'arrived'].includes(state.policePhase),
+  ].filter(Boolean).length * 5);
   const total = survival + truth + evidence + npc + injury + riskControl;
   const rank = total >= 90 ? 'S' : total >= 75 ? 'A' : total >= 60 ? 'B' : total >= 45 ? 'C' : total >= 25 ? 'D' : 'F';
 
   const notes: string[] = [];
   if (!survived) notes.push('这一轮没有活下来，但死亡会变成下一轮的情报。');
   if (!hasClue(state, 'package_photo')) notes.push('缺少包裹照片，证据链很脆弱。');
-  if (!hasClue(state, 'police_verified')) notes.push('没有核实警察身份，假警察路线仍然危险。');
+  if (!['real_police_en_route', 'arrived'].includes(state.policePhase)) {
+    notes.push('尚未建立可信警方接应，假警察路线仍然危险。');
+  }
   if (hasClue(state, 'linyue_has_photo')) notes.push('林越成为外部备份，但也要注意他的风险。');
   if (state.linYuePhase === 'calling_police') notes.push('林越留在安全位置协助报警，外部协助链成立。');
   if (state.linYuePhase === 'coming_to_apartment') notes.push('林越正在靠近现场，他可能被卷入危险。');
