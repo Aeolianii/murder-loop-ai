@@ -19,6 +19,10 @@ import {
   canStartTruthDerivation,
   isConfirmedPositiveKnowledge,
 } from '../deductionWorkspace';
+import {
+  buildClueRelationMap,
+  findRelatedDiscoveredClueIds,
+} from '../knowledgeRelations';
 import type { Clue } from '../types';
 
 export type DeductionWorkspaceMode = 'inference' | 'truth';
@@ -36,6 +40,8 @@ interface CombinationFeedback {
   result: KnowledgeCombinationResult;
   matched: typeof KNOWLEDGE_DEFINITIONS;
 }
+
+const CLUE_RELATIONS = buildClueRelationMap(KNOWLEDGE_DEFINITIONS);
 
 function toggleSelection(
   ids: string[],
@@ -69,6 +75,12 @@ function InferenceWorkspace({
   const [feedback, setFeedback] = useState<CombinationFeedback | null>(null);
   const selectableKnowledge = knowledge.filter(isConfirmedPositiveKnowledge);
   const selectedCount = selectedClueIds.length + selectedKnowledgeIds.length;
+  const relatedClueIds = findRelatedDiscoveredClueIds({
+    selectedClueIds,
+    discoveredClueIds: clues.map((clue) => clue.id),
+    relations: CLUE_RELATIONS,
+  });
+  const hasSelectedClue = selectedClueIds.length > 0;
 
   const clearFeedback = () => setFeedback(null);
   const reset = () => {
@@ -96,7 +108,7 @@ function InferenceWorkspace({
             <div>
               <h3 className="font-serif text-lg text-zinc-100">原始线索</h3>
               <p className="mt-1 text-xs text-zinc-500">
-                选择你认为存在逻辑联系的客观观察。
+                点击线索后，已发现的关联线索会自动高亮。
               </p>
             </div>
             <span className="font-mono text-[10px] text-zinc-600">
@@ -107,6 +119,14 @@ function InferenceWorkspace({
             <div className="grid gap-2 md:grid-cols-2">
               {clues.map((clue) => {
                 const selected = selectedClueIds.includes(clue.id);
+                const related = relatedClueIds.has(clue.id);
+                const relationState = selected
+                  ? 'selected'
+                  : related
+                    ? 'related'
+                    : hasSelectedClue
+                      ? 'dimmed'
+                      : 'idle';
                 return (
                   <button
                     key={clue.id}
@@ -116,15 +136,27 @@ function InferenceWorkspace({
                       setSelectedClueIds((ids) => toggleSelection(ids, clue.id));
                       clearFeedback();
                     }}
+                    data-relation-state={relationState}
                     className={`flex gap-3 rounded-xl border p-3 text-left transition ${
                       selected
                         ? 'border-amber-300/35 bg-amber-300/8'
-                        : 'border-white/7 bg-white/[0.025] hover:border-white/15'
+                        : related
+                          ? 'border-cyan-300/45 bg-cyan-300/[0.08] shadow-[0_0_24px_rgba(103,232,249,0.08)]'
+                          : hasSelectedClue
+                            ? 'border-white/5 bg-white/[0.015] opacity-45 hover:opacity-80'
+                            : 'border-white/7 bg-white/[0.025] hover:border-white/15'
                     }`}
                   >
                     <SelectionMark selected={selected} />
                     <span className="min-w-0">
-                      <span className="block text-sm text-zinc-200">{clue.name}</span>
+                      <span className="flex items-center gap-2 text-sm text-zinc-200">
+                        <span className="min-w-0 truncate">{clue.name}</span>
+                        {related && (
+                          <span className="shrink-0 rounded-full border border-cyan-300/25 px-1.5 py-0.5 font-mono text-[9px] text-cyan-200/75">
+                            关联
+                          </span>
+                        )}
+                      </span>
                       <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-zinc-500">
                         {clue.description}
                       </span>
