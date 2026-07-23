@@ -23,6 +23,12 @@ export interface HarnessTurnResponse extends Partial<FrontendGameState> {
   };
 }
 
+export interface HarnessSidebarResponse {
+  gameSessionId: string;
+  stateVersion: number;
+  sidebar: NonNullable<FrontendGameState['sidebar']>;
+}
+
 export type HarnessTurnOperation = 'turn' | 'reset_loop' | 'deduction';
 
 export class HarnessTurnRequestError extends Error {
@@ -70,6 +76,26 @@ export async function postHarnessTurn(
     throw new HarnessTurnRequestError(response.status, code, payload);
   }
   return (await response.json()) as HarnessTurnResponse;
+}
+
+export async function postHarnessSidebar(
+  gameSessionId: string,
+  stateVersion: number,
+): Promise<HarnessSidebarResponse> {
+  const response = await fetch('/api/harness/sidebar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ gameSessionId, stateVersion }),
+  });
+  if (!response.ok) {
+    const payload = await readErrorPayload(response);
+    const code = payload && typeof payload === 'object' && 'error' in payload
+      && typeof payload.error === 'string'
+      ? payload.error
+      : undefined;
+    throw new HarnessTurnRequestError(response.status, code, payload);
+  }
+  return (await response.json()) as HarnessSidebarResponse;
 }
 
 async function readErrorPayload(response: Response): Promise<unknown> {

@@ -378,6 +378,10 @@ function attachRecommendedActions(
 
 export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTurnRouteOptions = {}) {
   const gameSessionStore = options.gameSessionStore ?? createInMemoryGameSessionStore();
+  const deferredSidebarStates = new Map<string, {
+    stateVersion: number;
+    state: GameState;
+  }>();
   const anyStateTakeoverEnabled = env.aiLowRiskTakeoverEnabled
     || env.aiKnowledgeClueTakeoverEnabled
     || env.aiHighRiskTakeoverEnabled
@@ -416,6 +420,52 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     ? false
     : lowRiskTakeoverService?.legacyMainPathExitEnabled
       ?? env.aiLegacyMainPathExitEnabled;
+
+  app.post('/api/harness/sidebar', async (request, reply) => {
+    const body = (request.body ?? {}) as {
+      gameSessionId?: string;
+      stateVersion?: number;
+    };
+    const gameSessionId = body.gameSessionId?.trim() ?? '';
+    const requestedStateVersion = body.stateVersion;
+    if (
+      !gameSessionId
+      || !Number.isInteger(requestedStateVersion)
+      || (requestedStateVersion ?? -1) < 0
+    ) {
+      return reply.code(400).send({ error: 'invalid_sidebar_request' });
+    }
+
+    const deferredState = deferredSidebarStates.get(gameSessionId);
+    const snapshot = gameSessionStore.snapshot(gameSessionId);
+    const sidebarState = deferredState ?? (snapshot
+      ? { stateVersion: snapshot.stateVersion, state: snapshot.state }
+      : undefined);
+    if (!sidebarState) {
+      return reply.code(404).send({
+        error: 'game_session_not_found',
+        gameSessionId,
+      });
+    }
+    if (sidebarState.stateVersion !== requestedStateVersion) {
+      return reply.code(409).send({
+        error: 'state_version_conflict',
+        gameSessionId,
+        requestedStateVersion,
+        authoritativeStateVersion: sidebarState.stateVersion,
+      });
+    }
+
+    const sidebar = await buildSidebarPayload(
+      createAiHarness({ worldTick: 'enabled' }),
+      sidebarState.state,
+    );
+    return {
+      gameSessionId,
+      stateVersion: sidebarState.stateVersion,
+      sidebar,
+    };
+  });
 
   app.post('/api/harness/turn', async (request, reply) => {
     const requestStartedAt = performance.now();
@@ -1098,7 +1148,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
     if (!resolution) {
       const legacyResolutionStartedAt = performance.now();
-      resolution = await resolveLegacyTurnHarness(state, input, harness);
+      resolution = await resolveLegacyTurnHarness(
+        state,
+        input,
+        harness,
+        { deferTurnCompleted: true },
+      );
       turnTimingEntries.push({
         stageId: 'legacy-resolution',
         durationMs: performance.now() - legacyResolutionStartedAt,
@@ -1179,10 +1234,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       addTurnDynamicClues(resolution, visibleEntries);
     }
 
-    // 并发启动回合后的非权威展示工作：audioCue 和 sidebar。
-
-    const presentationStartedAt = performance.now();
-    const audioCuePromise = options.selectActionAudioCue?.({
+    // SidebarAgent is requested separately after the client has rendered the story.
+    const audioCueStartedAt = performance.now();
+    const audioCue = await (options.selectActionAudioCue?.({
       input,
       plan: resolution.plan,
       state: resolution.finalState,
@@ -1192,14 +1246,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       plan: resolution.plan,
       state: resolution.finalState,
       playerResult: resolution.playerResult,
-    });
-    const sidebarPromise = buildSidebarPayload(harness, resolution.finalState);
+    }));
 
     const endingEntry = resolution.finalState.ending ? resolution.finalState.log[resolution.finalState.log.length - 1] : null;
-    const [audioCue, sidebar] = await Promise.all([audioCuePromise, sidebarPromise]);
     turnTimingEntries.push({
-      stageId: 'presentation',
-      durationMs: performance.now() - presentationStartedAt,
+      stageId: 'audio-cue',
+      durationMs: performance.now() - audioCueStartedAt,
     });
     const trace = harness.dispatcher.getTrace().map(e => ({
       taskId: e.eventType, agentId: e.agentId, source: e.source, warnings: e.warnings, durationMs: e.durationMs,
@@ -1269,6 +1321,11 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       }
     }
 
+    deferredSidebarStates.set(gameSessionId, {
+      stateVersion: outputStateVersion,
+      state: resolution.finalState,
+    });
+
     return {
       gameSessionId,
       inputStateVersion: sessionStateVersion,
@@ -1330,7 +1387,6 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           },
         } : {}),
       },
-      sidebar,
     };
   });
 }

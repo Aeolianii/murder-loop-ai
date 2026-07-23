@@ -282,7 +282,7 @@ apps/server/src/ai/harnessAiAdapters.ts
 - 死亡状态自动回退入口。
 - plot guidance 异步缓存。
 - 动态线索提取。
-- audio cue / sidebar 并发附加工作调度。
+- audio cue 主响应附加，以及正文渲染后的 SidebarAgent 延迟调度。
 - 最终 response 组装和 coordination 汇总。
 
 后续如果继续拆，应优先考虑 `plotGuidance` 或 `dynamicClues`，仍保持一次只移动一类职责。

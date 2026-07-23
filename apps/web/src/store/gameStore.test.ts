@@ -189,3 +189,48 @@ assert(
   afterClarification.frontendState.storyLog.at(-1)?.content === '行动含义还不够明确，请换一种更具体的说法。',
   'the store should preserve the semantic clarification message',
 );
+
+resetStore();
+const deferredSessionId = useGameStore.getState().frontendState.gameSessionId;
+let sidebarRequestedAfterStory = false;
+globalThis.fetch = (async (url) => {
+  if (String(url).endsWith('/api/harness/turn')) {
+    return new Response(JSON.stringify({
+      ...turnResponse,
+      gameSessionId: deferredSessionId,
+      inputStateVersion: 0,
+      outputStateVersion: 1,
+      sidebar: undefined,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  sidebarRequestedAfterStory = useGameStore.getState().frontendState.storyLog
+    .some(node => node.id === 'server-narration');
+  return new Response(JSON.stringify({
+    gameSessionId: deferredSessionId,
+    stateVersion: 1,
+    sidebar: {
+      phone: { battery: 58, recording: false, muted: false, newMessages: [] },
+      threat: { level: 42, trend: 'stable', label: '压力上升' },
+      timeLabel: '23:08',
+      phaseLabel: '搜证中',
+      npcStatus: [],
+      roomStatus: [],
+      newClues: [],
+    },
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}) as typeof fetch;
+
+await useGameStore.getState().submitAction('我拍下包裹');
+await new Promise(resolve => setTimeout(resolve, 20));
+assert(sidebarRequestedAfterStory, 'SidebarAgent request must start only after story text is in frontend state');
+assert(
+  useGameStore.getState().frontendState.sidebar?.threat.level === 42,
+  'the deferred SidebarAgent response should update the matching committed turn',
+);

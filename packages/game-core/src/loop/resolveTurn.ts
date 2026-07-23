@@ -583,6 +583,7 @@ async function parseHarnessTurn(
 async function resolveStoryNodeTurn(
   turn: ParsedHarnessTurn,
   harness: HarnessRuntime,
+  runTurnCompleted = true,
 ): Promise<TurnResolution | undefined> {
   const storyNode = resolveStoryNode(turn.state, turn.plan);
   if (!storyNode) return undefined;
@@ -619,9 +620,11 @@ async function resolveStoryNodeTurn(
     }),
     fallbackActions: resolution.recommendedActions ?? [],
   });
-  await harness.dispatcher.runCommand('TurnCompleted', {
-    finalState: resolution.finalState,
-  });
+  if (runTurnCompleted) {
+    await harness.dispatcher.runCommand('TurnCompleted', {
+      finalState: resolution.finalState,
+    });
+  }
   return resolution;
 }
 
@@ -860,15 +863,20 @@ export async function resolveLegacyTurnHarness(
   state: GameState,
   input: string,
   harness: HarnessRuntime,
+  options: { deferTurnCompleted?: boolean } = {},
 ): Promise<TurnResolution> {
   const parsedTurn = await parseHarnessTurn(state, input, harness);
-  const storyNodeResolution = await resolveStoryNodeTurn(parsedTurn, harness);
+  const storyNodeResolution = await resolveStoryNodeTurn(
+    parsedTurn,
+    harness,
+    !options.deferTurnCompleted,
+  );
   if (storyNodeResolution) return storyNodeResolution;
 
   const resolvedTurn = await resolveRuleStages(parsedTurn, harness);
   const narratedTurn = await renderHarnessTurn(resolvedTurn, harness);
   dispatchNarrationCritic(narratedTurn, harness);
-  return finalizeHarnessTurn(narratedTurn, harness);
+  return finalizeHarnessTurn(narratedTurn, harness, !options.deferTurnCompleted);
 }
 
 export interface PreparedPlayerTurnInput {

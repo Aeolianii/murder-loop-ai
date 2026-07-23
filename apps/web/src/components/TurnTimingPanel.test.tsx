@@ -16,6 +16,7 @@ const html = renderToStaticMarkup(
         { stageId: 'semantic-compiler', durationMs: 1_200 },
         { stageId: 'player-specialist', durationMs: 8_230 },
         { stageId: 'confirmed-narration', durationMs: 3_456 },
+        { stageId: 'audio-cue', durationMs: 2_100 },
       ],
     }}
   />,
@@ -30,6 +31,7 @@ assert.match(html, /最慢环节/, 'the slowest stage must be highlighted');
 assert.match(html, /玩家行动裁决/, 'internal stage ids must be localized for players');
 assert.match(html, /语义解析/, 'every known stage must render with a Chinese name');
 assert.match(html, /行动与环境叙事/, 'narration timing must render with a Chinese name');
+assert.match(html, /行动音效选择/, 'deferred presentation timing must identify audio cue work precisely');
 assert.doesNotMatch(
   html,
   /player-specialist|semantic-compiler|confirmed-narration/,

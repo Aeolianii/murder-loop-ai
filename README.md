@@ -281,7 +281,8 @@ apps/web
        -> Narrator confirmed facts + world event cursor
        -> deferred Director Critic
   -> apps/server/src/presenters/frontendTurnPresenter.ts
-  -> apps/web renders story, clues, sidebar, audio cue
+  -> apps/web renders story, clues, audio cue
+  -> apps/web requests and renders SidebarAgent data after story output
 ```
 
 ## 运行方式

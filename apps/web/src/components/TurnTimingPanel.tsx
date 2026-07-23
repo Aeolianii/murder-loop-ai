@@ -16,6 +16,7 @@ const STAGE_LABELS: Record<string, string> = {
   'recommendation-specialist': '后续行动推荐',
   'rule-commit': '规则校验与提交',
   'confirmed-narration': '行动与环境叙事',
+  'audio-cue': '行动音效选择',
   presentation: '侧边栏与音效',
   'legacy-resolution': '回合处理',
   'legacy-parser': '玩家意图解析',

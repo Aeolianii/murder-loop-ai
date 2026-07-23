@@ -232,6 +232,32 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
   assert.equal(body.agentTrace[0].validation.valid, true);
   assert.equal(body.audioCue.soundId, 'phone_msg');
   assert.equal(body.audioCue.confidence, 0.91);
+  assert.equal(
+    body.coordination.trace.some((entry: { taskId: string; agentId: string }) => (
+      entry.taskId === 'TurnCompleted' && entry.agentId === 'sidebar'
+    )),
+    false,
+    'SidebarAgent must not run inside the primary turn request',
+  );
+  assert.equal(
+    'sidebar' in body,
+    false,
+    'the primary turn response must publish story text before SidebarAgent runs',
+  );
+
+  const sidebarResponse = await app.inject({
+    method: 'POST',
+    url: '/api/harness/sidebar',
+    payload: {
+      gameSessionId: body.gameSessionId,
+      stateVersion: body.outputStateVersion,
+    },
+  });
+  assert.equal(sidebarResponse.statusCode, 200, sidebarResponse.body);
+  const sidebarBody = sidebarResponse.json();
+  assert.equal(sidebarBody.gameSessionId, body.gameSessionId);
+  assert.equal(sidebarBody.stateVersion, body.outputStateVersion);
+  assert.equal(sidebarBody.sidebar.threat.level, body.coreState.threat);
 
   await app.close();
 }
@@ -571,8 +597,18 @@ async function testLowRiskTakeoverCommitsBeforePublishingResponse() {
   assert.equal(fixture.calls().completeCalls, 1);
   assert.equal(fixture.calls().committedFinalState?.room.front_door.state.barricaded, true);
   assert.equal(body.coreState.room.front_door.state.barricaded, true);
+  const sidebarResponse = await app.inject({
+    method: 'POST',
+    url: '/api/harness/sidebar',
+    payload: {
+      gameSessionId: body.gameSessionId,
+      stateVersion: body.outputStateVersion,
+    },
+  });
+  assert.equal(sidebarResponse.statusCode, 200, sidebarResponse.body);
+  const sidebar = sidebarResponse.json().sidebar;
   assert.equal(
-    body.sidebar.roomStatus
+    sidebar.roomStatus
       .find((item: { item: string; state: string }) => item.item === baseState.room.front_door.name)
       ?.state.includes('barricaded'),
     true,
@@ -581,8 +617,8 @@ async function testLowRiskTakeoverCommitsBeforePublishingResponse() {
     body.coordination.trace.filter((entry: { taskId: string; agentId: string }) => (
       entry.taskId === 'TurnCompleted' && entry.agentId === 'sidebar'
     )).length,
-    1,
-    'a legacy-assisted turn must generate Sidebar once from the committed final state',
+    0,
+    'the primary response must not wait for SidebarAgent',
   );
   assert.equal(body.coreState.ending, null);
   assert.equal(body.coordination.lowRiskTakeover.status, 'committed');
@@ -774,9 +810,19 @@ async function testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarra
   assert.equal(body.coordination.legacyMainPathExit.status, 'committed');
   assert.equal(body.coordination.legacyMainPathExit.storyNodeAuthority, 'confirmed_facts_narrator');
   assert.equal(body.coordination.legacyMainPathExit.keywordFallbackAuthority, 'disabled');
-  assert.equal(body.sidebar.threat.level, body.coreState.threat);
+  const sidebarResponse = await app.inject({
+    method: 'POST',
+    url: '/api/harness/sidebar',
+    payload: {
+      gameSessionId: body.gameSessionId,
+      stateVersion: body.outputStateVersion,
+    },
+  });
+  assert.equal(sidebarResponse.statusCode, 200);
+  const sidebar = sidebarResponse.json().sidebar;
+  assert.equal(sidebar.threat.level, body.coreState.threat);
   assert.equal(
-    body.sidebar.roomStatus
+    sidebar.roomStatus
       .find((item: { item: string; state: string }) => item.item === baseState.room.front_door.name)
       ?.state.includes('barricaded'),
     true,
@@ -786,8 +832,8 @@ async function testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarra
     body.coordination.trace.filter((entry: { taskId: string; agentId: string }) => (
       entry.taskId === 'TurnCompleted' && entry.agentId === 'sidebar'
     )).length,
-    1,
-    'AI-first must dispatch Sidebar generation exactly once',
+    0,
+    'AI-first primary response must not wait for SidebarAgent',
   );
   await app.close();
 }

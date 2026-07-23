@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { HarnessTurnRequestError, type HarnessTurnResponse, postHarnessTurn } from '../api/harnessTurnClient';
+import {
+  HarnessTurnRequestError,
+  type HarnessTurnResponse,
+  postHarnessSidebar,
+  postHarnessTurn,
+} from '../api/harnessTurnClient';
 import { freshFrontendState, loadFrontendState, persistFrontendState, resetFrontendProgress } from '../frontendState';
 import { applyHarnessTurnResponse, beginHarnessTurn, rewindFrontendStateFromResponse } from '../turnViewModel';
 import type { GameState, PlayMode, RecommendedAction } from '../types';
@@ -34,6 +39,38 @@ function setAndPersist(set: (partial: Partial<GameStore>) => void, frontendState
 }
 
 export const useGameStore = create<GameStore>((set, get) => {
+  const deferSidebarUpdate = (result: HarnessTurnResponse) => {
+    const gameSessionId = result.gameSessionId;
+    const stateVersion = result.outputStateVersion;
+    if (!gameSessionId || !Number.isInteger(stateVersion) || (stateVersion ?? -1) < 0) return;
+
+    setTimeout(() => {
+      const applySidebar = (sidebar: NonNullable<GameState['sidebar']>) => {
+        const current = get().frontendState;
+        if (
+          current.gameSessionId !== gameSessionId
+          || current.stateVersion !== stateVersion
+        ) return;
+        setAndPersist(set, { ...current, sidebar });
+      };
+
+      if (result.sidebar) {
+        applySidebar(result.sidebar);
+        return;
+      }
+
+      void postHarnessSidebar(gameSessionId, stateVersion!)
+        .then(response => {
+          if (
+            response.gameSessionId !== gameSessionId
+            || response.stateVersion !== stateVersion
+          ) return;
+          applySidebar(response.sidebar);
+        })
+        .catch(() => undefined);
+    }, 0);
+  };
+
   const submit = async (text: string, recommendationId?: string) => {
     const input = text.trim();
     const current = get().frontendState;
@@ -52,9 +89,13 @@ export const useGameStore = create<GameStore>((set, get) => {
         recommendationId,
         current.playMode !== 'hard',
       ));
-      const nextState = applyHarnessTurnResponse(pendingState, result);
+      const nextState = applyHarnessTurnResponse(
+        pendingState,
+        result.sidebar ? { ...result, sidebar: undefined } : result,
+      );
       setAndPersist(set, nextState);
       set({ serverStatus: 'online', lastTurnDebug: result });
+      deferSidebarUpdate(result);
       return result;
     } catch (error) {
       const errorState = applyHarnessTurnResponse(pendingState, {}, error);
