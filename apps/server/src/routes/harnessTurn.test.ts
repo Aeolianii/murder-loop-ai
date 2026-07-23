@@ -820,6 +820,43 @@ async function testLegacyMainPathExitPublishesAcceptedRecommendations() {
   await app.close();
 }
 
+async function testHardModeSuppressesRecommendationsAndPrefetch() {
+  const app = Fastify({ logger: false });
+  const fixture = takeoverFixture('committed', false, false, true, true);
+  const scheduled: SemanticPrefetchScheduleInput[] = [];
+  const semanticPrefetchService: SemanticPrefetchService = {
+    schedule: (input) => { scheduled.push(input); },
+    claim: async () => ({ status: 'miss' }),
+    cancelSession: () => 0,
+    pendingCount: () => 0,
+    metrics: emptyPrefetchMetrics,
+  };
+  await registerTestHarnessRoute(app, {
+    shadowCoordinator: fixture.shadowCoordinator,
+    lowRiskTakeoverService: fixture.lowRiskTakeoverService,
+    semanticPrefetchService,
+    createAiAdapters: () => ({ aiAdapters: fixture.aiAdapters }),
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/harness/turn',
+    payload: {
+      input: 'lock and barricade the door',
+      state: baseState,
+      recommendationsEnabled: false,
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const actionResult = response.json().storyLog.find(
+    (node: { type: string }) => node.type === 'action_result',
+  );
+  assert.equal(actionResult?.recommendedActions, undefined);
+  assert.equal(scheduled.length, 0);
+  await app.close();
+}
+
 async function testCommittedTurnSchedulesDisplayedRecommendationSemantics() {
   const app = Fastify({ logger: false });
   const fixture = takeoverFixture('committed', false, false, true, true);
@@ -2286,6 +2323,7 @@ await testKnowledgeClueTakeoverDisablesNarratorClueAuthority();
 await testHighRiskTakeoverPublishesOnlyConfirmedOutcome();
 await testLegacyMainPathExitSkipsLegacyStateStagesBeforePostCommitNarration();
 await testLegacyMainPathExitPublishesAcceptedRecommendations();
+await testHardModeSuppressesRecommendationsAndPrefetch();
 await testCommittedTurnSchedulesDisplayedRecommendationSemantics();
 await testRecommendationClickReusesPrefetchedBrief();
 await testMeaninglessInputReturnsSuccessfulNonActionTurn();

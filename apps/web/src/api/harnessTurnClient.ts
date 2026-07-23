@@ -46,6 +46,7 @@ export async function postHarnessTurn(
   inputStateVersion: number,
   operation: HarnessTurnOperation = 'turn',
   recommendationId?: string,
+  recommendationsEnabled = true,
 ): Promise<HarnessTurnResponse> {
   const response = await fetch('/api/harness/turn', {
     method: 'POST',
@@ -56,6 +57,7 @@ export async function postHarnessTurn(
       state,
       gameSessionId,
       inputStateVersion,
+      recommendationsEnabled,
       ...(recommendationId ? { recommendationId } : {}),
     }),
   });

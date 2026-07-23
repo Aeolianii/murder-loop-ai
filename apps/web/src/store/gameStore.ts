@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { HarnessTurnRequestError, type HarnessTurnResponse, postHarnessTurn } from '../api/harnessTurnClient';
 import { freshFrontendState, loadFrontendState, persistFrontendState, resetFrontendProgress } from '../frontendState';
 import { applyHarnessTurnResponse, beginHarnessTurn, rewindFrontendStateFromResponse } from '../turnViewModel';
-import type { GameState, RecommendedAction } from '../types';
+import type { GameState, PlayMode, RecommendedAction } from '../types';
 
 let stateQueue = Promise.resolve();
 
@@ -24,6 +24,7 @@ interface GameStore {
   rewind: () => Promise<HarnessTurnResponse | null>;
   reset: () => void;
   clearSave: () => void;
+  setPlayMode: (mode: PlayMode) => void;
   setFrontendState: (state: GameState) => void;
 }
 
@@ -49,6 +50,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         current.stateVersion,
         'turn',
         recommendationId,
+        current.playMode !== 'hard',
       ));
       const nextState = applyHarnessTurnResponse(pendingState, result);
       setAndPersist(set, nextState);
@@ -89,6 +91,8 @@ export const useGameStore = create<GameStore>((set, get) => {
           current.gameSessionId,
           current.stateVersion,
           'deduction',
+          undefined,
+          current.playMode !== 'hard',
         ));
         const nextState = applyHarnessTurnResponse(pendingState, result);
         setAndPersist(set, nextState);
@@ -117,6 +121,8 @@ export const useGameStore = create<GameStore>((set, get) => {
           current.gameSessionId,
           current.stateVersion,
           'reset_loop',
+          undefined,
+          current.playMode !== 'hard',
         ));
         const nextState = rewindFrontendStateFromResponse(current, result);
         setAndPersist(set, nextState);
@@ -153,6 +159,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         serverStatus: 'unknown',
         lastTurnDebug: null,
       });
+    },
+    setPlayMode: (playMode) => {
+      const frontendState = { ...get().frontendState, playMode };
+      setAndPersist(set, frontendState);
     },
     setFrontendState: (frontendState) => setAndPersist(set, frontendState),
   };

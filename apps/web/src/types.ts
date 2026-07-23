@@ -1,5 +1,7 @@
 import type { PlayerKnowledge, TruthDerivation } from '@murder-loop-ai/shared';
 
+export type PlayMode = 'easy' | 'hard';
+
 export type GamePhase =
   | 'intro'
   | 'loop_started'
@@ -121,6 +123,7 @@ export interface CoordinationState {
 export interface GameState {
   gameSessionId: string;
   stateVersion: number;
+  playMode: PlayMode;
   time: string; // "23:00"
   location: string;
   phase: GamePhase;

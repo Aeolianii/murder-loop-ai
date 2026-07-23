@@ -70,3 +70,24 @@ assert.match(
   /<button[^>]*aria-label="执行建议：Old recommendation\."[^>]*disabled=""/,
   'recommendations from older world-state snapshots must be disabled',
 );
+
+const hardModeHtml = renderToStaticMarkup(
+  <StoryPanel
+    log={[{
+      id: 'hard-action-result',
+      type: 'action_result',
+      content: 'Action completed without guidance.',
+      recommendedActions: [{
+        id: 'hidden-recommendation',
+        label: 'This must stay hidden.',
+        rationale: 'Hard mode has no recommended actions.',
+      }],
+    }]}
+    onRecommendedAction={() => undefined}
+    recommendationsDisabled={false}
+    showRecommendations={false}
+  />,
+);
+
+assert.doesNotMatch(hardModeHtml, /下一步建议/);
+assert.doesNotMatch(hardModeHtml, /This must stay hidden/);

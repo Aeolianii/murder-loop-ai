@@ -427,6 +427,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       gameSessionId?: string;
       inputStateVersion?: number;
       recommendationId?: string;
+      recommendationsEnabled?: boolean;
     };
     const operation = body.operation ?? 'turn';
     if (operation !== 'turn' && operation !== 'reset_loop' && operation !== 'deduction') {
@@ -435,7 +436,10 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const input = body.input?.trim() ?? '';
     const bootstrapState = activatePlayerKnowledge(coerceGameState(body.state)).state;
     const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
-    const recommendationId = body.recommendationId?.trim() || undefined;
+    const recommendationsEnabled = body.recommendationsEnabled !== false;
+    const recommendationId = recommendationsEnabled
+      ? body.recommendationId?.trim() || undefined
+      : undefined;
     if (semanticPrefetchService && (!recommendationId || operation !== 'turn')) {
       cancelledSemanticPrefetchCount = semanticPrefetchService.cancelSession(
         gameSessionId,
@@ -984,8 +988,10 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     }
 
     if (!resolution && semanticNonActionBrief) {
-      const recommendedActions = buildDisplayedRecommendedActions([], state);
-      if (semanticPrefetchService && recommendedActions.length > 0) {
+      const recommendedActions = recommendationsEnabled
+        ? buildDisplayedRecommendedActions([], state)
+        : [];
+      if (recommendationsEnabled && semanticPrefetchService && recommendedActions.length > 0) {
         try {
           semanticPrefetchService.schedule({
             gameSessionId,
@@ -1234,13 +1240,13 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           ambientNarration: confirmedTurnNarration.ambientNarration,
         })
       : materialNodes;
-    const storyLog = attachRecommendedActions(
-      [
-        { id: `input-${Date.now()}`, type: 'player_input', content: input },
-        ...presentedNodes,
-      ],
-      resolution,
-    );
+    const storyNodes = [
+      { id: `input-${Date.now()}`, type: 'player_input' as const, content: input },
+      ...presentedNodes,
+    ];
+    const storyLog = recommendationsEnabled
+      ? attachRecommendedActions(storyNodes, resolution)
+      : storyNodes;
 
     // v3: post-commit 知识激活 + 死亡路径
     const committedStateForPrefetch = resolution.finalState;
@@ -1248,7 +1254,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     resolution = { ...resolution, finalState: knowledgeResult.state };
     const deathPath = shouldTriggerDeath(resolution.finalState) ? resolveDeathPath(resolution.finalState) : null;
 
-    if (semanticPrefetchService && !resolution.finalState.ending) {
+    if (recommendationsEnabled && semanticPrefetchService && !resolution.finalState.ending) {
       const recommendations = [...storyLog]
         .reverse()
         .find((node) => node.recommendedActions?.length)

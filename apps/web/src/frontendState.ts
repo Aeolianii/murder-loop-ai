@@ -21,6 +21,7 @@ export function loadFrontendState(storage: Pick<Storage, 'getItem'> | null = typ
     return {
       ...fresh,
       ...saved,
+      playMode: saved.playMode === 'hard' ? 'hard' : 'easy',
       gameSessionId: typeof saved.gameSessionId === 'string' && saved.gameSessionId.trim()
         ? saved.gameSessionId
         : fresh.gameSessionId,

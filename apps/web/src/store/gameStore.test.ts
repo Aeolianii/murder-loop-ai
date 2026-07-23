@@ -111,6 +111,24 @@ assert((truthRequests[0] as { operation?: unknown }).operation === 'deduction', 
 assert((truthRequests[0] as { input?: unknown }).input === '', 'submitTruth must not depend on a fabricated natural-language action');
 
 useGameStore.setState({
+  frontendState: {
+    ...useGameStore.getState().frontendState,
+    playMode: 'hard',
+  },
+});
+const hardModeRequests: unknown[] = [];
+mockHarnessResponse({
+  ...turnResponse,
+  inputStateVersion: 2,
+  outputStateVersion: 3,
+}, hardModeRequests);
+await useGameStore.getState().submitAction('检查房门');
+assert(
+  (hardModeRequests[0] as { recommendationsEnabled?: unknown }).recommendationsEnabled === false,
+  'hard mode requests must disable recommended actions at the server boundary',
+);
+
+useGameStore.setState({
   frontendState: afterSubmit.frontendState,
   busy: false,
   inputBusy: false,

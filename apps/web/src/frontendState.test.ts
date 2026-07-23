@@ -40,3 +40,11 @@ assert(loadedState.time === '23:12', 'loadFrontendState should load persisted fi
 assert(loadedState.isParsing === false, 'loadFrontendState should sanitize transient parsing state');
 assert(loadedState.gameSessionId === 'saved-session', 'loadFrontendState should preserve the saved game session id');
 assert(loadedState.stateVersion === 7, 'loadFrontendState should preserve the committed state version');
+
+fakeStorage.setItem(FRONTEND_SAVE_KEY, JSON.stringify({
+  playMode: 'hard',
+}));
+assert(
+  loadFrontendState(fakeStorage).playMode === 'hard',
+  'loadFrontendState should preserve the selected difficulty mode',
+);

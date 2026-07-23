@@ -263,6 +263,7 @@ export default function App() {
             log={state.storyLog}
             onRecommendedAction={(action) => { void handleActionSubmit(action.label, action); }}
             recommendationsDisabled={state.isParsing || Boolean(state.ending)}
+            showRecommendations={state.playMode !== 'hard'}
           />
 
           <div className="relative">

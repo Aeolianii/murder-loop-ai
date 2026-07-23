@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { RecommendedAction, StoryNode } from '../types';
 
@@ -6,12 +6,14 @@ interface StoryPanelProps {
   log: StoryNode[];
   onRecommendedAction: (action: RecommendedAction) => void;
   recommendationsDisabled: boolean;
+  showRecommendations?: boolean;
 }
 
 export function StoryPanel({
   log,
   onRecommendedAction,
   recommendationsDisabled,
+  showRecommendations = true,
 }: StoryPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const latestActionResultIndex = log.reduce(
@@ -63,7 +65,7 @@ export function StoryPanel({
               {node.type === 'action_result' && (
                 <div className="pl-4 border-l border-zinc-700/50 mt-2 space-y-3">
                   <p className="font-mono text-xs leading-relaxed text-zinc-400 md:text-sm">{node.content}</p>
-                  {node.recommendedActions && node.recommendedActions.length > 0 && (
+                  {showRecommendations && node.recommendedActions && node.recommendedActions.length > 0 && (
                     <div className="space-y-2 border-t border-zinc-800/80 pt-3">
                       <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">下一步建议</div>
                       <div className="space-y-2">
