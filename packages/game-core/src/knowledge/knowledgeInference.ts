@@ -37,10 +37,36 @@ export interface KnowledgeInferenceResult {
   invalidatedKnowledgeIds: string[];
 }
 
+export type KnowledgeCombinationStatus =
+  | 'confirmed'
+  | 'incomplete'
+  | 'unrelated';
+
+export interface KnowledgeCombinationInput {
+  clueIds: Iterable<string>;
+  knowledgeIds: Iterable<string>;
+  definitions?: KnowledgeDefinition[];
+}
+
+export interface KnowledgeCombinationResult {
+  status: KnowledgeCombinationStatus;
+  selectedInputCount: number;
+  matchedKnowledgeIds: string[];
+  closestMissingInputCount: number | null;
+  usedSelectionIds: string[];
+  unusedSelectionIds: string[];
+}
+
 interface RequirementMatch {
   matched: boolean;
   directClueIds: string[];
   directKnowledgeIds: string[];
+}
+
+interface RequirementProgress {
+  matched: boolean;
+  missingInputCount: number;
+  selectedInputIds: string[];
 }
 
 function unique(values: Iterable<string>) {
@@ -105,6 +131,73 @@ function collectKnowledgeReferences(requirement: KnowledgeRequirement): string[]
     case 'all':
     case 'any':
       return unique(requirement.requirements.flatMap(collectKnowledgeReferences));
+  }
+}
+
+function measureRequirementProgress(
+  requirement: KnowledgeRequirement,
+  clueIds: ReadonlySet<string>,
+  knowledgeIds: ReadonlySet<string>,
+): RequirementProgress {
+  switch (requirement.kind) {
+    case 'clue': {
+      const matched = clueIds.has(requirement.id);
+      return {
+        matched,
+        missingInputCount: matched ? 0 : 1,
+        selectedInputIds: matched ? [requirement.id] : [],
+      };
+    }
+    case 'knowledge': {
+      const matched = knowledgeIds.has(requirement.id);
+      return {
+        matched,
+        missingInputCount: matched ? 0 : 1,
+        selectedInputIds: matched ? [requirement.id] : [],
+      };
+    }
+    case 'all': {
+      const nested = requirement.requirements.map((item) =>
+        measureRequirementProgress(item, clueIds, knowledgeIds),
+      );
+      return {
+        matched: nested.every((item) => item.matched),
+        missingInputCount: nested.reduce(
+          (sum, item) => sum + item.missingInputCount,
+          0,
+        ),
+        selectedInputIds: unique(
+          nested.flatMap((item) => item.selectedInputIds),
+        ),
+      };
+    }
+    case 'any': {
+      const minimum = requirement.minimum ?? 1;
+      const nested = requirement.requirements.map((item, index) => ({
+        ...measureRequirementProgress(item, clueIds, knowledgeIds),
+        index,
+      }));
+      const selectedBranches = [...nested]
+        .sort((left, right) => {
+          if (left.matched !== right.matched) return left.matched ? -1 : 1;
+          if (left.missingInputCount !== right.missingInputCount) {
+            return left.missingInputCount - right.missingInputCount;
+          }
+          return left.index - right.index;
+        })
+        .slice(0, minimum);
+      return {
+        matched: selectedBranches.length === minimum
+          && selectedBranches.every((item) => item.matched),
+        missingInputCount: selectedBranches.reduce(
+          (sum, item) => sum + item.missingInputCount,
+          0,
+        ),
+        selectedInputIds: unique(
+          nested.flatMap((item) => item.selectedInputIds),
+        ),
+      };
+    }
   }
 }
 
@@ -253,6 +346,53 @@ export function inferKnowledgeConclusions(
     activeConclusions,
     newlyActivated,
     invalidatedKnowledgeIds,
+  };
+}
+
+export function evaluateKnowledgeCombination(
+  input: KnowledgeCombinationInput,
+): KnowledgeCombinationResult {
+  const definitions = input.definitions ?? KNOWLEDGE_DEFINITIONS;
+  const clueIds = new Set(input.clueIds);
+  const knowledgeIds = new Set(input.knowledgeIds);
+  const selectedIds = unique([...clueIds, ...knowledgeIds]);
+  const progress = definitions.map((definition) => ({
+    definition,
+    progress: measureRequirementProgress(
+      definition.requirement,
+      clueIds,
+      knowledgeIds,
+    ),
+  }));
+  const matched = progress.filter((item) => item.progress.matched);
+  const related = progress.filter(
+    (item) => item.progress.selectedInputIds.length > 0,
+  );
+  const closestMissingInputCount = related.length > 0
+    ? Math.min(...related.map((item) => item.progress.missingInputCount))
+    : null;
+  const closest = matched.length > 0
+    ? matched
+    : related.filter(
+        (item) => item.progress.missingInputCount === closestMissingInputCount,
+      );
+  const usedSelectionIds = unique(
+    closest.flatMap((item) => item.progress.selectedInputIds),
+  );
+  const usedSet = new Set(usedSelectionIds);
+
+  return {
+    status: matched.length > 0
+      ? 'confirmed'
+      : related.length > 0
+        ? 'incomplete'
+        : 'unrelated',
+    selectedInputCount: selectedIds.length,
+    matchedKnowledgeIds: matched.map((item) => item.definition.id),
+    closestMissingInputCount:
+      matched.length > 0 ? 0 : closestMissingInputCount,
+    usedSelectionIds,
+    unusedSelectionIds: selectedIds.filter((id) => !usedSet.has(id)),
   };
 }
 
