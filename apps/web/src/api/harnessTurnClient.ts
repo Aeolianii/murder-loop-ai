@@ -23,7 +23,7 @@ export interface HarnessTurnResponse extends Partial<FrontendGameState> {
   };
 }
 
-export type HarnessTurnOperation = 'turn' | 'reset_loop';
+export type HarnessTurnOperation = 'turn' | 'reset_loop' | 'deduction';
 
 export class HarnessTurnRequestError extends Error {
   readonly status: number;

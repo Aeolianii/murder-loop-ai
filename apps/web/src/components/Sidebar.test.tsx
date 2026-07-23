@@ -17,7 +17,7 @@ assert.match(
 );
 assert.match(html, /结论推理/);
 assert.match(html, /真相推导/);
-assert.match(html, /还差 3 条结论/);
+assert.match(html, /还没有正向结论/);
 
 const inferenceHtml = renderToStaticMarkup(
   <Sidebar
@@ -55,3 +55,4 @@ assert.match(inferenceHtml, /推理结论/);
 assert.match(inferenceHtml, /真相 L3/);
 assert.match(inferenceHtml, /包裹回收由组织统一调度/);
 assert.match(inferenceHtml, /3 条前置结论/);
+assert.match(inferenceHtml, /使用全部 1 条结论/);

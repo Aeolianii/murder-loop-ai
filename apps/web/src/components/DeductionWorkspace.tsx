@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Check,
-  ChevronLeft,
   GitMerge,
   Link2,
   RotateCcw,
@@ -30,7 +29,7 @@ interface DeductionWorkspaceProps {
   knowledge: PlayerKnowledge[];
   truth?: TruthDerivation;
   onClose: () => void;
-  onSubmitTruth: (selectedKnowledgeIds: string[]) => Promise<boolean>;
+  onSubmitTruth: () => Promise<boolean>;
 }
 
 interface CombinationFeedback {
@@ -301,95 +300,19 @@ function TruthWorkspace({
   'knowledge' | 'truth' | 'onClose' | 'onSubmitTruth'
 >) {
   const conclusions = knowledge.filter(isConfirmedPositiveKnowledge);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [step, setStep] = useState<'select' | 'confirm'>('select');
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const canStart = canStartTruthDerivation(knowledge);
-  const selected = selectedIds
-    .map((id) => conclusions.find((item) => item.id === id))
-    .filter((item): item is PlayerKnowledge => Boolean(item));
 
   if (!canStart) {
-    const missing = Math.max(0, 3 - conclusions.length);
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="max-w-md rounded-2xl border border-dashed border-white/10 p-8 text-center">
           <Scale className="mx-auto h-8 w-8 text-zinc-700" />
           <h3 className="mt-4 font-serif text-xl text-zinc-300">真相尚不足以结案</h3>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
-            至少需要三条正向结论。当前已有 {conclusions.length} 条，还差 {missing} 条。
+            至少需要一条正向结论。先在线索之间建立一个能够成立的判断。
           </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (step === 'confirm') {
-    return (
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center">
-        <button
-          type="button"
-          onClick={() => setStep('select')}
-          disabled={submitting}
-          className="mb-5 flex w-fit items-center gap-1 text-xs text-zinc-500 transition hover:text-zinc-300"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          返回重选
-        </button>
-        <div className="rounded-2xl border border-amber-200/15 bg-amber-300/[0.035] p-5 md:p-7">
-          <div className="flex items-center gap-3">
-            <Scale className="h-5 w-5 text-amber-200/70" />
-            <div>
-              <h3 className="font-serif text-xl text-zinc-100">确认本次结案陈述</h3>
-              <p className="mt-1 text-xs text-zinc-500">
-                三条结论决定本次陈述重点与结局叙事。
-              </p>
-            </div>
-          </div>
-          <ol className="mt-6 space-y-3">
-            {selected.map((item, index) => (
-              <li
-                key={item.id}
-                className="flex gap-3 rounded-xl border border-white/7 bg-black/20 p-4"
-              >
-                <span className="font-mono text-xs text-amber-300/60">
-                  0{index + 1}
-                </span>
-                <span className="text-sm leading-relaxed text-zinc-200">
-                  {item.label}
-                </span>
-              </li>
-            ))}
-          </ol>
-          <div className="mt-5 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.025] p-4 text-xs leading-relaxed text-zinc-500">
-            当前真相层为 {truth?.stage ?? 'L0'} · {truth?.truthLayer ?? 0}/100。
-            最终评分会使用全部已确认结论和世界状态，不会只计算这三条。
-          </div>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={async () => {
-              setSubmitting(true);
-              setSubmissionError(null);
-              const accepted = await onSubmitTruth(selectedIds);
-              if (accepted) {
-                onClose();
-                return;
-              }
-              setSubmissionError('结案陈述未通过校验，请返回检查所选结论。');
-              setSubmitting(false);
-            }}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/12 px-5 py-3 font-serif text-amber-100 transition hover:bg-amber-300/18 disabled:cursor-wait disabled:opacity-55"
-          >
-            <Scale className="h-4 w-4" />
-            {submitting ? '正在推导真相…' : '确认推导真相'}
-          </button>
-          {submissionError && (
-            <p className="mt-3 text-center text-xs text-rose-300/75">
-              {submissionError}
-            </p>
-          )}
         </div>
       </div>
     );
@@ -399,35 +322,24 @@ function TruthWorkspace({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-serif text-lg text-zinc-100">选择三条结论</h3>
+          <h3 className="font-serif text-lg text-zinc-100">
+            推导全部 {conclusions.length} 条结论
+          </h3>
           <p className="mt-1 text-xs text-zinc-500">
-            选择最能代表你当前判断的三条正向结论。
+            本次结案会使用你目前掌握的全部正向结论，不需要取舍。
           </p>
         </div>
         <span className="rounded-full border border-white/8 px-3 py-1 font-mono text-xs text-zinc-400">
-          已选择 {selectedIds.length}/3
+          全部 {conclusions.length} 条结论
         </span>
       </div>
       <div className="mt-5 grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
-        {conclusions.map((item) => {
-          const selectedItem = selectedIds.includes(item.id);
-          const atLimit = selectedIds.length >= 3 && !selectedItem;
-          return (
-            <button
+        {conclusions.map((item) => (
+            <div
               key={item.id}
-              type="button"
-              aria-pressed={selectedItem}
-              disabled={atLimit}
-              onClick={() =>
-                setSelectedIds((ids) => toggleSelection(ids, item.id, 3))
-              }
-              className={`flex items-start gap-3 rounded-xl border p-4 text-left transition ${
-                selectedItem
-                  ? 'border-amber-300/35 bg-amber-300/8'
-                  : 'border-white/7 bg-white/[0.025] hover:border-white/15 disabled:cursor-not-allowed disabled:opacity-35'
-              }`}
+              className="flex items-start gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.045] p-4 text-left"
             >
-              <SelectionMark selected={selectedItem} />
+              <SelectionMark selected />
               <span className="min-w-0">
                 <span className="block text-sm leading-relaxed text-zinc-200">
                   {item.label}
@@ -436,18 +348,37 @@ function TruthWorkspace({
                   L{item.stage ?? 0} · 真相 +{item.truthLayerContribution}
                 </span>
               </span>
-            </button>
-          );
-        })}
+            </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-xl border border-cyan-300/10 bg-cyan-300/[0.025] p-4 text-xs leading-relaxed text-zinc-500">
+        当前真相层为 {truth?.stage ?? 'L0'} · {truth?.truthLayer ?? 0}/100。
+        最终评分还会结合证据强度、外部留存、生还情况与循环代价。
       </div>
       <button
         type="button"
-        disabled={selectedIds.length !== 3}
-        onClick={() => setStep('confirm')}
+        disabled={submitting}
+        onClick={async () => {
+          setSubmitting(true);
+          setSubmissionError(null);
+          const accepted = await onSubmitTruth();
+          if (accepted) {
+            onClose();
+            return;
+          }
+          setSubmissionError('真相推导未通过校验，请继续调查后再试。');
+          setSubmitting(false);
+        }}
         className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-amber-300/25 bg-amber-300/10 px-5 py-3 font-serif text-amber-100 transition hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-35"
       >
-        检查结案陈述
+        <Scale className="h-4 w-4" />
+        {submitting ? '正在推导真相…' : '推导全部结论'}
       </button>
+      {submissionError && (
+        <p className="mt-3 text-center text-xs text-rose-300/75">
+          {submissionError}
+        </p>
+      )}
     </div>
   );
 }
@@ -471,7 +402,7 @@ export function DeductionWorkspace({
 
   const title = mode === 'truth' ? '真相推导' : '结论推理';
   const subtitle = mode === 'truth'
-    ? '从已确认结论中选择本次结案陈述的三条主轴'
+    ? '使用当前全部已确认结论推导真相与结局'
     : '把客观线索与既有结论组合成可追溯的命题';
 
   return (

@@ -15,31 +15,25 @@ export function isConfirmedPositiveKnowledge(
 export function canStartTruthDerivation(
   knowledge: ReadonlyArray<PlayerKnowledge>,
 ): boolean {
-  return knowledge.filter(isConfirmedPositiveKnowledge).length >= 3;
+  return knowledge.some(isConfirmedPositiveKnowledge);
 }
 
 export function buildTruthSubmission(
   knowledge: ReadonlyArray<PlayerKnowledge>,
-  selectedKnowledgeIds: ReadonlyArray<string>,
 ): TruthSubmission {
-  const uniqueIds = [...new Set(selectedKnowledgeIds)];
-  if (uniqueIds.length !== 3) {
-    throw new Error('Truth derivation requires exactly three confirmed conclusions.');
+  const confirmed = Array.from(
+    new Map(
+      knowledge
+        .filter(isConfirmedPositiveKnowledge)
+        .map((item) => [item.id, item]),
+    ).values(),
+  );
+  if (confirmed.length === 0) {
+    throw new Error('Truth derivation requires at least one confirmed conclusion.');
   }
 
-  const byId = new Map(knowledge.map((item) => [item.id, item]));
-  const selected = uniqueIds.map((id) => byId.get(id));
-  if (
-    selected.some(
-      (item) => !item || !isConfirmedPositiveKnowledge(item),
-    )
-  ) {
-    throw new Error('Every truth anchor must be a confirmed positive conclusion.');
-  }
-
-  const confirmed = selected as PlayerKnowledge[];
   return {
-    selectedKnowledgeIds: uniqueIds,
+    selectedKnowledgeIds: confirmed.map((item) => item.id),
     text: `推导真相：${confirmed.map((item) => item.label).join('。')}。`,
   };
 }

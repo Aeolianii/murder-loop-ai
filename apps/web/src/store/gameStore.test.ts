@@ -91,6 +91,25 @@ assert((recommendationRequests[0] as { input?: unknown }).input === recommendati
 assert((recommendationRequests[0] as { recommendationId?: unknown }).recommendationId === recommendation.id, 'recommendation clicks must send the stable recommendation id');
 assert((recommendationRequests[0] as { inputStateVersion?: unknown }).inputStateVersion === 1, 'recommendation clicks must bind the prefetch lookup to the current state version');
 
+const truthRequests: unknown[] = [];
+mockHarnessResponse({
+  gameSessionId,
+  inputStateVersion: 2,
+  outputStateVersion: 2,
+  deduction: {
+    claims: [],
+    confirmedCount: 10,
+    totalAsked: 10,
+    passed: true,
+    consecutiveFailures: 0,
+  },
+}, truthRequests);
+const truthResult = await useGameStore.getState().submitTruth();
+
+assert(truthResult?.deduction?.confirmedCount === 10, 'submitTruth should return the deduction result');
+assert((truthRequests[0] as { operation?: unknown }).operation === 'deduction', 'submitTruth should use the dedicated deduction operation');
+assert((truthRequests[0] as { input?: unknown }).input === '', 'submitTruth must not depend on a fabricated natural-language action');
+
 useGameStore.setState({
   frontendState: afterSubmit.frontendState,
   busy: false,

@@ -23,30 +23,30 @@ function knowledge(
 }
 
 const available = [
-  knowledge('k1', '结论一'),
-  knowledge('k2', '结论二'),
-  knowledge('k3', '结论三'),
+  ...Array.from({ length: 10 }, (_, index) =>
+    knowledge(`k${index + 1}`, `结论${index + 1}`),
+  ),
   knowledge('h1', '待验证假说', 'hypothesis'),
 ];
 
 assert.equal(canStartTruthDerivation(available), true);
+assert.equal(canStartTruthDerivation([knowledge('only', '唯一结论')]), true);
+assert.equal(
+  canStartTruthDerivation([knowledge('h1', '待验证假说', 'hypothesis')]),
+  false,
+);
 assert.deepEqual(
-  buildTruthSubmission(available, ['k1', 'k2', 'k3']),
+  buildTruthSubmission(available),
   {
-    selectedKnowledgeIds: ['k1', 'k2', 'k3'],
-    text: '推导真相：结论一。结论二。结论三。',
+    selectedKnowledgeIds: Array.from({ length: 10 }, (_, index) => `k${index + 1}`),
+    text: `推导真相：${Array.from(
+      { length: 10 },
+      (_, index) => `结论${index + 1}`,
+    ).join('。')}。`,
   },
 );
 
 assert.throws(
-  () => buildTruthSubmission(available, ['k1', 'k2']),
-  /exactly three confirmed conclusions/i,
-);
-assert.throws(
-  () => buildTruthSubmission(available, ['k1', 'k2', 'h1']),
-  /confirmed positive conclusion/i,
-);
-assert.throws(
-  () => buildTruthSubmission(available, ['k1', 'k1', 'k2']),
-  /exactly three confirmed conclusions/i,
+  () => buildTruthSubmission([knowledge('h1', '待验证假说', 'hypothesis')]),
+  /at least one confirmed conclusion/i,
 );

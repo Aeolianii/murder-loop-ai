@@ -421,7 +421,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     const requestStartedAt = performance.now();
     let cancelledSemanticPrefetchCount = 0;
     const body = request.body as {
-      operation?: 'turn' | 'reset_loop';
+      operation?: 'turn' | 'reset_loop' | 'deduction';
       input?: string;
       state?: GameState;
       gameSessionId?: string;
@@ -429,28 +429,41 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       recommendationId?: string;
     };
     const operation = body.operation ?? 'turn';
-    if (operation !== 'turn' && operation !== 'reset_loop') {
+    if (operation !== 'turn' && operation !== 'reset_loop' && operation !== 'deduction') {
       return reply.code(400).send({ error: 'invalid_operation' });
     }
     const input = body.input?.trim() ?? '';
     const bootstrapState = activatePlayerKnowledge(coerceGameState(body.state)).state;
     const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
     const recommendationId = body.recommendationId?.trim() || undefined;
-    if (semanticPrefetchService && (!recommendationId || operation === 'reset_loop')) {
+    if (semanticPrefetchService && (!recommendationId || operation !== 'turn')) {
       cancelledSemanticPrefetchCount = semanticPrefetchService.cancelSession(
         gameSessionId,
-        operation === 'reset_loop' ? 'loop_reset_submitted' : 'natural_language_submitted',
+        operation === 'reset_loop'
+          ? 'loop_reset_submitted'
+          : operation === 'deduction'
+            ? 'deduction_submitted'
+            : 'natural_language_submitted',
       );
     }
 
     // v3: 断案检测——管道前拦截
     const isAccusation = input.includes('指认') || input.includes('断案') || input.includes('真相') || input.includes('凶手是') || input.includes('赵鸿远');
-    if (isAccusation && operation === 'turn' && canAccuse(bootstrapState)) {
+    if (
+      (operation === 'deduction' || (isAccusation && operation === 'turn'))
+      && canAccuse(bootstrapState)
+    ) {
       semanticPrefetchService?.cancelSession(gameSessionId, 'deduction_submitted');
-      const deductionResult = validateDeductionClaims(bootstrapState, input);
+      const deductionResult = validateDeductionClaims(
+        bootstrapState,
+        operation === 'deduction' ? undefined : input,
+      );
       if (deductionResult.passed) {
         const deductionEnding = scoreEnding(bootstrapState);
         return reply.send({
+          gameSessionId,
+          inputStateVersion: body.inputStateVersion ?? 0,
+          outputStateVersion: body.inputStateVersion ?? 0,
           recap: generateRecap(bootstrapState), coreState: bootstrapState,
           ...buildPlayerTruthPayload(bootstrapState),
           time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',
@@ -461,6 +474,9 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         });
       }
       return reply.send({
+        gameSessionId,
+        inputStateVersion: body.inputStateVersion ?? 0,
+        outputStateVersion: body.inputStateVersion ?? 0,
         recap: generateRecap(bootstrapState), coreState: bootstrapState,
         ...buildPlayerTruthPayload(bootstrapState),
         time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',

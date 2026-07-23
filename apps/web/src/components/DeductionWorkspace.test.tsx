@@ -23,9 +23,9 @@ assert.match(inferenceHtml, /原始线索/);
 assert.match(inferenceHtml, /残缺面单/);
 assert.match(inferenceHtml, /组合推理/);
 
-const truthKnowledge = ['一', '二', '三'].map((suffix, index) => ({
+const truthKnowledge = Array.from({ length: 10 }, (_, index) => ({
   id: `knowledge-${index}`,
-  label: `确认结论${suffix}`,
+  label: `确认结论${index + 1}`,
   activatedAt: { run: 1, minute: index },
   sourceClueIds: [],
   truthLayerContribution: 3,
@@ -53,6 +53,7 @@ const truthHtml = renderToStaticMarkup(
 );
 
 assert.match(truthHtml, /真相推导/);
-assert.match(truthHtml, /选择三条结论/);
-assert.match(truthHtml, /已选择 0\/3/);
-assert.match(truthHtml, /检查结案陈述/);
+assert.match(truthHtml, /全部 10 条结论/);
+assert.match(truthHtml, /确认结论10/);
+assert.doesNotMatch(truthHtml, /选择三条结论/);
+assert.match(truthHtml, /推导全部结论/);

@@ -35,11 +35,8 @@ const response = await app.inject({
   method: 'POST',
   url: '/api/harness/turn',
   payload: {
-    input: [
-      '推导真相：包裹不是沈知夏订购的快递',
-      '包裹在刻意隐藏数字资料',
-      '匿名来电是在确认 503 是否有人',
-    ].join('。'),
+    operation: 'deduction',
+    input: '',
     state,
     gameSessionId: 'deduction-route-test',
     inputStateVersion: 0,
@@ -49,6 +46,8 @@ const response = await app.inject({
 assert.equal(response.statusCode, 200);
 const body = response.json();
 assert.equal(body.deduction.passed, true);
+assert.equal(body.deduction.confirmedCount, 3);
+assert.equal(body.deduction.totalAsked, 3);
 assert.equal(typeof body.deductionEnding.totalScore, 'number');
 assert.equal('ending' in body, false);
 

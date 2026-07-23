@@ -116,7 +116,7 @@ export function Sidebar({
   const confirmedConclusionCount = knowledge.filter(
     isConfirmedPositiveKnowledge,
   ).length;
-  const missingTruthConclusions = Math.max(0, 3 - confirmedConclusionCount);
+  const canDeriveTruth = confirmedConclusionCount > 0;
 
   return (
     <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-white/5 bg-[#0a0a0c] lg:h-[calc(100vh-65px)] lg:w-80">
@@ -191,13 +191,13 @@ export function Sidebar({
             <button
               type="button"
               onClick={onOpenTruth}
-              title={missingTruthConclusions > 0
-                ? `还需要 ${missingTruthConclusions} 条正向结论`
-                : '选择三条结论并确认结案'}
+              title={canDeriveTruth
+                ? `使用全部 ${confirmedConclusionCount} 条结论推导真相`
+                : '至少需要一条正向结论'}
               className={`group rounded-xl border p-3 text-left transition hover:border-cyan-300/30 hover:bg-cyan-300/[0.07] ${
-                missingTruthConclusions > 0
-                  ? 'border-white/7 bg-white/[0.02]'
-                  : 'border-cyan-300/15 bg-cyan-300/[0.04]'
+                canDeriveTruth
+                  ? 'border-cyan-300/15 bg-cyan-300/[0.04]'
+                  : 'border-white/7 bg-white/[0.02]'
               }`}
             >
               <Scale className="h-4 w-4 text-cyan-300/65 transition group-hover:text-cyan-200" />
@@ -205,9 +205,9 @@ export function Sidebar({
                 真相推导
               </span>
               <span className="mt-1 block text-[10px] leading-relaxed text-zinc-600">
-                {missingTruthConclusions > 0
-                  ? `还差 ${missingTruthConclusions} 条结论`
-                  : '选择三条结案主轴'}
+                {canDeriveTruth
+                  ? `使用全部 ${confirmedConclusionCount} 条结论`
+                  : '还没有正向结论'}
               </span>
             </button>
           </div>

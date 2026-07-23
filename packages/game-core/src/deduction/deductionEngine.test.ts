@@ -45,3 +45,21 @@ const conclusionResult = validateDeductionClaims(
 );
 assert.equal(conclusionResult.confirmedCount, 3);
 assert.equal(conclusionResult.passed, true);
+
+const singleConclusionResult = validateDeductionClaims(
+  conclusionState,
+  '包裹不是沈知夏订购的快递。',
+);
+assert.equal(singleConclusionResult.confirmedCount, 1);
+assert.equal(singleConclusionResult.passed, true);
+
+const duplicateConclusionResult = validateDeductionClaims(
+  conclusionState,
+  '包裹不是沈知夏订购的快递。包裹不是沈知夏订购的快递。',
+);
+assert.equal(duplicateConclusionResult.confirmedCount, 1);
+
+const allConclusionResult = validateDeductionClaims(conclusionState);
+assert.equal(allConclusionResult.confirmedCount, 3);
+assert.equal(allConclusionResult.totalAsked, 3);
+assert.equal(allConclusionResult.passed, true);

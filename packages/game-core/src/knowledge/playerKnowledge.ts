@@ -107,7 +107,7 @@ export function activatePlayerKnowledge(
 }
 
 export function canAccuse(state: GameState): boolean {
-  return deriveTruth(state.activatedKnowledge).confirmedKnowledgeIds.length >= 3;
+  return deriveTruth(state.activatedKnowledge).confirmedKnowledgeIds.length > 0;
 }
 
 export function getActivatedClueFragments(state: GameState): string[] {

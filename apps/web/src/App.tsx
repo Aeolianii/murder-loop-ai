@@ -26,7 +26,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { getClueAsset } from './clueAssets';
 import { ClueReadMap, findFirstNewClue, markClueRead } from './clueRevealState';
 import { useGameStore } from './store/gameStore';
-import { buildTruthSubmission } from './deductionWorkspace';
+import type { HarnessTurnResponse } from './api/harnessTurnClient';
 
 interface EndingCinematicPayload {
   key: string;
@@ -44,6 +44,7 @@ export default function App() {
   const state = useGameStore(store => store.frontendState);
   const submitAction = useGameStore(store => store.submitAction);
   const submitRecommendedAction = useGameStore(store => store.submitRecommendedAction);
+  const submitTruth = useGameStore(store => store.submitTruth);
   const rewind = useGameStore(store => store.rewind);
   const reset = useGameStore(store => store.reset);
   const setFrontendState = useGameStore(store => store.setFrontendState);
@@ -77,15 +78,11 @@ export default function App() {
     void audio.init();
   }, []);
 
-  const handleActionSubmit = async (actionText: string, recommendation?: RecommendedAction) => {
-    const previousState = state;
-    const previousClues = state.clues;
-
-    const result = recommendation
-      ? await submitRecommendedAction(recommendation)
-      : await submitAction(actionText);
-    if (!result) return null;
-
+  const presentResolvedResult = (
+    result: HarnessTurnResponse,
+    previousState: GameState,
+    previousClues: Clue[],
+  ) => {
     const resultClues = result.clues ?? previousClues;
     const newClue = findFirstNewClue(previousClues, resultClues);
 
@@ -126,15 +123,26 @@ export default function App() {
         method: result.deathMethod,
       });
     }
+  };
+
+  const handleActionSubmit = async (actionText: string, recommendation?: RecommendedAction) => {
+    const previousState = state;
+    const previousClues = state.clues;
+    const result = recommendation
+      ? await submitRecommendedAction(recommendation)
+      : await submitAction(actionText);
+    if (!result) return null;
+
+    presentResolvedResult(result, previousState, previousClues);
     return result;
   };
 
-  const handleTruthSubmission = async (selectedKnowledgeIds: string[]) => {
-    const submission = buildTruthSubmission(
-      state.knowledge ?? [],
-      selectedKnowledgeIds,
-    );
-    const result = await handleActionSubmit(submission.text);
+  const handleTruthSubmission = async () => {
+    const previousState = state;
+    const result = await submitTruth();
+    if (result) {
+      presentResolvedResult(result, previousState, previousState.clues);
+    }
     const accepted = result?.deduction?.passed === true
       && Boolean(result.deductionEnding);
     return accepted;

@@ -8,7 +8,10 @@ export function buildDeductionPrompt(state: GameState): string {
   return ['你靠在门边，把这几轮的记忆在脑子里过了一遍。', '', ...fragments.map((f) => `  ${f}。`), '', '这些碎片拼在一起——'].join('\n');
 }
 
-export function validateDeductionClaims(state: GameState, playerText: string): DeductionResult {
+export function validateDeductionClaims(
+  state: GameState,
+  playerText?: string,
+): DeductionResult {
   const confirmedKnowledgeIds = new Set(
     deriveTruth(state.activatedKnowledge).confirmedKnowledgeIds,
   );
@@ -17,7 +20,9 @@ export function validateDeductionClaims(state: GameState, playerText: string): D
       .filter((knowledge) => confirmedKnowledgeIds.has(knowledge.id))
       .map((knowledge) => [knowledge.id, knowledge.label]),
   );
-  const rawClaims = playerText.split(/[。；\n]/).map((s) => s.trim()).filter((s) => s.length >= 4);
+  const rawClaims = playerText === undefined
+    ? [...activatedLabels.values()]
+    : playerText.split(/[。；\n]/).map((s) => s.trim()).filter((s) => s.length >= 4);
 
   const claims: DeductionClaim[] = rawClaims.map((statement) => {
     for (const [id, label] of activatedLabels) {
@@ -31,8 +36,20 @@ export function validateDeductionClaims(state: GameState, playerText: string): D
     return { statement, knowledgeId: null, verdict: 'unrecognized' };
   });
 
-  const confirmedCount = claims.filter((c) => c.verdict === 'confirmed').length;
-  return { claims, confirmedCount, totalAsked: claims.length, passed: confirmedCount >= 3, consecutiveFailures: 0 };
+  const confirmedCount = new Set(
+    claims.flatMap((claim) =>
+      claim.verdict === 'confirmed' && claim.knowledgeId
+        ? [claim.knowledgeId]
+        : [],
+    ),
+  ).size;
+  return {
+    claims,
+    confirmedCount,
+    totalAsked: claims.length,
+    passed: confirmedCount > 0,
+    consecutiveFailures: 0,
+  };
 }
 
 export function buildDeductionResponse(result: DeductionResult): string {
