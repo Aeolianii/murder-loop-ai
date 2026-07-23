@@ -4,7 +4,6 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import type { ActionAudioCue } from '@murder-loop-ai/shared';
 import { Header } from './components/Header';
 import { StoryPanel } from './components/StoryPanel';
 import { InputArea } from './components/InputArea';
@@ -16,7 +15,6 @@ import {
 } from './components/DeductionWorkspace';
 import { CinematicIntro } from './components/CinematicIntro';
 import { CinematicTransition } from './components/CinematicTransition';
-import { RainPlayer } from './components/RainPlayer';
 import { VolumeControl } from './components/VolumeControl';
 import { StartMenu } from './components/StartMenu';
 import { EndingArchive } from './components/EndingArchive';
@@ -71,7 +69,6 @@ export default function App() {
 
   // Audio: track last turn's action intents and killer type
   const lastActionIntents = useRef<string[]>([]);
-  const lastActionAudioCue = useRef<ActionAudioCue | null>(null);
   const lastKillerType = useRef<string | null>(null);
   const lastTurnCompleted = useRef(false);
 
@@ -81,7 +78,6 @@ export default function App() {
     threat: threatLevel,
     killerType: lastKillerType.current,
     actionIntents: lastActionIntents.current,
-    actionAudioCue: lastActionAudioCue.current,
     isCinematic:
       showStartMenu
       || showCinematic
@@ -93,6 +89,12 @@ export default function App() {
 
   useEffect(() => {
     void audio.init();
+    const startAudio = () => {
+      audio.unlock();
+      void audio.init().then(() => audio.startBgm());
+    };
+    window.addEventListener('pointerdown', startAudio, { once: true });
+    return () => window.removeEventListener('pointerdown', startAudio);
   }, []);
 
   const presentResolvedResult = (
@@ -105,7 +107,6 @@ export default function App() {
 
     // Audio triggers from turn data
     lastActionIntents.current = result.turn?.plan?.actions?.map(a => a.intent) ?? [];
-    lastActionAudioCue.current = result.audioCue ?? null;
     lastKillerType.current = result.turn?.killerStrategy?.type ?? null;
     lastTurnCompleted.current = true;
     setTimeout(() => { lastTurnCompleted.current = false; }, 300);
@@ -155,10 +156,14 @@ export default function App() {
   const handleActionSubmit = async (actionText: string, recommendation?: RecommendedAction) => {
     const previousState = state;
     const previousClues = state.clues;
+    audio.playSfx('submit');
     const result = recommendation
       ? await submitRecommendedAction(recommendation)
       : await submitAction(actionText);
-    if (!result) return null;
+    if (!result) {
+      audio.playSfx('error');
+      return null;
+    }
 
     presentResolvedResult(result, previousState, previousClues);
     return result;
@@ -234,8 +239,6 @@ export default function App() {
 
   return (
     <>
-      <RainPlayer />
-
       <AnimatePresence>
         {showStartMenu && (
           <StartMenu

@@ -57,10 +57,12 @@ apps/web
         -> NarratorAgent
      -> NarrationDone
         -> DirectorAgent
+  -> apps/server/src/presenters/frontendTurnPresenter.ts
+  -> apps/web renders story, clues and trace/debug info
+  -> POST /api/harness/sidebar
      -> TurnCompleted
         -> SidebarAgent / UIAdapterAgent
-  -> apps/server/src/presenters/frontendTurnPresenter.ts
-  -> apps/web renders story, clues, sidebar, audio cue, trace/debug info
+  -> apps/web renders the deferred sidebar and plays fixed intent audio
 ```
 
 这条链路是当前应该优先维护的主线。后续功能、测试和重构应默认围绕它展开。
@@ -156,7 +158,7 @@ AI_HIGH_RISK_TAKEOVER_ENABLED=true
 
 当前注意点：
 
-- `routes/harnessTurn.ts` 是正式主路由，当前主要负责请求处理、复活/回合编排、动态线索、audio cue、sidebar 与最终响应组装。
+- `routes/harnessTurn.ts` 是正式主路由，当前主要负责请求处理、复活/回合编排、动态线索、延迟 sidebar 与最终响应组装。
 - `takeover/lowRiskTakeoverService.ts` 负责阶段三至五 Shadow/Arbiter 接管门禁、高风险投影和 Atomic Store 编排；开关关闭或门禁未通过时不改变旧链。
 - `ai/harnessAiAdapters.ts` 负责 `createAiHarness()` 以及 Parser / Killer / Narrator / Director / NPC 的 AI adapter。
 - `state/coerceGameState.ts` 负责旧状态和旧线索兼容。
@@ -224,7 +226,7 @@ src/commit/atomicTurnCommit.ts
 
 职责：
 
-- 提供跨包共享类型、时间常量和音频相关共享数据。
+- 提供跨包共享类型和时间常量。
 
 边界原则：
 
@@ -282,7 +284,7 @@ apps/server/src/ai/harnessAiAdapters.ts
 - 死亡状态自动回退入口。
 - plot guidance 异步缓存。
 - 动态线索提取。
-- audio cue 主响应附加，以及正文渲染后的 SidebarAgent 延迟调度。
+- 前端固定行动音效映射，以及正文渲染后的 SidebarAgent 延迟调度。
 - 最终 response 组装和 coordination 汇总。
 
 后续如果继续拆，应优先考虑 `plotGuidance` 或 `dynamicClues`，仍保持一次只移动一类职责。

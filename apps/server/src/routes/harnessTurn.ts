@@ -15,11 +15,10 @@ import {
 } from '@murder-loop-ai/game-core';
 import {
   minuteLabel,
-  type ActionAudioCue, type ActionPlan, type ClueRecord, type GameState, type Narration,
+  type ActionPlan, type ClueRecord, type GameState, type Narration,
   type RuleEvent, type RuleResult, type StoryLogEntry, type TurnResolution,
 } from '@murder-loop-ai/shared';
 import { completeRoleJson } from '../ai/openaiClient';
-import { selectPrimaryActionAudioCue } from '../ai/audioCueSelector';
 import { createAiHarness, createAiHarnessAdapters } from '../ai/harnessAiAdapters';
 import { createAiShadowAdapters } from '../ai/shadowAiAdapters';
 import { env } from '../env';
@@ -72,12 +71,6 @@ export interface HarnessTurnRouteOptions {
       judgements?: Record<string, unknown>;
     };
   };
-  selectActionAudioCue?: (args: {
-    input: string;
-    plan: ActionPlan;
-    state: GameState;
-    playerResult: RuleResult;
-  }) => Promise<ActionAudioCue | null>;
   shadowCoordinator?: ShadowRunCoordinator | null;
   lowRiskTakeoverService?: LowRiskTakeoverService | null;
   semanticPrefetchService?: SemanticPrefetchService | null;
@@ -523,7 +516,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
           time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',
           phase: bootstrapState.phase, deductionEnding, deduction: deductionResult,
           deductionResponse: buildDeductionResponse(deductionResult),
-          storyLog: [], clues: bootstrapState.clues, audioCue: null, worldTickTrace: [],
+          storyLog: [], clues: bootstrapState.clues, worldTickTrace: [],
           coordination: { warnings: [], trace: [], agentTiming: { totalMs: 0, slowest: null, entries: [] }, turnTiming: [], judgements: {} },
         });
       }
@@ -538,7 +531,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         deductionPrompt: buildDeductionPrompt(bootstrapState),
         deductionResponse: buildDeductionResponse(deductionResult),
         epiphany: generateEpiphanyHint(bootstrapState, 1),
-        storyLog: [], clues: bootstrapState.clues, audioCue: null, worldTickTrace: [],
+        storyLog: [], clues: bootstrapState.clues, worldTickTrace: [],
         coordination: { warnings: [], trace: [], agentTiming: { totalMs: 0, slowest: null, entries: [] }, turnTiming: [], judgements: {} },
       });
     }
@@ -621,7 +614,6 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         location: '青荷公寓 503 室',
         phase: state.phase,
         clues: toFrontendClues(state),
-        audioCue: null,
         ending: state.ending,
         worldTickTrace: [],
         deathTitle: null,
@@ -661,7 +653,6 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         coreState: state, time: minuteLabel(state.minute), location: '青荷公寓 503 室',
         ...buildPlayerTruthPayload(state),
         phase: state.phase, clues: toFrontendClues(state),
-        audioCue: null,
         ending: state.ending,
         worldTickTrace: [],
         deathTitle: null,
@@ -1081,7 +1072,6 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         location: '青荷公寓 503 室',
         phase: state.phase,
         clues: toFrontendClues(state),
-        audioCue: null,
         ending: state.ending,
         deathTitle: null,
         deathSummary: null,
@@ -1234,25 +1224,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       addTurnDynamicClues(resolution, visibleEntries);
     }
 
-    // SidebarAgent is requested separately after the client has rendered the story.
-    const audioCueStartedAt = performance.now();
-    const audioCue = await (options.selectActionAudioCue?.({
-      input,
-      plan: resolution.plan,
-      state: resolution.finalState,
-      playerResult: resolution.playerResult,
-    }) ?? selectPrimaryActionAudioCue({
-      input,
-      plan: resolution.plan,
-      state: resolution.finalState,
-      playerResult: resolution.playerResult,
-    }));
-
     const endingEntry = resolution.finalState.ending ? resolution.finalState.log[resolution.finalState.log.length - 1] : null;
-    turnTimingEntries.push({
-      stageId: 'audio-cue',
-      durationMs: performance.now() - audioCueStartedAt,
-    });
     const trace = harness.dispatcher.getTrace().map(e => ({
       taskId: e.eventType, agentId: e.agentId, source: e.source, warnings: e.warnings, durationMs: e.durationMs,
     }));
@@ -1334,7 +1306,6 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       coreState: resolution.finalState, time: minuteLabel(resolution.finalState.minute),
       ...buildPlayerTruthPayload(resolution.finalState),
       location: '青荷公寓 503 室', phase: resolution.finalState.phase,
-      audioCue,
       clues: toFrontendClues(resolution.finalState), ending: resolution.finalState.ending,
       deathTitle: resolution.finalState.phase === 'death' ? endingEntry?.title ?? '23:47' : null,
       deathSummary: resolution.finalState.phase === 'death' ? endingEntry?.text ?? null : null,

@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "bgm": "rain-loop.mp3",
+  "sounds": {
+    "communicate": [
+      "communicate.mp3"
+    ],
+    "danger": [
+      "danger.mp3"
+    ],
+    "default": [
+      "default.mp3"
+    ],
+    "defense": [
+      "defense.mp3"
+    ],
+    "error": [
+      "error.mp3"
+    ],
+    "evidence": [
+      "evidence.mp3"
+    ],
+    "investigate": [
+      "investigate.mp3"
+    ],
+    "item": [
+      "item.mp3"
+    ],
+    "movement": [
+      "movement.mp3"
+    ],
+    "phone": [
+      "phone.mp3"
+    ],
+    "phone-functional-lost": [
+      "phone-functional-lost.mp3"
+    ],
+    "story-battery-critical": [
+      "story-battery-critical.mp3"
+    ],
+    "story-fake-store-call": [
+      "story-fake-store-call.mp3"
+    ],
+    "story-false-police-overknows": [
+      "story-false-police-overknows.mp3"
+    ],
+    "story-handoff-failed-2347": [
+      "story-handoff-failed-2347.mp3"
+    ],
+    "story-linyue-retracted-message": [
+      "story-linyue-retracted-message.mp3"
+    ],
+    "story-peephole-blind-spot": [
+      "story-peephole-blind-spot.mp3"
+    ],
+    "story-room-403-receipt": [
+      "story-room-403-receipt.mp3"
+    ],
+    "submit": [
+      "submit.mp3"
+    ],
+    "wait-hide": [
+      "wait-hide.mp3"
+    ]
+  },
+  "endings": {
+    "DEFAULT": "death-default.mp3",
+    "A": "ending-a.mp3",
+    "B": "ending-b.mp3",
+    "C": "ending-c.mp3",
+    "D": "ending-d.mp3",
+    "S": "ending-s.mp3"
+  }
+}

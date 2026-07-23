@@ -7,7 +7,7 @@ import {
   type AiAdapters,
 } from '@murder-loop-ai/game-core';
 import type { TurnBrief } from '@murder-loop-ai/ai-contracts';
-import type { ActionAudioCue, ActionPlan, GameState, KillerStrategy, Narration, TurnResolution } from '@murder-loop-ai/shared';
+import type { ActionPlan, GameState, KillerStrategy, Narration, TurnResolution } from '@murder-loop-ai/shared';
 import { createTurnBlackboard, verifyActionPlan, verifyKillerStrategy } from '../ai/turnCoordinator';
 import type { ShadowRunCoordinator } from '../shadow/shadowCoordinator';
 import type {
@@ -23,7 +23,6 @@ function registerTestHarnessRoute(
   options: NonNullable<Parameters<typeof harnessTurnRoute>[1]>,
 ) {
   return app.register(harnessTurnRoute, {
-    selectActionAudioCue: async () => null,
     shadowCoordinator: null,
     lowRiskTakeoverService: null,
     semanticPrefetchService: null,
@@ -177,13 +176,6 @@ const resolution = {
 async function testHarnessTurnRouteReturnsFrontendPackage() {
   const app = Fastify({ logger: false });
   let calledWith: { stateMinute: number; input: string } | null = null;
-  const selectedAudioCue: ActionAudioCue = {
-    id: 'audio-plan-1',
-    soundId: 'phone_msg',
-    confidence: 0.91,
-    reason: '回复消息的主音效最明确',
-    source: 'ai',
-  };
 
   await registerTestHarnessRoute(app, {
     createAiAdapters: () => ({
@@ -198,7 +190,6 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
       },
       coordination: { warnings: [], judgements: {} },
     }),
-    selectActionAudioCue: async () => selectedAudioCue,
   });
 
   const response = await app.inject({
@@ -230,8 +221,11 @@ async function testHarnessTurnRouteReturnsFrontendPackage() {
   assert.equal(body.agentTrace[0].agent, 'parser');
   assert.equal(body.agentTrace[0].mode, 'ai');
   assert.equal(body.agentTrace[0].validation.valid, true);
-  assert.equal(body.audioCue.soundId, 'phone_msg');
-  assert.equal(body.audioCue.confidence, 0.91);
+  assert.equal(
+    'audioCue' in body,
+    false,
+    'the server must not return an AI-selected audio cue',
+  );
   assert.equal(
     body.coordination.trace.some((entry: { taskId: string; agentId: string }) => (
       entry.taskId === 'TurnCompleted' && entry.agentId === 'sidebar'

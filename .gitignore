@@ -3,4 +3,8 @@ apps/web/dist/
 apps/server/.env
 audio set/
 image/
-apps/web/public/audio/
+apps/web/public/audio/*
+!apps/web/public/audio/repository/
+apps/web/public/audio/repository/*
+!apps/web/public/audio/repository/*.mp3
+!apps/web/public/audio/repository/manifest.json

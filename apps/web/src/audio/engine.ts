@@ -1,5 +1,4 @@
 import { Howl, Howler } from 'howler';
-import { audioSoundFolders } from '@murder-loop-ai/shared';
 
 let masterVolume = 0.85;
 let sfxVolume = 0.8;
@@ -7,16 +6,20 @@ let bgmVolume = 0.65;
 let muted = false;
 let rainLevel: 'muffled' | 'normal' | 'loud' = 'normal';
 let initialized = false;
-
-const soundConfig = audioSoundFolders;
+let initPromise: Promise<void> | null = null;
 
 // Pool: sound ID → Howl instances (one per file variant)
 const soundPool = new Map<string, Howl[]>();
 // BGM instance
 let bgmInstance: Howl | null = null;
 
-// CHANGE THIS to match your project's static asset path to the audio-files directory
 const REPO_BASE = '/audio/repository';
+
+interface AudioManifest {
+  bgm?: string;
+  sounds: Record<string, string[]>;
+  endings?: Record<string, string>;
+}
 
 function sfxEffectiveVolume(): number {
   return sfxVolume * masterVolume;
@@ -34,18 +37,17 @@ function bgmEffectiveVolume(): number {
   return bgmVolume * masterVolume * rainLevelMultiplier();
 }
 
-async function init() {
-  if (initialized) return;
+async function loadManifest() {
   try {
     const resp = await fetch(`${REPO_BASE}/manifest.json`);
-    const manifest: Record<string, string[]> = await resp.json();
+    if (!resp.ok) throw new Error(`manifest request failed: ${resp.status}`);
+    const manifest = await resp.json() as AudioManifest;
 
-    for (const [soundId, folderName] of Object.entries(soundConfig)) {
-      const files = manifest[folderName];
+    for (const [soundId, files] of Object.entries(manifest.sounds ?? {})) {
       if (!files || files.length === 0) continue;
 
       const howls = files.map(file => {
-        const src = `${REPO_BASE}/${encodeURIComponent(folderName)}/${encodeURIComponent(file)}`;
+        const src = `${REPO_BASE}/${encodeURIComponent(file)}`;
         return new Howl({
           src: [src],
           volume: sfxEffectiveVolume(),
@@ -55,10 +57,8 @@ async function init() {
       soundPool.set(soundId, howls);
     }
 
-    // BGM: first file from 背景雨声
-    const bgmFiles = manifest['背景雨声'];
-    if (bgmFiles && bgmFiles.length > 0) {
-      const bgmSrc = `${REPO_BASE}/${encodeURIComponent('背景雨声')}/${encodeURIComponent(bgmFiles[0])}`;
+    if (manifest.bgm) {
+      const bgmSrc = `${REPO_BASE}/${encodeURIComponent(manifest.bgm)}`;
       bgmInstance = new Howl({
         src: [bgmSrc],
         volume: bgmEffectiveVolume(),
@@ -71,6 +71,16 @@ async function init() {
   } catch (err) {
     console.warn('[audio] Failed to load manifest, audio disabled:', err);
   }
+}
+
+async function init() {
+  if (initialized) return;
+  if (!initPromise) {
+    initPromise = loadManifest().finally(() => {
+      initPromise = null;
+    });
+  }
+  await initPromise;
 }
 
 function pickHowl(name: string): Howl | null {
@@ -201,5 +211,6 @@ export const audio = {
     if (bgmInstance) bgmInstance.unload();
     bgmInstance = null;
     initialized = false;
+    initPromise = null;
   },
 };

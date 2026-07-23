@@ -257,7 +257,7 @@ murder-loop-ai/
 │  ├─ game-core/     规则、回合管线、Agent 调度、fallback
 │  ├─ ai-contracts/  Agent 输入输出 schema
 │  ├─ content/       故事设定、线索、World Info Lite
-│  └─ shared/        跨包共享类型、时间、音频数据
+│  └─ shared/        跨包共享类型和时间数据
 └─ docs/
    ├─ architecture-current.md
    ├─ design-document.md
@@ -281,7 +281,7 @@ apps/web
        -> Narrator confirmed facts + world event cursor
        -> deferred Director Critic
   -> apps/server/src/presenters/frontendTurnPresenter.ts
-  -> apps/web renders story, clues, audio cue
+  -> apps/web renders story and clues, then plays fixed intent audio
   -> apps/web requests and renders SidebarAgent data after story output
 ```
 
@@ -291,6 +291,12 @@ apps/web
 
 ```bash
 npm install
+```
+
+从 `D:\HangZhou Hackathon\音频文件` 生成固定映射使用的压缩音频：
+
+```bash
+npm run audio:prepare -w @murder-loop-ai/web
 ```
 
 启动前端和后端：

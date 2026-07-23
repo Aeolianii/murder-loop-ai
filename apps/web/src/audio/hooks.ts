@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback } from 'react';
-import type { ActionAudioCue } from '@murder-loop-ai/shared';
 import { audio } from './engine';
 import { actionSfxMap, killerSfxMap, ambientByPhase, getHeartbeatByThreat } from './mappings';
 
@@ -8,7 +7,6 @@ interface GameAudioParams {
   threat: number;
   killerType?: string | null;
   actionIntents?: string[];
-  actionAudioCue?: ActionAudioCue | null;
   isCinematic?: boolean;
   newClueAdded?: boolean;
   turnCompleted?: boolean;
@@ -16,7 +14,7 @@ interface GameAudioParams {
 
 export function useGameAudio(params: GameAudioParams) {
   const {
-    phase, threat, killerType, actionIntents, actionAudioCue,
+    phase, threat, killerType, actionIntents,
     isCinematic, newClueAdded, turnCompleted,
   } = params;
 
@@ -32,25 +30,19 @@ export function useGameAudio(params: GameAudioParams) {
   useEffect(() => {
     if (!actionIntents?.length) return;
 
-    let totalActionTime = 0;
-    if (actionAudioCue) {
-      audio.playSfx(actionAudioCue.soundId);
-      totalActionTime = 600;
-    } else {
-      const actionSfxNames: string[] = [];
-      for (const intent of actionIntents) {
-        const sfxList = actionSfxMap[intent];
-        if (!sfxList?.length) continue;
-        for (const name of sfxList) actionSfxNames.push(name);
-      }
-
-      if (actionSfxNames.length > 0) {
-        actionSfxNames.forEach((name, i) => {
-          setTimeout(() => audio.playSfx(name), i * 80);
-        });
-        totalActionTime = actionSfxNames.length * 600 + (actionSfxNames.length - 1) * 80;
-      }
+    const actionSfxNames: string[] = [];
+    for (const intent of actionIntents) {
+      const sfxList = actionSfxMap[intent] ?? actionSfxMap.unknown;
+      for (const name of sfxList) actionSfxNames.push(name);
     }
+
+    if (actionSfxNames.length > 0) {
+      actionSfxNames.forEach((name, i) => {
+        setTimeout(() => audio.playSfx(name), i * 80);
+      });
+    }
+    const totalActionTime = actionSfxNames.length * 600
+      + Math.max(0, actionSfxNames.length - 1) * 80;
 
     const kt = killerTypeRef.current;
     if (kt) {
@@ -63,7 +55,7 @@ export function useGameAudio(params: GameAudioParams) {
         }, totalActionTime + 10);
       }
     }
-  }, [actionIntents, actionAudioCue]);
+  }, [actionIntents]);
 
   // killer-only trigger (no player action, e.g. passive killer event)
   useEffect(() => {
@@ -98,7 +90,7 @@ export function useGameAudio(params: GameAudioParams) {
 
   // new clue ding
   useEffect(() => {
-    if (newClueAdded) audio.playSfx('clue_new');
+    if (newClueAdded) audio.playSfx('submit');
   }, [newClueAdded]);
 
   // lower sfx during cinematics
@@ -113,7 +105,7 @@ export function useGameAudio(params: GameAudioParams) {
   // threat-up ping on turn end
   useEffect(() => {
     if (turnCompleted && threat >= 50) {
-      audio.playSfx('threat_up');
+      audio.playSfx('danger');
     }
   }, [turnCompleted, threat]);
 }

@@ -1,5 +1,4 @@
 import type {
-  ActionAudioCue,
   DeductionResult,
   EndingTierResult,
 } from '@murder-loop-ai/shared';
@@ -11,7 +10,6 @@ export interface HarnessTurnResponse extends Partial<FrontendGameState> {
   outputStateVersion?: number;
   coreState?: unknown;
   storyLog?: FrontendGameState['storyLog'];
-  audioCue?: ActionAudioCue | null;
   deduction?: DeductionResult;
   deductionEnding?: EndingTierResult;
   deductionResponse?: string;

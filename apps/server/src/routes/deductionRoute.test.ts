@@ -6,7 +6,6 @@ import { harnessTurnRoute } from './harnessTurn';
 
 const app = Fastify();
 await app.register(harnessTurnRoute, {
-  selectActionAudioCue: async () => null,
   shadowCoordinator: null,
   lowRiskTakeoverService: null,
   semanticPrefetchService: null,
