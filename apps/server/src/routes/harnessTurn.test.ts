@@ -1295,7 +1295,7 @@ async function testLegacyMainPathExitUsesMinimumFallbackOnlyWhenAiIsUnavailable(
   await app.close();
 }
 
-async function testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallback() {
+async function testLegacyMainPathExitReturnsPlayableTurnForInvalidFormalResult() {
   const app = Fastify({ logger: false });
   const fixture = takeoverFixture('committed', false, true, true);
   fixture.lowRiskTakeoverService.prepare = async () => ({
@@ -1315,15 +1315,24 @@ async function testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallba
     payload: { input: 'open the package', state: baseState },
   });
 
-  assert.equal(response.statusCode, 503);
+  assert.equal(response.statusCode, 200);
   const body = response.json();
-  assert.equal(body.error, 'ai_first_turn_rejected');
-  assert.equal('coreState' in body, false);
+  assert.equal(body.error, undefined);
+  assert.equal(body.coreState.minute, baseState.minute);
+  assert.equal(body.outputStateVersion, 1);
+  assert(
+    body.storyLog.some((node: { type: string; content: string }) => (
+      node.type === 'action_result' && node.content.trim().length > 0
+    )),
+    'a recoverable semantic rejection must still return a visible action result',
+  );
   assert.equal(fixture.calls().parserCalls, 0);
   assert.equal(fixture.calls().killerStrategyCalls, 0);
   assert.equal(fixture.calls().actionNarrationCalls, 0);
   assert.equal(fixture.calls().ambientNarrationCalls, 0);
-  assert.equal(body.coordination.legacyMainPathExit.status, 'not_committed');
+  assert.equal(fixture.calls().completeCalls, 1, 'formal rejection must close its Shadow report');
+  assert.equal(body.coordination.legacyMainPathExit.status, 'recoverable_fallback');
+  assert.equal(body.coordination.legacyMainPathExit.reason, 'unsupported_operation');
   await app.close();
 }
 
@@ -2332,7 +2341,7 @@ await testLegacyMainPathExitRejectsUngroundedActionNarration();
 await testLegacyMainPathExitPublishesConfirmedNpcReply();
 await testLegacyMainPathExitKeepsConfirmedMaterialWhenNarratorFails();
 await testLegacyMainPathExitUsesMinimumFallbackOnlyWhenAiIsUnavailable();
-await testLegacyMainPathExitRejectsInvalidFormalTurnWithoutLegacyFallback();
+await testLegacyMainPathExitReturnsPlayableTurnForInvalidFormalResult();
 await testDefaultHarnessRouteReturnsDispatcherTrace();
 await testDefaultHarnessRouteInjectsAiAdapters();
 await testWorldTickRunsAsProductCapabilityForRoute();

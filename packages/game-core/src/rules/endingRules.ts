@@ -1,6 +1,7 @@
 import type { GameState, RuleResult } from '@murder-loop-ai/shared';
 import { scoreRun } from '../scoring/scoreRun';
 import { event } from '../narration/buildNarrationContext';
+import { reconcileGamePhase } from '../machines/gamePhaseMachine';
 
 export function hasConvictingEvidence(state: GameState): boolean {
   const hasPackagePhoto = state.clues.some(c => c.id === 'package_photo') || Boolean(state.room.package.state.photographed);
@@ -23,9 +24,10 @@ export function markEnding(
   title: string,
   text: string,
 ): RuleResult {
+  const previousPhase = state.phase;
   state.ending = ending;
   state.endingReason = reason;
-  state.phase = ending === 'death' ? 'death' : 'survived';
+  state.phase = reconcileGamePhase(previousPhase, state);
   state.score = scoreRun(state);
 
   const result = {

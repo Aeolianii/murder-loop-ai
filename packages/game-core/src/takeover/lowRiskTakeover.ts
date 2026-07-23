@@ -14,6 +14,7 @@ import {
 } from '../commit/atomicTurnCommit';
 import type { DomainEvent } from '../domain/domainEvents';
 import { assertionIds } from '../facts/eventAssertions';
+import { reconcileGamePhase } from '../machines/gamePhaseMachine';
 import {
   buildLowRiskKnowledgeClueCandidates,
   type KnowledgeClueProjectionCandidates,
@@ -51,7 +52,6 @@ const ORDINARY_ITEM_IDS = new Set([
   'pen_paper',
 ]);
 
-const COMMUNICATION_TARGET_IDS = new Set(['lin_yue', 'linyue', 'police_dispatch', 'chen_huaimin']);
 const PACKAGE_INTERIOR_SCOPE = /(interior|inside|contents?|open|内部|里面|内容|打开|拆开|翻开)/i;
 const PACKAGE_CHILD_IDS = [
   'package_old_book',
@@ -154,6 +154,7 @@ export function prepareLowRiskTurn(input: {
       state,
       action,
       operation,
+      communication,
       eventId,
       causalParentIds,
       envelope: input.brief,
@@ -197,15 +198,9 @@ export function prepareLowRiskTurn(input: {
     ));
   }
 
-  state.phase = state.minute >= DEADLINE_MINUTE - 5
-    ? 'pre_2347_countdown'
-    : state.policePhase === 'real_police_en_route'
-      ? 'confrontation'
-      : state.policePhase !== 'not_contacted'
-        ? 'police_called'
-        : state.threat >= 48
-          ? 'killer_pressure'
-          : 'investigating';
+  state.phase = reconcileGamePhase(input.state.phase, state, {
+    activityConfirmed: actionEvents.length > 0,
+  });
 
   const allEvents = [...actionEvents, ...supplementalEvents];
   const knowledgeClueCandidates = buildLowRiskKnowledgeClueCandidates(
@@ -298,7 +293,7 @@ function validateTurnEligibility(
   aiPlayerOutcomes: ProposedEvent[],
 ): LowRiskTakeoverRejectReason | undefined {
   if (brief.compilerVersion.includes('fallback')) return 'compiler_fallback';
-  if (brief.utteranceMode !== 'command') return 'clarification_required';
+  if (!['command', 'question', 'mixed'].includes(brief.utteranceMode)) return 'clarification_required';
   if (brief.ambiguities.some((ambiguity) => ambiguity.requiresClarification)) return 'clarification_required';
   if ([...brief.globalConstraints, ...brief.scopedConstraints].some((constraint) => constraint.type === 'conditional')) {
     return 'conditional_action_not_supported';
@@ -327,7 +322,26 @@ function validateTurnEligibility(
       }
     }
     if (operation === 'communicate') {
-      if (action.targetIds.length !== 1 || !COMMUNICATION_TARGET_IDS.has(action.targetIds[0])) return 'unsupported_target';
+      const communication = brief.communications.find((candidate) => (
+        candidate.actionId === action.actionId
+      ));
+      if (communication?.situatedAudience) {
+        const anchors = communication.situatedAudience.anchorEntityIds;
+        if (
+          action.targetIds.length !== anchors.length
+          || anchors.some((anchorId) => (
+            !action.targetIds.includes(anchorId)
+            || (anchorId !== 'room' && anchorId !== 'player' && !state.room[anchorId]?.visible)
+          ))
+        ) return 'unsupported_target';
+      } else if (communication) {
+        if (
+          action.targetIds.length !== communication.recipientIds.length
+          || communication.recipientIds.some((recipientId) => !action.targetIds.includes(recipientId))
+        ) return 'unsupported_target';
+      } else if (action.targetIds.length !== 1) {
+        return 'unsupported_target';
+      }
     }
     if (operation === 'secure_entry') {
       if (!action.targetIds.includes('front_door')) return 'unsupported_target';
@@ -399,9 +413,13 @@ function crossesLegacyHighRiskBoundary(state: GameState, brief: TurnBrief): bool
 }
 
 function buildActionPlan(brief: TurnBrief): ActionPlan {
+  const communicationByActionId = new Map(
+    brief.communications.map((communication) => [communication.actionId, communication]),
+  );
   const actions = brief.orderedActions.map((action) => {
     const operation = LOW_RISK_OPERATIONS.get(action.operation)!;
     const targetIds = operation === 'inspect' ? effectiveInspectTargetIds(action) : action.targetIds;
+    const communication = communicationByActionId.get(action.actionId);
     return {
       id: action.actionId,
       raw: action.originalSpan.text,
@@ -412,7 +430,9 @@ function buildActionPlan(brief: TurnBrief): ActionPlan {
       timeCost: 1,
       noise: 0,
       risk: 'low' as const,
-      contactChannel: operation === 'communicate' ? 'phone' as const : undefined,
+      contactChannel: operation === 'communicate'
+        ? communication?.situatedAudience ? 'doorstep' as const : 'phone' as const
+        : undefined,
       itemKind: operation === 'pick_up' ? 'utility' as const : undefined,
     };
   });
@@ -430,6 +450,7 @@ function applyLowRiskAction(input: {
   state: GameState;
   action: TurnBrief['orderedActions'][number];
   operation: LowRiskOperation;
+  communication?: TurnBrief['communications'][number];
   eventId: string;
   causalParentIds: string[];
   envelope: TurnEnvelope;
@@ -444,6 +465,7 @@ function applyLowRiskAction(input: {
   let facts: string[] = [`action_confirmed:${action.actionId}`];
   let status: ProposedEvent['status'] = 'completed';
   let ruleKind: RuleEvent['kind'] = 'action';
+  let eventKind: ProposedEvent['kind'] = 'action';
 
   if (operation === 'act') {
     const resourceFailure = genericResourceFailure(state, action);
@@ -503,7 +525,18 @@ function applyLowRiskAction(input: {
     }
   } else if (operation === 'communicate') {
     ruleKind = 'message';
-    if (state.phoneFunctional) {
+    if (input.communication?.situatedAudience) {
+      const audience = input.communication.situatedAudience;
+      const anchorLabel = audience.anchorEntityIds.map(actionTargetLabel).join('、');
+      eventType = 'communication_emitted';
+      subject = canonicalActionTarget(audience.anchorEntityIds);
+      summary = `你朝着${anchorLabel}附近开口，表达了这层意思：${input.communication.contentSummary}`;
+      facts = [
+        `communication_emitted:${input.communication.channel}`,
+        ...audience.anchorEntityIds.map((anchorId) => `communication_anchor:${anchorId}`),
+      ];
+    } else if (state.phoneFunctional) {
+      eventKind = 'information_transfer';
       eventType = 'message_delivered';
       summary = input.sharesPackagePhoto
         ? `你已将包裹照片和消息发送给${actionTargetLabel(subject)}。`
@@ -515,6 +548,7 @@ function applyLowRiskAction(input: {
           : []),
       ];
     } else {
+      eventKind = 'information_transfer';
       eventType = 'message_delivery_failed';
       status = 'failed';
       summary = `手机当前无法使用，发给${actionTargetLabel(subject)}的消息未能送达。`;
@@ -570,7 +604,7 @@ function applyLowRiskAction(input: {
   return makeAppliedEvent({
     eventId: input.eventId,
     eventType,
-    kind: operation === 'communicate' ? 'information_transfer' : 'action',
+    kind: eventKind,
     sourceActionIds: [action.actionId],
     actorId: 'player',
     operation,

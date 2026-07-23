@@ -4,6 +4,7 @@ import { cloneGameState } from '../state/createInitialState';
 import { event } from '../narration/buildNarrationContext';
 import { ensurePoliceArrivalCountdown, isPoliceArrivalDue, resolvePoliceArrival } from './policeArrival';
 import { absorbReviveProtection, hasReviveProtection } from '../loop/reviveProtection';
+import { reconcileGamePhase } from '../machines/gamePhaseMachine';
 import { hasConvictingEvidence, markEnding } from './endingRules';
 import { buildPlayerCommandsFromActionPlan } from '../domain/playerCommands';
 import { applyPlayerDomainEventsToState, buildPlayerOutcomeDomainEvents, evaluatePlayerCommandDomainEvents } from '../domain/playerActionDomain';
@@ -378,15 +379,9 @@ function applyPlayerActionsInternal(
     return { ...policeResult, state };
   }
 
-  state.phase = state.minute >= DEADLINE_MINUTE - 5
-    ? 'pre_2347_countdown'
-    : state.policePhase === 'real_police_en_route'
-      ? 'confrontation'
-    : state.policePhase !== 'not_contacted'
-      ? 'police_called'
-      : state.threat >= 48
-        ? 'killer_pressure'
-        : 'investigating';
+  state.phase = reconcileGamePhase(current.phase, state, {
+    activityConfirmed: domainEvents.length > 0,
+  });
 
   advanceLinYueRiskIfIgnored(state, plan, texts);
 

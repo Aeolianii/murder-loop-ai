@@ -10,6 +10,7 @@ import type {
   ShadowSpecialistRegistration,
 } from '@murder-loop-ai/game-core';
 import { validateTurnBriefTargetContract } from '@murder-loop-ai/game-core';
+import { z } from 'zod';
 import { completeRoleJson, type CompletionOptions } from './openaiClient';
 import type { AiRole } from './roleConfig';
 
@@ -23,6 +24,11 @@ export type ShadowCompletion = (
 const completeShadowJson: ShadowCompletion = (role, system, user, options) => (
   completeRoleJson(role, system, user, options)
 );
+
+const ActionabilityReviewSchema = z.object({
+  actionable: z.boolean(),
+  intentKind: z.enum(['action', 'question', 'communication', 'constraint', 'mixed', 'non_action']),
+}).strict();
 
 export function createAiShadowAdapters(
   complete: ShadowCompletion = completeShadowJson,
@@ -43,7 +49,7 @@ export function createAiShadowAdapters(
         options,
       );
       if (!raw) throw new Error('Semantic Compiler returned no JSON.');
-      let parsed = SemanticCompilerResultSchema.safeParse(raw);
+      let parsed = parseSemanticCompilerResult(raw, request.rawInput);
       const validationIssues = parsed.success
         ? parsed.data.status === 'compiled'
           ? validateTurnBriefTargetContract(parsed.data.brief, request.playerContext)
@@ -66,7 +72,30 @@ export function createAiShadowAdapters(
           options,
         );
         if (!raw) throw new Error('Semantic Compiler repair returned no JSON.');
-        parsed = SemanticCompilerResultSchema.safeParse(raw);
+        parsed = parseSemanticCompilerResult(raw, request.rawInput);
+      }
+      if (
+        parsed.success
+        && parsed.data.status === 'compiled'
+        && parsed.data.brief.utteranceMode === 'non_action'
+      ) {
+        const reviewRaw = await complete(
+          'semantic_compiler',
+          semanticActionabilityCheckPrompt(),
+          request,
+          { ...options, temperature: 0, maxTokens: 100 },
+        );
+        const review = ActionabilityReviewSchema.safeParse(reviewRaw);
+        if (review.success && review.data.actionable) {
+          raw = await complete(
+            'semantic_compiler',
+            semanticCompilerActionableRecoveryPrompt(),
+            { ...request, actionabilityReview: review.data },
+            { ...options, temperature: 0 },
+          );
+          if (!raw) throw new Error('Semantic Compiler actionable recovery returned no JSON.');
+          parsed = parseSemanticCompilerResult(raw, request.rawInput);
+        }
       }
       if (!parsed.success) throw new Error(`Semantic Compiler schema: ${parsed.error.message}`);
       if (parsed.data.status === 'compiled') {
@@ -138,6 +167,33 @@ function specialist(
   };
 }
 
+function parseSemanticCompilerResult(raw: unknown, rawInput: string) {
+  return SemanticCompilerResultSchema.safeParse(normalizeSourceSpanText(raw, rawInput));
+}
+
+function normalizeSourceSpanText(value: unknown, rawInput: string): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeSourceSpanText(item, rawInput));
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const normalized = Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, normalizeSourceSpanText(item, rawInput)]),
+  );
+  const { start, end, text } = normalized;
+  if (
+    typeof text === 'string'
+    && Number.isInteger(start)
+    && Number.isInteger(end)
+    && (start as number) >= 0
+    && (end as number) >= (start as number)
+    && (end as number) <= rawInput.length
+  ) {
+    return { ...normalized, text: rawInput.slice(start as number, end as number) };
+  }
+  return normalized;
+}
+
 function projectEnvelope(envelope: TurnEnvelope): TurnEnvelope {
   return {
     loopId: envelope.loopId,
@@ -155,6 +211,7 @@ function semanticCompilerPrompt(): string {
     'Keep rawInput and every originalSpan.text in the exact source language and spelling so all character offsets still match. For meaningful English input, normalize semantic prose fields such as method, desiredOutcome, and contentSummary into Simplified Chinese.',
     'When rawInput is meaningless random text with no coherent action, question, communication, or constraint, return a compiled brief with utteranceMode="non_action" and every semantic array empty. Never translate meaningless input into wait or act, because that would fabricate an action and advance the world.',
     'Use non_action only for genuinely meaningless input. A meaningful but ambiguous action must use clarification_required, and a meaningful English action must compile normally.',
+    'A meaningful question with an executable communication action must never use utteranceMode="non_action". Use utteranceMode="question" and preserve the communication action.',
     'Preserve atomic action order, dependencies, negation, scope-only restrictions, conditionals, references, communications, candidate handles, intended audience, and exact source spans.',
     'Resolve pronouns and deictic references to the nearest compatible explicit entity in the same action or communication, then use playerContext aliases and recent reference candidates. Request clarification only when two or more compatible candidates remain and choosing between them would change state.',
     'An unknown answer or future outcome is not an input ambiguity. Preserve it as communication content or desiredOutcome; do not ask the player to supply the answer that another actor is being asked to provide.',
@@ -162,6 +219,8 @@ function semanticCompilerPrompt(): string {
     'Canonical executable operation IDs: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait, act. Use a specific canonical operation whenever its meaning matches. For any other ordinary, nonviolent, reversible player behavior, use operation="act" instead of inventing an application-specific operation. For self-directed high-impact or irreversible behavior, also use operation="act" so the Player Specialist can adjudicate feasibility and consequences; do not invent a story-specific operation. Preserve the requested means in method. Include "player" in targetIds whenever the requested behavior can change the player physical state, and include only accessible environment or resource entities whose state also changes.',
     'When a requested behavior requires a physical resource absent from playerContext.accessibleEntityIds, do not invent an inaccessible entity ID or discard the request. Use operation="act" with targetIds=["player"], preserve the requested resource and attempted behavior in method and originalSpan, and let the Player Specialist adjudicate a blocked or failed outcome.',
     'All outgoing speech, questions, replies, calls, and messages use operation="communicate"; use operation="photograph" for image capture. A question carried by a message is communication content, not a separate action. Put its recipients, channel, attachments, audience, and contentSummary in one communications item tied to that actionId.',
+    ...compoundSpeechPromptLines(),
+    'For speech aimed at whoever may be near an accessible place, do not invent a named NPC. Use channel="local_voice", recipientIds=[], and situatedAudience with accessible anchorEntityIds plus a grounded description. The action targetIds must equal those anchorEntityIds.',
     'targetIds must contain every accessible entity whose state or location the action changes. Physical target IDs must come from playerContext.accessibleEntityIds; communication recipients must come from playerContext.activeCommunicationActorIds.',
     'method describes technique only and must never be the only place where a state-changing entity appears.',
     'Every secure_entry action must include "front_door" in targetIds. Barricading with chair must use operation="secure_entry" and targetIds=["front_door","chair"]. Never encode furniture barricading as use_item.',
@@ -231,6 +290,35 @@ function semanticCompilerPrompt(): string {
       attachmentHandleIds: [],
       intendedAudience: ['recipient-id'],
     })}`,
+    `situated communications item: ${JSON.stringify({
+      id: 'communication-situated-1',
+      actionId: 'action-1',
+      senderId: 'player',
+      recipientIds: [],
+      channel: 'local_voice',
+      contentSummary: 'the words explicitly spoken by the player',
+      attachmentHandleIds: [],
+      intendedAudience: [],
+      situatedAudience: {
+        anchorEntityIds: ['accessible-anchor-id'],
+        description: 'the unresolved audience near that anchor',
+      },
+    })}`,
+    `Situated-question example: rawInput="门外面有人吗？是谁？" uses utteranceMode="question", one communicate action with targetIds=["front_door"], and this communication shape: ${JSON.stringify({
+      id: 'communication-ask-outside',
+      actionId: 'action-ask-outside',
+      senderId: 'player',
+      recipientIds: [],
+      channel: 'local_voice',
+      contentSummary: '询问门外是否有人以及对方身份',
+      attachmentHandleIds: [],
+      intendedAudience: [],
+      situatedAudience: {
+        anchorEntityIds: ['front_door'],
+        description: '门外能够听见玩家声音的任何人',
+      },
+    })}`,
+    'situatedAudience is optional. Omit it for identified recipients; when it is present, recipientIds and intendedAudience must be empty.',
     `candidateHandles item: ${JSON.stringify({
       id: 'candidate-handle-1',
       kind: 'artifact-kind',
@@ -285,8 +373,59 @@ function semanticCompilerPrompt(): string {
       schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
       reasonCode: 'compiler_unavailable',
     }),
+    'FULL SITUATED QUESTION OUTPUT EXAMPLE (copy its structure, never its IDs or text):',
+    situatedQuestionOutputExample(),
     'Never include Canonical Truth, Killer/NPC knowledge, narration, recommendations, or free-form analysis.',
   ].join('\n');
+}
+
+function situatedQuestionOutputExample(): string {
+  const rawInput = '门外面有人吗？是谁？';
+  return JSON.stringify({
+    status: 'compiled',
+    brief: {
+      loopId: 'COPY_REQUEST_LOOP_ID',
+      turnId: 'COPY_REQUEST_TURN_ID',
+      inputStateVersion: 0,
+      deadlineAt: 'COPY_REQUEST_DEADLINE_AT',
+      compilerVersion: 'semantic-compiler-v1',
+      schemaVersion: WORLD_MODEL_SCHEMA_VERSION,
+      utteranceMode: 'question',
+      resolvedReferences: [],
+      orderedActions: [{
+        actionId: 'action-ask-outside',
+        actorId: 'player',
+        operation: 'communicate',
+        targetIds: ['front_door'],
+        method: '隔着门向门外发问',
+        dependsOnActionIds: [],
+        inputHandleIds: [],
+        outputHandleIds: [],
+        originalSpan: { start: 0, end: rawInput.length, text: rawInput },
+        stealthIntent: false,
+        intendedAudience: [],
+        desiredOutcome: '确认门外是否有人以及对方身份',
+      }],
+      globalConstraints: [],
+      scopedConstraints: [],
+      communications: [{
+        id: 'communication-ask-outside',
+        actionId: 'action-ask-outside',
+        senderId: 'player',
+        recipientIds: [],
+        channel: 'local_voice',
+        contentSummary: '询问门外是否有人以及对方身份',
+        attachmentHandleIds: [],
+        intendedAudience: [],
+        situatedAudience: {
+          anchorEntityIds: ['front_door'],
+          description: '门外能够听见玩家声音的任何人',
+        },
+      }],
+      candidateHandles: [],
+      ambiguities: [],
+    },
+  });
 }
 
 function semanticCompilerRepairPrompt(basePrompt: string): string {
@@ -297,6 +436,120 @@ function semanticCompilerRepairPrompt(basePrompt: string): string {
     'Preserve the original request meaning, exact source spans, references, communication content, envelope, and versions. For target-contract issues, change only operation, targetIds, and dependencies required by the listed violation.',
     'Return one complete replacement json object, not a patch. Add every required key, including required arrays when empty. Omit absent optional keys instead of using null. Do not add any key outside the documented contract.',
   ].join('\n');
+}
+
+function semanticActionabilityCheckPrompt(): string {
+  return [
+    'You are the independent actionability checker for a turn-based mystery game.',
+    'ACTIONABILITY CHECK: read rawInput itself. A previous compiler answer is intentionally not provided.',
+    'Return {"actionable":true,"intentKind":"question"} when the player asks any coherent question.',
+    'Also return actionable=true for any coherent attempt, command, speech, signal, inspection, movement, wait, or constraint, even when success or the answer is unknown.',
+    'Use intentKind="action", "question", "communication", "constraint", or "mixed" for actionable input.',
+    'Only meaningless text with no coherent executable intent is actionable=false and intentKind="non_action".',
+    'Return exactly one strict JSON object with only actionable and intentKind. No markdown or explanation.',
+  ].join('\n');
+}
+
+function semanticCompilerActionableRecoveryPrompt(): string {
+  return [
+    'You are an independent final Semantic Compiler for a turn-based mystery game.',
+    'ACTIONABLE RECOVERY: actionabilityReview has already confirmed that rawInput contains an executable player intent. You must compile that intent; non_action is not an allowed output.',
+    'Read only rawInput and playerContext. Do not infer whether an action succeeds or invent observations, replies, clues, time changes, death, or endings.',
+    'Asking, speaking, signaling, attempting, inspecting, moving, waiting, or expressing another executable intent is actionable even when its outcome is unknown.',
+    ...compoundSpeechPromptLines(),
+    'Compile meaningful Chinese and English input. Preserve rawInput exactly in originalSpan.text and use exact JavaScript string offsets.',
+    'Allowed operations: inspect, photograph, communicate, secure_entry, pick_up, use_item, wait, act. Use act for ordinary executable behavior without a more specific operation.',
+    'Use only accessibleEntityIds for physical targets and activeCommunicationActorIds for identified recipients.',
+    'A missing named recipient is not evidence of non_action. Use situatedAudience for speech aimed at whoever may be near an accessible place.',
+    'For situated speech use operation="communicate", channel="local_voice", recipientIds=[], intendedAudience=[], and set action.targetIds equal to situatedAudience.anchorEntityIds.',
+    `Echo loopId, turnId, inputStateVersion, and deadlineAt exactly. Use compilerVersion="semantic-compiler-v1" and schemaVersion="${WORLD_MODEL_SCHEMA_VERSION}".`,
+    'Return valid json only. All objects are strict; omit absent optional keys rather than using null. Never return explanations, review fields, markdown, or state outcomes.',
+    `Every compiled brief requires these keys: ${JSON.stringify([
+      'loopId',
+      'turnId',
+      'inputStateVersion',
+      'deadlineAt',
+      'compilerVersion',
+      'schemaVersion',
+      'utteranceMode',
+      'resolvedReferences',
+      'orderedActions',
+      'globalConstraints',
+      'scopedConstraints',
+      'communications',
+      'candidateHandles',
+      'ambiguities',
+    ])}. Use [] for empty arrays.`,
+    `Every orderedActions item requires this shape: ${JSON.stringify({
+      actionId: 'grounded-action-id',
+      actorId: 'player',
+      operation: 'allowed-operation',
+      targetIds: ['accessible-entity-id'],
+      dependsOnActionIds: [],
+      inputHandleIds: [],
+      outputHandleIds: [],
+      originalSpan: { start: 0, end: 1, text: 'exact source text' },
+      intendedAudience: [],
+    })}. scope, method, stealthIntent, and desiredOutcome are optional.`,
+    `Identified communication shape: ${JSON.stringify({
+      id: 'grounded-communication-id',
+      actionId: 'matching-action-id',
+      senderId: 'player',
+      recipientIds: ['active-recipient-id'],
+      channel: 'grounded-channel',
+      contentSummary: 'what the player said or asked',
+      attachmentHandleIds: [],
+      intendedAudience: ['active-recipient-id'],
+    })}. situatedAudience is optional and replaces identified recipients.`,
+    'FULL SITUATED QUESTION OUTPUT EXAMPLE (copy its structure, never its IDs or text):',
+    situatedQuestionOutputExample(),
+  ].join('\n');
+}
+
+function compoundSpeechPromptLines(): string[] {
+  return [
+    'Physical staging around speech remains a separate ordered action. If the player explicitly knocks, waves, points, opens, moves, or performs another physical behavior before or while speaking, emit that physical action plus one communicate action in source order; never turn the staging instruction into dialogue.',
+    'A colon, quotation marks, or a speech verb separates the spoken content from its narration. communication.contentSummary describes only what is spoken or signaled, excluding staging verbs such as knock-and-shout.',
+    `Compound speech example: rawInput="敲两下桌面并喊：有人吗？" has this semantic structure: ${JSON.stringify({
+      orderedActions: [{
+        actionId: 'action-knock-table',
+        actorId: 'player',
+        operation: 'act',
+        targetIds: ['accessible-table-id'],
+        method: '敲击桌面两次',
+        dependsOnActionIds: [],
+        inputHandleIds: [],
+        outputHandleIds: [],
+        originalSpan: { start: 0, end: 5, text: '敲两下桌面' },
+        intendedAudience: [],
+      }, {
+        actionId: 'action-call-out',
+        actorId: 'player',
+        operation: 'communicate',
+        targetIds: ['accessible-room-anchor-id'],
+        method: '大声询问',
+        dependsOnActionIds: ['action-knock-table'],
+        inputHandleIds: [],
+        outputHandleIds: [],
+        originalSpan: { start: 6, end: 12, text: '喊：有人吗？' },
+        intendedAudience: [],
+      }],
+      communications: [{
+        id: 'communication-call-out',
+        actionId: 'action-call-out',
+        senderId: 'player',
+        recipientIds: [],
+        channel: 'local_voice',
+        contentSummary: '询问是否有人',
+        attachmentHandleIds: [],
+        intendedAudience: [],
+        situatedAudience: {
+          anchorEntityIds: ['accessible-room-anchor-id'],
+          description: '能够听见玩家声音的任何人',
+        },
+      }],
+    })}`,
+  ];
 }
 
 function proposalPrompt(sourceAgent: string, domain: string): string {

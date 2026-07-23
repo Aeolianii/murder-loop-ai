@@ -123,6 +123,39 @@ assert(
 );
 assert(
   calls[0].system.includes(
+    'Physical staging around speech remains a separate ordered action.',
+  ),
+  'Semantic Compiler prompt must not collapse an explicit physical action into spoken content.',
+);
+assert(
+  calls[0].system.includes(
+    'A meaningful question with an executable communication action must never use utteranceMode="non_action".',
+  ),
+  'Semantic Compiler prompt must keep player questions executable.',
+);
+assert(
+  calls[0].system.includes('situatedAudience'),
+  'Semantic Compiler prompt must define an audience that does not require inventing an NPC identity.',
+);
+assert(
+  calls[0].system.includes('local_voice'),
+  'Semantic Compiler prompt must distinguish situated speech from phone messaging.',
+);
+assert(
+  calls[0].system.includes('门外面有人吗？是谁？'),
+  'Semantic Compiler prompt must include a concrete situated-question example.',
+);
+assert(
+  calls[0].system.includes('FULL SITUATED QUESTION OUTPUT EXAMPLE'),
+  'Semantic Compiler prompt must include one complete situated-question output object.',
+);
+assert(
+  calls[0].system.indexOf('FULL SITUATED QUESTION OUTPUT EXAMPLE')
+    > calls[0].system.indexOf('For utteranceMode="non_action"'),
+  'The complete actionable example must appear after the copyable non_action shape.',
+);
+assert(
+  calls[0].system.includes(
     'targetIds must contain every accessible entity whose state or location the action changes.',
   ),
   'Semantic Compiler prompt must require state-changing entities in targetIds.',
@@ -619,3 +652,120 @@ assert(
   JSON.stringify(repairCalls[1].user).includes('dependsOnActionIds'),
   'Structural repair request must identify the exact invalid field path.',
 );
+
+const situatedQuestionRequest: SemanticCompilerRequest = {
+  ...request,
+  rawInput: '门外面有人吗？是谁？',
+  playerContext: {
+    ...request.playerContext,
+    accessibleEntityIds: ['player', 'front_door'],
+    capabilities: ['communicate'],
+    entityAliasIndex: {
+      入户门: ['front_door'],
+      门外: ['front_door'],
+    },
+  },
+};
+const nonActionQuestionBrief = {
+  ...brief,
+  utteranceMode: 'non_action' as const,
+};
+const compiledSituatedQuestionBrief = {
+  ...brief,
+  utteranceMode: 'question' as const,
+  orderedActions: [{
+    actionId: 'action-ask-outside',
+    actorId: 'player',
+    operation: 'communicate',
+    targetIds: ['front_door'],
+    method: '隔着门说话',
+    dependsOnActionIds: [],
+    inputHandleIds: [],
+    outputHandleIds: [],
+    originalSpan: {
+      start: 0,
+      end: situatedQuestionRequest.rawInput.length,
+      text: '?'.repeat(situatedQuestionRequest.rawInput.length),
+    },
+    intendedAudience: [],
+    desiredOutcome: '确认门外是否有人以及对方身份',
+  }],
+  communications: [{
+    id: 'communication-ask-outside',
+    actionId: 'action-ask-outside',
+    senderId: 'player',
+    recipientIds: [],
+    channel: 'local_voice',
+    contentSummary: '询问门外是否有人以及对方身份',
+    attachmentHandleIds: [],
+    intendedAudience: [],
+    situatedAudience: {
+      anchorEntityIds: ['front_door'],
+      description: '门外能够听见玩家声音的任何人',
+    },
+  }],
+};
+const nonActionReviewCalls: Array<{ system: string; user: unknown }> = [];
+const nonActionReviewAdapters = createAiShadowAdapters(async (_role, system, user) => {
+  nonActionReviewCalls.push({ system, user });
+  if (nonActionReviewCalls.length === 1) {
+    return { status: 'compiled', brief: nonActionQuestionBrief };
+  }
+  if (nonActionReviewCalls.length === 2) {
+    return { actionable: true, intentKind: 'question' };
+  }
+  return { status: 'compiled', brief: compiledSituatedQuestionBrief };
+});
+const reviewedQuestion = await nonActionReviewAdapters.semanticCompiler.compile(
+  situatedQuestionRequest,
+  { signal: controller.signal },
+);
+assert.equal(nonActionReviewCalls.length, 3, 'an actionable non_action candidate must be classified and recompiled');
+assert(nonActionReviewCalls[1].system.includes('ACTIONABILITY CHECK'));
+assert(
+  !nonActionReviewCalls[1].system.includes('COMPILED OUTPUT CONTRACT'),
+  'Actionability check must stay focused instead of repeating the long first-pass prompt.',
+);
+assert.deepEqual(nonActionReviewCalls[1].user, situatedQuestionRequest);
+assert(nonActionReviewCalls[2].system.includes('ACTIONABLE RECOVERY'));
+assert(nonActionReviewCalls[2].system.includes('FULL SITUATED QUESTION OUTPUT EXAMPLE'));
+assert(
+  nonActionReviewCalls[2].system.includes(
+    'Physical staging around speech remains a separate ordered action.',
+  ),
+);
+assert(
+  !nonActionReviewCalls[2].system.includes('For truly meaningless input only'),
+  'Actionable recovery must not offer non_action as a copyable output.',
+);
+assert.deepEqual(nonActionReviewCalls[2].user, {
+  ...situatedQuestionRequest,
+  actionabilityReview: { actionable: true, intentKind: 'question' },
+});
+assert.equal(reviewedQuestion.status, 'compiled');
+if (reviewedQuestion.status === 'compiled') {
+  assert.equal(reviewedQuestion.brief.utteranceMode, 'question');
+  assert.equal(reviewedQuestion.brief.orderedActions[0]?.operation, 'communicate');
+  assert.equal(
+    reviewedQuestion.brief.orderedActions[0]?.originalSpan.text,
+    situatedQuestionRequest.rawInput,
+    'Source spans must be reconstructed from rawInput rather than trusting model-transcribed text.',
+  );
+}
+
+const confirmedNonActionCalls: string[] = [];
+const confirmedNonActionAdapters = createAiShadowAdapters(async (_role, system) => {
+  confirmedNonActionCalls.push(system);
+  return confirmedNonActionCalls.length === 1
+    ? { status: 'compiled', brief: nonActionQuestionBrief }
+    : { actionable: false, intentKind: 'non_action' };
+});
+const confirmedNonAction = await confirmedNonActionAdapters.semanticCompiler.compile(
+  { ...situatedQuestionRequest, rawInput: '???' },
+  { signal: controller.signal },
+);
+assert.equal(confirmedNonActionCalls.length, 2, 'confirmed meaningless input must not be recompiled');
+assert.equal(confirmedNonAction.status, 'compiled');
+if (confirmedNonAction.status === 'compiled') {
+  assert.equal(confirmedNonAction.brief.utteranceMode, 'non_action');
+}

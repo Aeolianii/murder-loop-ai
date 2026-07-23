@@ -4,6 +4,7 @@ import { event } from '../narration/buildNarrationContext';
 import { scoreRun } from '../scoring/scoreRun';
 import { ensurePoliceArrivalCountdown, isPoliceArrivalDue, resolvePoliceArrival } from '../rules/policeArrival';
 import { absorbReviveProtection, hasReviveProtection } from '../loop/reviveProtection';
+import { reconcileGamePhase } from '../machines/gamePhaseMachine';
 
 function clamp(value: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value));
@@ -34,7 +35,7 @@ export function advanceAmbientTurn(current: GameState): RuleResult {
     }
     state.ending = 'death';
     state.endingReason = 'ambient_pressure';
-    state.phase = 'death';
+    state.phase = reconcileGamePhase(current.phase, state);
     state.score = scoreRun(state);
     const result = {
       title: '门锁打开',
@@ -51,7 +52,7 @@ export function advanceAmbientTurn(current: GameState): RuleResult {
     return { ...result, state };
   }
 
-  state.phase = state.policePhase === 'real_police_en_route' ? 'confrontation' : state.policePhase !== 'not_contacted' ? 'police_called' : state.threat >= 48 ? 'killer_pressure' : 'investigating';
+  state.phase = reconcileGamePhase(current.phase, state, { activityConfirmed: true });
 
   const result = {
     title: '时间继续走',

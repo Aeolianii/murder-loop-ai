@@ -3,6 +3,7 @@ import { cloneGameState } from '../state/createInitialState';
 import { event } from '../narration/buildNarrationContext';
 import { absorbReviveProtection, hasReviveProtection } from '../loop/reviveProtection';
 import { markEnding } from '../rules/endingRules';
+import { transitionGamePhase } from '../machines/gamePhaseMachine';
 import type { DomainEvent, SimulationIntent } from '../domain/domainEvents';
 import {
   buildKillerOutcomeDomainEvents,
@@ -98,13 +99,15 @@ export function applyKillerStrategyDomainEvent(current: GameState, domainEvent: 
       state.killerPhase = 'soft_pressure';
       break;
     case 'fake_police':
-      state.phase = 'false_police_arrived';
+      state.phase = transitionGamePhase(state.phase, 'FAKE_POLICE');
       state.killerPhase = 'deception';
       text = '门外有人自称派出所民警，要求开门配合，但身份尚未核实。';
       break;
     case 'direct_confrontation':
       threatDelta = 6;
-      state.phase = state.policePhase === 'real_police_en_route' ? 'confrontation' : state.phase;
+      state.phase = state.policePhase === 'real_police_en_route'
+        ? transitionGamePhase(state.phase, 'CONFRONT')
+        : state.phase;
       state.killerPhase = 'exposed';
       text = strategy.responseHint || '门外的人失去伪装，压低声音做最后一次威胁；楼道远处的真实动静正在逼近。';
       break;

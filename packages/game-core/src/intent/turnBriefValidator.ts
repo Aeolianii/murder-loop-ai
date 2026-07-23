@@ -96,6 +96,9 @@ export function validateTurnBriefTargetContract(
   context: SemanticCompilerRequest['playerContext'],
 ): TurnBriefTargetContractIssue[] {
   const issues: TurnBriefTargetContractIssue[] = [];
+  const communicationsByActionId = new Map(
+    brief.communications.map((communication) => [communication.actionId, communication]),
+  );
   const accessibleTargets = new Set([
     ...context.accessibleEntityIds,
     ...context.activeCommunicationActorIds,
@@ -147,13 +150,33 @@ export function validateTurnBriefTargetContract(
     }
 
     if (COMMUNICATION_OPERATIONS.has(action.operation)) {
-      if (
-        action.targetIds.length !== 1
-        || !context.activeCommunicationActorIds.includes(action.targetIds[0])
+      const communication = communicationsByActionId.get(action.actionId);
+      if (!communication) {
+        issues.push({
+          path: 'brief.communications',
+          message: `${action.operation} must have one matching communication intent.`,
+        });
+      } else if (communication.situatedAudience) {
+        const anchorIds = communication.situatedAudience.anchorEntityIds;
+        if (
+          action.targetIds.length !== anchorIds.length
+          || anchorIds.some((anchorId) => !action.targetIds.includes(anchorId))
+        ) {
+          issues.push({
+            path: `${path}.targetIds`,
+            message: `${action.operation} targetIds must match its situated audience anchors.`,
+          });
+        }
+      } else if (
+        action.targetIds.length !== communication.recipientIds.length
+        || communication.recipientIds.some((recipientId) => (
+          !context.activeCommunicationActorIds.includes(recipientId)
+          || !action.targetIds.includes(recipientId)
+        ))
       ) {
         issues.push({
           path: `${path}.targetIds`,
-          message: `${action.operation} must target exactly one active communication actor.`,
+          message: `${action.operation} targetIds must match active communication recipients.`,
         });
       }
     }
