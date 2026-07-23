@@ -1,8 +1,16 @@
-import { BookOpen, Brain, Smartphone, X } from 'lucide-react';
+import {
+  BookOpen,
+  Brain,
+  GitMerge,
+  Scale,
+  Smartphone,
+  X,
+} from 'lucide-react';
 import React, { useState } from 'react';
 import type { PlayerKnowledge, TruthDerivation } from '@murder-loop-ai/shared';
 import { getClueAsset } from '../clueAssets';
 import { type ClueReadMap, isClueUnread } from '../clueRevealState';
+import { isConfirmedPositiveKnowledge } from '../deductionWorkspace';
 import type { Clue, TurnTimingState } from '../types';
 import { TurnTimingPanel } from './TurnTimingPanel';
 
@@ -20,6 +28,8 @@ interface SidebarProps {
   };
   readClues?: ClueReadMap;
   onClueSelect?: (clue: Clue) => void;
+  onOpenInference?: () => void;
+  onOpenTruth?: () => void;
   turnTiming?: TurnTimingState;
 }
 
@@ -98,9 +108,15 @@ export function Sidebar({
   sidebar,
   readClues = {},
   onClueSelect,
+  onOpenInference,
+  onOpenTruth,
   turnTiming,
 }: SidebarProps) {
   const [showMemories, setShowMemories] = useState(true);
+  const confirmedConclusionCount = knowledge.filter(
+    isConfirmedPositiveKnowledge,
+  ).length;
+  const missingTruthConclusions = Math.max(0, 3 - confirmedConclusionCount);
 
   return (
     <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-white/5 bg-[#0a0a0c] lg:h-[calc(100vh-65px)] lg:w-80">
@@ -156,6 +172,44 @@ export function Sidebar({
                 {sidebar?.phaseLabel ?? '循环开始'}
               </li>
             </ul>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onOpenInference}
+              className="group rounded-xl border border-amber-300/15 bg-amber-300/[0.045] p-3 text-left transition hover:border-amber-300/30 hover:bg-amber-300/[0.075]"
+            >
+              <GitMerge className="h-4 w-4 text-amber-300/65 transition group-hover:text-amber-200" />
+              <span className="mt-2 block font-serif text-sm text-zinc-200">
+                结论推理
+              </span>
+              <span className="mt-1 block text-[10px] leading-relaxed text-zinc-600">
+                组合线索与结论
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenTruth}
+              title={missingTruthConclusions > 0
+                ? `还需要 ${missingTruthConclusions} 条正向结论`
+                : '选择三条结论并确认结案'}
+              className={`group rounded-xl border p-3 text-left transition hover:border-cyan-300/30 hover:bg-cyan-300/[0.07] ${
+                missingTruthConclusions > 0
+                  ? 'border-white/7 bg-white/[0.02]'
+                  : 'border-cyan-300/15 bg-cyan-300/[0.04]'
+              }`}
+            >
+              <Scale className="h-4 w-4 text-cyan-300/65 transition group-hover:text-cyan-200" />
+              <span className="mt-2 block font-serif text-sm text-zinc-200">
+                真相推导
+              </span>
+              <span className="mt-1 block text-[10px] leading-relaxed text-zinc-600">
+                {missingTruthConclusions > 0
+                  ? `还差 ${missingTruthConclusions} 条结论`
+                  : '选择三条结案主轴'}
+              </span>
+            </button>
           </div>
 
           {knowledge.length > 0 && (

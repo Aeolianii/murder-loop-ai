@@ -15,6 +15,9 @@ assert.match(
   /收起/,
   'the memory toggle must indicate that the initially expanded section can be collapsed',
 );
+assert.match(html, /结论推理/);
+assert.match(html, /真相推导/);
+assert.match(html, /还差 3 条结论/);
 
 const inferenceHtml = renderToStaticMarkup(
   <Sidebar

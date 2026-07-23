@@ -449,12 +449,12 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       semanticPrefetchService?.cancelSession(gameSessionId, 'deduction_submitted');
       const deductionResult = validateDeductionClaims(bootstrapState, input);
       if (deductionResult.passed) {
-        const ending = scoreEnding(bootstrapState);
+        const deductionEnding = scoreEnding(bootstrapState);
         return reply.send({
           recap: generateRecap(bootstrapState), coreState: bootstrapState,
           ...buildPlayerTruthPayload(bootstrapState),
           time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',
-          phase: bootstrapState.phase, ending, deduction: deductionResult,
+          phase: bootstrapState.phase, deductionEnding, deduction: deductionResult,
           deductionResponse: buildDeductionResponse(deductionResult),
           storyLog: [], clues: bootstrapState.clues, audioCue: null, worldTickTrace: [],
           coordination: { warnings: [], trace: [], agentTiming: { totalMs: 0, slowest: null, entries: [] }, turnTiming: [], judgements: {} },

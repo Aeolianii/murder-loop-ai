@@ -10,6 +10,10 @@ import { StoryPanel } from './components/StoryPanel';
 import { InputArea } from './components/InputArea';
 import { Sidebar } from './components/Sidebar';
 import { ClueRevealModal } from './components/ClueRevealModal';
+import {
+  DeductionWorkspace,
+  type DeductionWorkspaceMode,
+} from './components/DeductionWorkspace';
 import { CinematicIntro } from './components/CinematicIntro';
 import { CinematicTransition } from './components/CinematicTransition';
 import { RainPlayer } from './components/RainPlayer';
@@ -22,6 +26,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { getClueAsset } from './clueAssets';
 import { ClueReadMap, findFirstNewClue, markClueRead } from './clueRevealState';
 import { useGameStore } from './store/gameStore';
+import { buildTruthSubmission } from './deductionWorkspace';
 
 interface EndingCinematicPayload {
   key: string;
@@ -45,6 +50,8 @@ export default function App() {
   const [showCinematic, setShowCinematic] = useState(() => shouldShowIntroCinematic(useGameStore.getState().frontendState));
   const [endingCinematic, setEndingCinematic] = useState<EndingCinematicPayload | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [deductionWorkspaceMode, setDeductionWorkspaceMode] =
+    useState<DeductionWorkspaceMode | null>(null);
   const [activeClueId, setActiveClueId] = useState<string | null>(null);
   const [readClues, setReadClues] = useState<ClueReadMap>({});
 
@@ -77,7 +84,7 @@ export default function App() {
     const result = recommendation
       ? await submitRecommendedAction(recommendation)
       : await submitAction(actionText);
-    if (!result) return;
+    if (!result) return null;
 
     const resultClues = result.clues ?? previousClues;
     const newClue = findFirstNewClue(previousClues, resultClues);
@@ -93,7 +100,16 @@ export default function App() {
       setActiveClueId(newClue.id);
     }
 
-    if (result.ending && result.ending !== previousState.ending) {
+    if (result.deductionEnding) {
+      const breakdown = result.deductionEnding.breakdown;
+      setEndingCinematic({
+        key: `deduction-${result.deductionEnding.tier}-${Date.now()}`,
+        kind: 'survived',
+        title: `${result.deductionEnding.tier} 级结局`,
+        summary: result.deductionEnding.narrative,
+        method: `真相 ${breakdown.truthLayer} · 证据 ${breakdown.evidenceStrength} · 外传 ${breakdown.externalReach} · 生还 ${breakdown.survivors}`,
+      });
+    } else if (result.ending && result.ending !== previousState.ending) {
       setEndingCinematic({
         key: `${result.ending}-${Date.now()}`,
         kind: result.phase === 'survived' ? 'survived' : 'death',
@@ -110,6 +126,23 @@ export default function App() {
         method: result.deathMethod,
       });
     }
+    return result;
+  };
+
+  const handleTruthSubmission = async (selectedKnowledgeIds: string[]) => {
+    const submission = buildTruthSubmission(
+      state.knowledge ?? [],
+      selectedKnowledgeIds,
+    );
+    const result = await handleActionSubmit(submission.text);
+    const accepted = result?.deduction?.passed === true
+      && Boolean(result.deductionEnding);
+    return accepted;
+  };
+
+  const openDeductionWorkspace = (mode: DeductionWorkspaceMode) => {
+    setMobileMenuOpen(false);
+    setDeductionWorkspaceMode(mode);
   };
 
   const handleConfirmAction = () => {
@@ -127,6 +160,7 @@ export default function App() {
     setEndingCinematic(null);
     setShowCinematic(false);
     setMobileMenuOpen(false);
+    setDeductionWorkspaceMode(null);
     setActiveClueId(null);
     return true;
   };
@@ -136,6 +170,7 @@ export default function App() {
     setShowCinematic(true);
     setEndingCinematic(null);
     setMobileMenuOpen(false);
+    setDeductionWorkspaceMode(null);
     setActiveClueId(null);
     setReadClues({});
   };
@@ -184,6 +219,15 @@ export default function App() {
         clue={activeClue}
         open={Boolean(activeClue)}
         onClose={handleClueModalClose}
+      />
+
+      <DeductionWorkspace
+        mode={deductionWorkspaceMode}
+        clues={state.clues}
+        knowledge={state.knowledge ?? []}
+        truth={state.truth}
+        onClose={() => setDeductionWorkspaceMode(null)}
+        onSubmitTruth={handleTruthSubmission}
       />
 
       <div className="relative flex h-[100svh] flex-col overflow-hidden bg-[#08080a] text-zinc-200 lg:h-screen">
@@ -245,7 +289,7 @@ export default function App() {
 
         {/* Desktop Sidebar */}
         <div className="hidden lg:block shrink-0 relative z-30">
-          <Sidebar clues={state.clues} knowledge={state.knowledge} truth={state.truth} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} readClues={readClues} />
+          <Sidebar clues={state.clues} knowledge={state.knowledge} truth={state.truth} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} onOpenInference={() => openDeductionWorkspace('inference')} onOpenTruth={() => openDeductionWorkspace('truth')} readClues={readClues} />
         </div>
 
         {/* Mobile Sidebar Frame */}
@@ -258,7 +302,7 @@ export default function App() {
               transition={{ type: "spring", bounce: 0, duration: 0.4 }}
               className="absolute inset-x-0 bottom-0 top-0 z-40 bg-[#08080a] shadow-2xl lg:hidden"
             >
-               <Sidebar clues={state.clues} knowledge={state.knowledge} truth={state.truth} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} readClues={readClues} />
+               <Sidebar clues={state.clues} knowledge={state.knowledge} truth={state.truth} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} onOpenInference={() => openDeductionWorkspace('inference')} onOpenTruth={() => openDeductionWorkspace('truth')} readClues={readClues} />
             </motion.div>
           )}
         </AnimatePresence>
