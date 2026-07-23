@@ -1220,7 +1220,8 @@ async function testLegacyMainPathExitPublishesConfirmedNpcReply() {
   fixture.aiAdapters.npcReply = async (speaker, input) => {
     npcReplyCalls += 1;
     assert.equal(speaker, 'linyue');
-    assert.match(input, /林越|包裹/);
+    assert.match(input.text, /林越|包裹/);
+    assert.ok(input.attachments.some((attachment) => attachment.id === 'package_photo'));
     return {
       speaker: 'linyue',
       text: '这不是我的包裹。你别开门，把照片留好。',

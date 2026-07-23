@@ -1,6 +1,7 @@
 import { fallbackNpcReply } from '../npc/fallbackNpc';
+import { buildNpcInboundMessages } from '../npc/npcInboundMessage';
 import type { AgentRegistration } from '../events/AgentRegistry';
-import type { GameState, NpcReply } from '@murder-loop-ai/shared';
+import type { ActionPlan, GameState } from '@murder-loop-ai/shared';
 
 /**
  * NPC 回复 Agent。
@@ -22,16 +23,12 @@ export const NpcAgent: AgentRegistration = {
     throw new Error('AI handler not injected — use server adapter via createHarness()');
   },
   fallback: async (input: unknown) => {
-    const payload = input as { plan?: { raw?: string; actions?: Array<{ intent: string; target?: string; method?: string; raw?: string }> }; state: GameState };
+    const payload = input as { plan?: ActionPlan; state: GameState };
     const plan = payload.plan;
     const state = payload.state;
-    // 检查是否有 NPC 通信意图
-    const commIntent = plan?.actions?.find((i) => i.intent === 'communicate');
-    if (commIntent?.target) {
-      const speaker = commIntent.target as NpcReply['speaker'];
-      return fallbackNpcReply(speaker, commIntent.raw ?? commIntent.method ?? plan?.raw ?? '', state);
-    }
-    return null;
+    if (!plan) return null;
+    const message = buildNpcInboundMessages(plan)[0];
+    return message ? fallbackNpcReply(message.speaker, message.text, state) : null;
   },
   mode: 'fallback',
 };

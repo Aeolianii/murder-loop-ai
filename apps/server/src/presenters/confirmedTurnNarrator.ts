@@ -1,5 +1,6 @@
 import { NarrationSchema, NpcReplySchema } from '@murder-loop-ai/ai-contracts';
 import {
+  buildNpcInboundMessages,
   buildNarratorContext,
   fallbackNpcReply,
   sanitizeNarration,
@@ -216,52 +217,42 @@ function confirmedActionFallback(resolution: TurnResolution): Narration {
   };
 }
 
-function npcSpeaker(target?: string): NpcReply['speaker'] | undefined {
-  if (target === 'linyue' || target === 'lin_yue') return 'linyue';
-  if (target === 'police_dispatch' || target === 'real_police') return 'police_dispatch';
-  if (target === 'chen_huaimin') return 'chen_huaimin';
-  return undefined;
-}
-
-function hasConfirmedDelivery(resolution: TurnResolution, speaker: NpcReply['speaker']) {
-  const events = (resolution.playerResult as TurnResolution['playerResult'] & {
-    domainEvents?: Array<{ eventType: string; subject: string }>;
-  }).domainEvents ?? [];
-  return events.some((event) => (
-    (event.eventType === 'message_delivered' || event.eventType === 'photo_sent_to_linyue')
-    && npcSpeaker(event.subject) === speaker
-  ));
-}
-
 async function runConfirmedNpcReply(
   resolution: TurnResolution,
   adapters: AiAdapters,
 ): Promise<{ reply?: NpcReply; warnings: string[] }> {
-  const action = resolution.plan.actions.find((candidate) => (
-    candidate.intent === 'communicate' && npcSpeaker(candidate.target) !== undefined
-  ));
-  const speaker = npcSpeaker(action?.target);
-  if (!action || !speaker || !hasConfirmedDelivery(resolution, speaker)) return { warnings: [] };
+  const domainEvents = (resolution.playerResult as TurnResolution['playerResult'] & {
+    domainEvents?: Array<{
+      eventType: string;
+      subject?: string;
+      facts?: string[];
+      payload?: Record<string, unknown>;
+    }>;
+  }).domainEvents ?? [];
+  const message = buildNpcInboundMessages(resolution.plan, domainEvents)
+    .find((candidate) => candidate.deliveryConfirmed);
+  if (!message) return { warnings: [] };
 
-  const input = action.raw ?? action.method ?? resolution.plan.raw;
   if (!adapters.npcReply) {
     return {
-      reply: fallbackNpcReply(speaker, input, resolution.finalState),
+      reply: fallbackNpcReply(message.speaker, message.text, resolution.finalState),
       warnings: ['post-commit npcReply adapter unavailable; deterministic fallback used.'],
     };
   }
   try {
-    const parsed = NpcReplySchema.safeParse(await adapters.npcReply(speaker, input, resolution.finalState));
+    const parsed = NpcReplySchema.safeParse(
+      await adapters.npcReply(message.speaker, message, resolution.finalState),
+    );
     if (parsed.success && isChineseUiText(parsed.data.text)) return { reply: parsed.data, warnings: [] };
     return {
-      reply: fallbackNpcReply(speaker, input, resolution.finalState),
+      reply: fallbackNpcReply(message.speaker, message.text, resolution.finalState),
       warnings: [parsed.success
         ? 'post-commit npcReply returned non-Chinese display text; deterministic fallback used.'
         : 'post-commit npcReply failed schema validation; deterministic fallback used.'],
     };
   } catch (error) {
     return {
-      reply: fallbackNpcReply(speaker, input, resolution.finalState),
+      reply: fallbackNpcReply(message.speaker, message.text, resolution.finalState),
       warnings: [`post-commit npcReply failed; deterministic fallback used. ${
         error instanceof Error ? error.message : String(error)
       }`],

@@ -117,6 +117,12 @@ export interface ParsedAction {
   contactChannel?: 'phone' | 'doorstep' | 'unspecified';
   /** Parser Agent 对拾取物用途的判断；决定是否产生武器线索。 */
   itemKind?: 'weapon' | 'utility' | 'evidence' | 'unknown';
+  /** 语义编译器确认的通信正文与附件；NPC 回复不得只依赖可能被截断的 raw。 */
+  communication?: {
+    content: string;
+    attachmentIds: string[];
+    channel?: string;
+  };
 }
 
 export interface ActionPlan {

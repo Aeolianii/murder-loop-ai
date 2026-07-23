@@ -14,6 +14,7 @@ import {
   type DirectorContext,
   type KillerContext,
   type HarnessOptions,
+  type NpcInboundMessage,
   type RecommendationContext,
 } from '@murder-loop-ai/game-core';
 import {
@@ -185,25 +186,31 @@ async function reviewNarrationAi(input: {
   };
 }
 
-export async function generateNpcReplyAi(speaker: NpcReply['speaker'], input: string, state: GameState): Promise<NpcReply> {
-  const visibleContext = buildNpcVisibleContext(state, speaker, input);
+export async function generateNpcReplyAi(
+  speaker: NpcReply['speaker'],
+  input: NpcInboundMessage,
+  state: GameState,
+): Promise<NpcReply> {
+  const visibleContext = buildNpcVisibleContext(state, speaker, input.text);
   const ai = await completeRoleJson(
     'npc',
     [
       'Use only visibleContext. The full GameState is intentionally not provided.',
+      'inboundMessage.text is the complete player message assembled from every communication action addressed to this speaker.',
+      'inboundMessage.attachments contains only attachments whose creation and delivery were confirmed by game rules. Treat those attachments as received.',
       'If visibleContext.canReference.doorActivity is false, do not mention doors, hallway activity, outside voices, door quotes, forced entry, or anyone being unable to get in.',
       'If visibleContext.canReference.policeReport and visibleContext.canReference.fakePoliceSuspicion are false, do not mention police tactics, reporting, real police, fake police, or police arrival.',
       'If speaker=linyue and only packagePhoto is known, reply only about the package photo/player message: preserve the photo, inspect delivery markings, verify source, and stay generally cautious. Do not say open-door safety advice.',
       '你是《23:47》的 NPC 回复 AI。只写当前 speaker 的即时回复，不写旁白，不推进环境，不改 GameState。',
-      '你必须基于 visibleContext 和玩家 input 回复。不要使用 visibleContext 之外的信息。',
+      '你必须基于 visibleContext 和 inboundMessage 回复。不要使用它们之外的信息。',
       'speaker=linyue 时，林越只能知道玩家主动发给他的内容、他自己的位置和他的既有身份经验。',
       '林越收到包裹照片时，可以说“先别拆包裹/保存照片/看寄件信息”，但不能说“别开门/别靠门缝/门外有人/警察真假”，除非 visibleContext.canReference.doorActivity 或 visibleContext.canReference.policeReport 支持。',
       'speaker=police_dispatch 时，只写接线员基于报警通话可知道的安全指令。',
       'speaker=chen_huaimin 时，只写陈怀民能观察、收到、监听、内线告知或推测到的信息，不得知道林越和警方内部动作。',
-      '动作方向必须以玩家 input 为准：“把包裹给/交给/还给房东”表示玩家正在把包裹交给陈怀民，不是向陈怀民索要包裹。陈怀民的目标是回收包裹，应基于现场语境直接回应，不能把施受关系写反。',
+      '动作方向必须以 inboundMessage.text 为准：“把包裹给/交给/还给房东”表示玩家正在把包裹交给陈怀民，不是向陈怀民索要包裹。陈怀民的目标是回收包裹，应基于现场语境直接回应，不能把施受关系写反。',
       '只输出一个 JSON 对象：{"speaker":"linyue|police_dispatch|chen_huaimin","text":"...","intent":"...","riskWarning":"...","suggestedExternalAction":"..."}',
     ].join('\n'),
-    { speaker, input, visibleContext },
+    { speaker, inboundMessage: input, visibleContext },
     { temperature: 0.55 },
   );
   const parsed = NpcReplySchema.safeParse(ai);

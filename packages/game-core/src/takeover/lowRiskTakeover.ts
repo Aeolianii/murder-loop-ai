@@ -416,6 +416,24 @@ function buildActionPlan(brief: TurnBrief): ActionPlan {
   const communicationByActionId = new Map(
     brief.communications.map((communication) => [communication.actionId, communication]),
   );
+  const orderedActionById = new Map(
+    brief.orderedActions.map((action) => [action.actionId, action]),
+  );
+  const handleById = new Map(
+    brief.candidateHandles.map((handle) => [handle.id, handle]),
+  );
+  const canonicalAttachmentId = (handleId: string) => {
+    const handle = handleById.get(handleId);
+    const producer = handle ? orderedActionById.get(handle.producedByActionId) : undefined;
+    if (
+      handle?.kind === 'photograph'
+      && producer?.operation === 'photograph'
+      && producer.targetIds.includes('package')
+    ) {
+      return 'package_photo';
+    }
+    return handleId;
+  };
   const actions = brief.orderedActions.map((action) => {
     const operation = LOW_RISK_OPERATIONS.get(action.operation)!;
     const targetIds = operation === 'inspect' ? effectiveInspectTargetIds(action) : action.targetIds;
@@ -434,6 +452,13 @@ function buildActionPlan(brief: TurnBrief): ActionPlan {
         ? communication?.situatedAudience ? 'doorstep' as const : 'phone' as const
         : undefined,
       itemKind: operation === 'pick_up' ? 'utility' as const : undefined,
+      communication: communication
+        ? {
+            content: communication.contentSummary,
+            attachmentIds: communication.attachmentHandleIds.map(canonicalAttachmentId),
+            channel: communication.channel,
+          }
+        : undefined,
     };
   });
   return {

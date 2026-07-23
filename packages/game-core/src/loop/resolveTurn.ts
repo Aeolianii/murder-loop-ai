@@ -38,6 +38,7 @@ import { recordDeathMemory, recordTurnMemory } from '../memory/loopMemory';
 import { clearReviveProtection, hasReviveProtection } from './reviveProtection';
 import { resolveStoryNode } from '../storyNodes/resolveStoryNode';
 import type { StoryNodeResolution } from '../storyNodes/storyNodeTypes';
+import { buildNpcInboundMessages, type NpcInboundMessage } from '../npc/npcInboundMessage';
 import { ensureWorldState } from '../world/syncGameWorld';
 import { applyWorldInputs, buildWorldInputsFromDomainEvents } from '../world/worldInputs';
 import { advanceWorldTick } from '../world/worldSimulator';
@@ -68,7 +69,7 @@ export interface AiAdapters {
   }) => Promise<{ score: unknown; passed: boolean; violations: string[] }>;
   npcReply?: (
     speaker: NpcReply['speaker'],
-    input: string,
+    input: NpcInboundMessage,
     state: GameState,
   ) => Promise<NpcReply>;
   npcAdapter?: NpcAdapter;
@@ -495,14 +496,13 @@ export function createHarness(aiAdapters?: AiAdapters, options: HarnessOptions =
       const aiFn = aiAdapters.npcReply;
       agent.handler = async (payload: unknown) => {
         const { plan, state } = payload as {
-          plan?: { raw?: string; actions?: Array<{ intent: string; target?: string; method?: string; raw?: string }> };
+          plan?: ActionPlan;
           state: GameState;
         };
-        const action = plan?.actions?.find((candidate) => candidate.intent === 'communicate');
-        if (!action?.target) return null;
-        const speaker = action.target as NpcReply['speaker'];
-        const input = action.raw ?? action.method ?? plan?.raw ?? '';
-        return aiFn(speaker, input, state);
+        if (!plan) return null;
+        const message = buildNpcInboundMessages(plan)[0];
+        if (!message) return null;
+        return aiFn(message.speaker, message, state);
       };
       agent.mode = 'ai';
     }

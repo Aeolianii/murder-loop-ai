@@ -276,3 +276,105 @@ const openActionNarration = await narrateConfirmedTurn({
 });
 assert.equal(openActionNarratorCalled, true, 'confirmed open actions must still reach the action narrator');
 assert.equal(openActionNarration.actionNarration?.text, openActionNarratorText);
+
+const splitCommunicationState = createInitialGameState();
+splitCommunicationState.room.package.state.photographed = true;
+let capturedNpcInboundMessage: unknown;
+const splitCommunicationNarration = await narrateConfirmedTurn({
+  ...resolution,
+  plan: {
+    id: 'split-photo-question-plan',
+    raw: '拍张照片，发给林越，问这个包裹是不是他的',
+    summary: '拍摄包裹并向林越询问归属',
+    actions: [{
+      id: 'action-photograph-package',
+      raw: '拍张照片',
+      intent: 'preserve_evidence',
+      target: 'package',
+      method: '用手机拍摄包裹照片',
+      confidence: 1,
+      timeCost: 1,
+      noise: 0,
+      risk: 'low',
+    }, {
+      id: 'action-send-photo-to-linyue',
+      raw: '发给林越，',
+      intent: 'communicate',
+      target: 'linyue',
+      method: '通过手机发送照片',
+      communication: {
+        content: '发送包裹照片',
+        attachmentIds: ['package_photo'],
+        channel: 'phone',
+      },
+      confidence: 1,
+      timeCost: 1,
+      noise: 0,
+      risk: 'low',
+    }, {
+      id: 'action-ask-linyue-about-package',
+      raw: '这个包裹是不是他的',
+      intent: 'communicate',
+      target: 'linyue',
+      method: '在消息中询问',
+      communication: {
+        content: '询问这个包裹是不是他的',
+        attachmentIds: [],
+        channel: 'phone',
+      },
+      confidence: 1,
+      timeCost: 1,
+      noise: 0,
+      risk: 'low',
+    }],
+    confidence: 1,
+    warnings: [],
+  },
+  playerResult: {
+    ...playerResult,
+    title: '照片和消息已送达',
+    text: '你拍下包裹照片并发送给林越，询问这个包裹是不是他的。',
+    state: splitCommunicationState,
+    domainEvents: [{
+      eventType: 'package_photographed',
+      subject: 'package',
+      facts: ['package_photo_exists'],
+    }, {
+      eventType: 'message_delivered',
+      subject: 'linyue',
+      facts: ['message_delivered:linyue'],
+    }],
+  } as RuleResult & {
+    domainEvents: Array<{ eventType: string; subject: string; facts: string[] }>;
+  },
+  finalState: splitCommunicationState,
+}, {
+  narrateAction: async () => ({
+    title: '照片和消息已送达',
+    text: '你拍下包裹照片并发送给林越，询问这个包裹是不是他的。',
+  }),
+  narrateAmbient: async () => ({
+    title: '雨声仍在',
+    text: '窗外的雨声没有停。',
+  }),
+  npcReply: async (_speaker, input) => {
+    capturedNpcInboundMessage = input;
+    return {
+      speaker: 'linyue',
+      text: '不是我的。你先保留照片，我帮你核对寄件信息。',
+      intent: 'identify_package',
+      riskWarning: '包裹来源仍未确认。',
+      suggestedExternalAction: '保留照片并核对寄件信息。',
+    };
+  },
+});
+
+assert.equal(typeof capturedNpcInboundMessage, 'object');
+const structuredNpcInboundMessage = capturedNpcInboundMessage as {
+  text: string;
+  attachments: Array<{ id: string }>;
+};
+assert.match(structuredNpcInboundMessage.text, /发送包裹照片/);
+assert.match(structuredNpcInboundMessage.text, /这个包裹是不是他的/);
+assert.ok(structuredNpcInboundMessage.attachments.some((attachment) => attachment.id === 'package_photo'));
+assert.match(splitCommunicationNarration.actionNarration?.text ?? '', /不是我的/);

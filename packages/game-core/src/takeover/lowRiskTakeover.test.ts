@@ -123,6 +123,14 @@ const preparedPhotoShare = prepareLowRiskTurn({
 });
 assert.equal(preparedPhotoShare.status, 'prepared');
 if (preparedPhotoShare.status !== 'prepared') throw new Error('expected photo sharing to be prepared');
+const preparedPhotoMessage = preparedPhotoShare.plan.actions.find(
+  (preparedAction) => preparedAction.id === 'message-linyue-photo',
+);
+assert.equal(
+  preparedPhotoMessage?.communication?.content,
+  photoShareBrief.communications[0].contentSummary,
+);
+assert.deepEqual(preparedPhotoMessage?.communication?.attachmentIds, ['package_photo']);
 const deliveredPhotoEvent = preparedPhotoShare.playerResult.domainEvents.find((event) => (
   event.eventType === 'message_delivered'
 ));
