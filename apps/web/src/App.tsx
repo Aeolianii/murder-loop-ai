@@ -59,6 +59,7 @@ export default function App() {
   );
   const [showCinematic, setShowCinematic] = useState(false);
   const [showEndingArchive, setShowEndingArchive] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
   const [playerProgress, setPlayerProgress] = useState(loadPlayerProgress);
   const [endingCinematic, setEndingCinematic] = useState<EndingCinematicPayload | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -89,13 +90,14 @@ export default function App() {
 
   useEffect(() => {
     void audio.init();
-    const startAudio = () => {
-      audio.unlock();
-      void audio.init().then(() => audio.startBgm());
-    };
-    window.addEventListener('pointerdown', startAudio, { once: true });
-    return () => window.removeEventListener('pointerdown', startAudio);
   }, []);
+
+  const enableAudio = () => {
+    audio.unlock();
+    void audio.init().then(() => {
+      if (audio.startBgm()) setAudioEnabled(true);
+    });
+  };
 
   const presentResolvedResult = (
     result: HarnessTurnResponse,
@@ -218,6 +220,7 @@ export default function App() {
   };
 
   const handleStart = (mode: PlayMode) => {
+    enableAudio();
     setPlayMode(mode);
     setShowStartMenu(false);
     setShowEndingArchive(false);
@@ -243,8 +246,13 @@ export default function App() {
         {showStartMenu && (
           <StartMenu
             key="start-menu"
+            audioEnabled={audioEnabled}
+            onEnableAudio={enableAudio}
             onStart={handleStart}
-            onOpenEndings={() => setShowEndingArchive(true)}
+            onOpenEndings={() => {
+              enableAudio();
+              setShowEndingArchive(true);
+            }}
           />
         )}
         {showCinematic && (

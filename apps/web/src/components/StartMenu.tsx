@@ -1,14 +1,21 @@
 import React from 'react';
-import { BookOpen, Compass, Eye, Feather, LockKeyhole } from 'lucide-react';
+import { BookOpen, Compass, Eye, Feather, LockKeyhole, Volume2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { PlayMode } from '../types';
 
 interface StartMenuProps {
+  audioEnabled: boolean;
+  onEnableAudio: () => void;
   onStart: (mode: PlayMode) => void;
   onOpenEndings: () => void;
 }
 
-export function StartMenu({ onStart, onOpenEndings }: StartMenuProps) {
+export function StartMenu({
+  audioEnabled,
+  onEnableAudio,
+  onStart,
+  onOpenEndings,
+}: StartMenuProps) {
   return (
     <motion.div
       className="fixed inset-0 z-[80] overflow-y-auto bg-[#050507] text-zinc-100"
@@ -31,6 +38,16 @@ export function StartMenu({ onStart, onOpenEndings }: StartMenuProps) {
           <p className="mx-auto mt-4 max-w-lg font-serif text-sm leading-7 text-zinc-500 md:text-base">
             每一次醒来，都带回一块尚未拼合的真相。
           </p>
+          <button
+            type="button"
+            aria-pressed={audioEnabled}
+            disabled={audioEnabled}
+            onClick={onEnableAudio}
+            className="mx-auto mt-6 flex items-center gap-2 rounded-full border border-cyan-200/15 bg-cyan-200/[0.035] px-4 py-2 font-mono text-[11px] tracking-[0.16em] text-cyan-100/55 transition hover:border-cyan-200/30 hover:bg-cyan-200/[0.07] hover:text-cyan-100/80 disabled:cursor-default disabled:border-emerald-200/10 disabled:bg-emerald-200/[0.025] disabled:text-emerald-100/45"
+          >
+            <Volume2 className="h-3.5 w-3.5" />
+            {audioEnabled ? '雨声已开启' : '开启雨声'}
+          </button>
         </div>
 
         <div className="grid gap-3 md:grid-cols-3 md:gap-5">

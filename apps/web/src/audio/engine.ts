@@ -123,12 +123,13 @@ export const audio = {
 
   // ---- BGM ----
   startBgm() {
-    if (muted || !bgmInstance) return;
+    if (muted || !bgmInstance) return false;
     if (!bgmInstance.playing()) {
       bgmInstance.volume(0);
       bgmInstance.play();
       bgmInstance.fade(0, bgmEffectiveVolume(), 3000);
     }
+    return true;
   },
 
   stopBgm() {
