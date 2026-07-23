@@ -1,5 +1,6 @@
 import { BookOpen, Brain, Smartphone, X } from 'lucide-react';
-import { useState } from 'react';
+import React, { useState } from 'react';
+import type { PlayerKnowledge, TruthDerivation } from '@murder-loop-ai/shared';
 import { getClueAsset } from '../clueAssets';
 import { type ClueReadMap, isClueUnread } from '../clueRevealState';
 import type { Clue, TurnTimingState } from '../types';
@@ -7,6 +8,8 @@ import { TurnTimingPanel } from './TurnTimingPanel';
 
 interface SidebarProps {
   clues: Clue[];
+  knowledge?: PlayerKnowledge[];
+  truth?: TruthDerivation;
   recap?: string;
   sidebar?: {
     phone: { battery: number; recording: boolean; muted: boolean; newMessages: string[] };
@@ -87,7 +90,16 @@ export function InventoryItem({ sidebar }: InventoryItemProps) {
   );
 }
 
-export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect, turnTiming }: SidebarProps) {
+export function Sidebar({
+  clues,
+  knowledge = [],
+  truth,
+  recap,
+  sidebar,
+  readClues = {},
+  onClueSelect,
+  turnTiming,
+}: SidebarProps) {
   const [showMemories, setShowMemories] = useState(true);
 
   return (
@@ -145,6 +157,49 @@ export function Sidebar({ clues, recap, sidebar, readClues = {}, onClueSelect, t
               </li>
             </ul>
           </div>
+
+          {knowledge.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <h3 className="font-mono text-xs uppercase text-zinc-600">推理结论</h3>
+                {truth && (
+                  <span className="font-mono text-[10px] text-amber-300/80">
+                    真相 {truth.stage} · {truth.truthLayer}/100
+                  </span>
+                )}
+              </div>
+              <div className="grid gap-2">
+                {knowledge.map((item) => {
+                  const isHypothesis = item.category === 'hypothesis';
+                  const directKnowledgeCount = item.sourceKnowledgeIds?.length ?? 0;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`rounded-lg border p-3 ${
+                        isHypothesis
+                          ? 'border-violet-300/10 bg-violet-950/10'
+                          : 'border-amber-200/10 bg-amber-950/10'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="font-sans text-sm text-zinc-200">{item.label}</span>
+                        <span className={`shrink-0 font-mono text-[10px] ${
+                          isHypothesis ? 'text-violet-300/70' : 'text-amber-300/70'
+                        }`}>
+                          {isHypothesis ? '待验证' : `+${item.truthLayerContribution}`}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-sans text-[11px] leading-relaxed text-zinc-500">
+                        {directKnowledgeCount > 0
+                          ? `${directKnowledgeCount} 条前置结论 · ${item.sourceClueIds.length} 条底层线索`
+                          : `${item.sourceClueIds.length} 条线索共同支持`}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3">
             <h3 className="border-b border-white/5 pb-2 font-mono text-xs uppercase text-zinc-600">线索 & 物品</h3>

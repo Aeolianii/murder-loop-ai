@@ -24,6 +24,25 @@ const response: HarnessTurnResponse = {
     { id: 'package_label', name: '快递标签', description: '寄件信息被撕掉了一半。', status: 'new' },
   ],
   coreState: { minute: 1386 },
+  knowledge: [{
+    id: 'package_not_players_order',
+    label: '包裹不是沈知夏订购的快递',
+    activatedAt: { run: 1, minute: 6 },
+    sourceClueIds: ['package_label_fragment', 'no_matching_order'],
+    truthLayerContribution: 3,
+    excludes: [],
+    category: 'conclusion',
+    stage: 1,
+  }],
+  truth: {
+    truthLayer: 3,
+    stage: 'L1',
+    confirmedKnowledgeIds: ['package_not_players_order'],
+    hypothesisIds: [],
+    topLevelKnowledgeIds: ['package_not_players_order'],
+    supportingClueIds: ['package_label_fragment', 'no_matching_order'],
+    unlockedDirections: ['包裹来源'],
+  },
   ending: null,
   deathTitle: null,
   deathSummary: null,
@@ -51,6 +70,8 @@ assert(next.time === '23:06', 'applyHarnessTurnResponse should merge returned ti
 assert(next.phase === 'investigating', 'applyHarnessTurnResponse should merge returned phase');
 assert(next.clues.length === 2, 'applyHarnessTurnResponse should merge returned clues');
 assert(next.coreState === response.coreState, 'applyHarnessTurnResponse should merge returned coreState');
+assert(next.knowledge === response.knowledge, 'applyHarnessTurnResponse should merge inferred knowledge');
+assert(next.truth === response.truth, 'applyHarnessTurnResponse should merge derived truth');
 assert(next.coordination?.warnings[0] === 'trace warning', 'applyHarnessTurnResponse should merge coordination');
 assert(next.sidebar?.timeLabel === '23:06', 'applyHarnessTurnResponse should merge sidebar payload');
 assert(next.storyLog.filter(node => node.type === 'player_input').length === 1, 'applyHarnessTurnResponse should not duplicate server player_input nodes');

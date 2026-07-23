@@ -245,7 +245,7 @@ export default function App() {
 
         {/* Desktop Sidebar */}
         <div className="hidden lg:block shrink-0 relative z-30">
-          <Sidebar clues={state.clues} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} readClues={readClues} />
+          <Sidebar clues={state.clues} knowledge={state.knowledge} truth={state.truth} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} readClues={readClues} />
         </div>
 
         {/* Mobile Sidebar Frame */}
@@ -258,7 +258,7 @@ export default function App() {
               transition={{ type: "spring", bounce: 0, duration: 0.4 }}
               className="absolute inset-x-0 bottom-0 top-0 z-40 bg-[#08080a] shadow-2xl lg:hidden"
             >
-               <Sidebar clues={state.clues} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} readClues={readClues} />
+               <Sidebar clues={state.clues} knowledge={state.knowledge} truth={state.truth} sidebar={state.sidebar} recap={state.recap} turnTiming={state.coordination?.turnTiming} onClueSelect={handleClueSelect} readClues={readClues} />
             </motion.div>
           )}
         </AnimatePresence>

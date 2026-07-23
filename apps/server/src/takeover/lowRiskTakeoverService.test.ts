@@ -808,6 +808,38 @@ assert.equal(
 );
 assert.equal(phaseFourCommitted.knowledgeClueProjection?.addedClueIds.includes('wrong_package'), true);
 
+const recursiveKnowledgeService = createLowRiskTakeoverService();
+const recursiveKnowledgePrepared = await recursiveKnowledgeService.prepare(session(), state);
+assert.equal(recursiveKnowledgePrepared.status, 'prepared');
+if (recursiveKnowledgePrepared.status !== 'prepared') {
+  throw new Error('expected recursive-knowledge preparation');
+}
+const recursiveKnowledgeState = structuredClone(
+  recursiveKnowledgePrepared.prepared.playerResult.state,
+);
+for (const id of ['package_label_fragment', 'no_matching_order']) {
+  recursiveKnowledgeState.clues.push({
+    id,
+    title: id,
+    detail: id,
+    source: 'player_discovered',
+    weight: 1,
+    discoveredAt: { run: state.run, minute: state.minute },
+    isPersistent: true,
+  });
+}
+const recursiveKnowledgeCommitted = await recursiveKnowledgeService.commit(
+  envelope.turnId,
+  recursiveKnowledgeState,
+);
+assert.equal(
+  recursiveKnowledgeCommitted.state?.activatedKnowledge.some(
+    (knowledge) => knowledge.id === 'package_not_players_order',
+  ),
+  true,
+  'recursive conclusions must be present in the atomically committed state',
+);
+
 const offlineState = createInitialGameState();
 offlineState.phoneFunctional = false;
 offlineState.world = createInitialWorldState();

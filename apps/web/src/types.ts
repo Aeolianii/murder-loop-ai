@@ -1,3 +1,5 @@
+import type { PlayerKnowledge, TruthDerivation } from '@murder-loop-ai/shared';
+
 export type GamePhase =
   | 'intro'
   | 'loop_started'
@@ -128,6 +130,8 @@ export interface GameState {
   isParsingAction: boolean;
   actionConfirmation: string | null;
   coreState?: unknown;
+  knowledge?: PlayerKnowledge[];
+  truth?: TruthDerivation;
   ending?: EndingId | null;
   endingReason?: EndingReason | null;
   deathTitle?: string | null;

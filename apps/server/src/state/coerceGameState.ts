@@ -69,6 +69,15 @@ export function coerceGameState(rawState: unknown): GameState {
     phoneBattery: raw.phoneBattery ?? ((raw.room?.phone?.state?.battery as number | undefined) ?? fallback.phoneBattery),
     phoneFunctional: raw.phoneFunctional ?? fallback.phoneFunctional,
     endingReason: raw.endingReason ?? fallback.endingReason,
+    activatedKnowledge: Array.isArray(raw.activatedKnowledge)
+      ? structuredClone(raw.activatedKnowledge)
+      : fallback.activatedKnowledge,
+    currentRunKnowledge: Array.isArray(raw.currentRunKnowledge)
+      ? structuredClone(raw.currentRunKnowledge)
+      : fallback.currentRunKnowledge,
+    discoveredClueIds: Array.isArray(raw.discoveredClueIds)
+      ? [...new Set(raw.discoveredClueIds.filter((id): id is string => typeof id === 'string'))]
+      : fallback.discoveredClueIds,
   };
 
   if (state.world?.characters.player) {

@@ -10,7 +10,7 @@ import {
   type AiAdapters,
   type HarnessOptions,
   canAccuse, buildDeductionPrompt, validateDeductionClaims,
-  buildDeductionResponse, scoreEnding, generateEpiphanyHint,
+  buildDeductionResponse, scoreEnding, generateEpiphanyHint, deriveTruth,
   resolveDeathPath, shouldTriggerDeath,
 } from '@murder-loop-ai/game-core';
 import {
@@ -56,6 +56,13 @@ import {
   type SemanticPrefetchClaim,
   type SemanticPrefetchService,
 } from '../prefetch/semanticPrefetchService';
+
+function buildPlayerTruthPayload(state: GameState) {
+  return {
+    knowledge: state.activatedKnowledge,
+    truth: deriveTruth(state.activatedKnowledge),
+  };
+}
 
 export interface HarnessTurnRouteOptions {
   createAiAdapters?: (input: string, state: GameState) => {
@@ -426,7 +433,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       return reply.code(400).send({ error: 'invalid_operation' });
     }
     const input = body.input?.trim() ?? '';
-    const bootstrapState = coerceGameState(body.state);
+    const bootstrapState = activatePlayerKnowledge(coerceGameState(body.state)).state;
     const gameSessionId = body.gameSessionId?.trim() || `legacy-${randomUUID()}`;
     const recommendationId = body.recommendationId?.trim() || undefined;
     if (semanticPrefetchService && (!recommendationId || operation === 'reset_loop')) {
@@ -445,6 +452,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         const ending = scoreEnding(bootstrapState);
         return reply.send({
           recap: generateRecap(bootstrapState), coreState: bootstrapState,
+          ...buildPlayerTruthPayload(bootstrapState),
           time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',
           phase: bootstrapState.phase, ending, deduction: deductionResult,
           deductionResponse: buildDeductionResponse(deductionResult),
@@ -454,6 +462,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       }
       return reply.send({
         recap: generateRecap(bootstrapState), coreState: bootstrapState,
+        ...buildPlayerTruthPayload(bootstrapState),
         time: minuteLabel(bootstrapState.minute), location: '青荷公寓 503 室',
         phase: bootstrapState.phase, deduction: deductionResult,
         deductionPrompt: buildDeductionPrompt(bootstrapState),
@@ -493,7 +502,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       worldTick: 'enabled',
     };
 
-    let state = openedSession.state;
+    let state = activatePlayerKnowledge(openedSession.state).state;
     const isDeathState = state.phase === 'death' || state.ending === 'death';
     if (operation === 'reset_loop') {
       if (!isDeathState) {
@@ -537,6 +546,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         inputStateVersion: requestedStateVersion,
         outputStateVersion,
         coreState: state,
+        ...buildPlayerTruthPayload(state),
         time: minuteLabel(state.minute),
         location: '青荷公寓 503 室',
         phase: state.phase,
@@ -579,6 +589,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         inputStateVersion: sessionStateVersion,
         outputStateVersion,
         coreState: state, time: minuteLabel(state.minute), location: '青荷公寓 503 室',
+        ...buildPlayerTruthPayload(state),
         phase: state.phase, clues: toFrontendClues(state),
         audioCue: null,
         ending: state.ending,
@@ -993,6 +1004,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
         outputStateVersion: sessionStateVersion,
         recap,
         coreState: state,
+        ...buildPlayerTruthPayload(state),
         time: minuteLabel(state.minute),
         location: '青荷公寓 503 室',
         phase: state.phase,
@@ -1078,6 +1090,10 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
     if (!turnCommittedToSession) {
       const legacyCommitStartedAt = performance.now();
       const legacyTurnId = shadowSession?.envelope.turnId ?? `route-${randomUUID()}`;
+      resolution = {
+        ...resolution,
+        finalState: activatePlayerKnowledge(resolution.finalState).state,
+      };
       const legacyCommit = await openedSession.store.commitTurn({
         expectedLoopId: sessionLoopId,
         turnId: legacyTurnId,
@@ -1242,6 +1258,7 @@ export async function harnessTurnRoute(app: FastifyInstance, options: HarnessTur
       outputStateVersion,
       recap,
       coreState: resolution.finalState, time: minuteLabel(resolution.finalState.minute),
+      ...buildPlayerTruthPayload(resolution.finalState),
       location: '青荷公寓 503 室', phase: resolution.finalState.phase,
       audioCue,
       clues: toFrontendClues(resolution.finalState), ending: resolution.finalState.ending,

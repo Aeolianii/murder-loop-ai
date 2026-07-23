@@ -10,6 +10,7 @@ import type {
 } from '@murder-loop-ai/ai-contracts';
 import {
   InMemoryAtomicTurnStore,
+  activatePlayerKnowledge,
   buildFactLedgerFromGameState,
   commitPreparedLowRiskTurn,
   projectConfirmedKnowledgeAndClues,
@@ -285,6 +286,7 @@ export function createLowRiskTakeoverService(
         };
       }
 
+      candidateState = activatePlayerKnowledge(candidateState).state;
       const committed = await commitPreparedLowRiskTurn({
         prepared: entry.prepared,
         finalState: candidateState,
