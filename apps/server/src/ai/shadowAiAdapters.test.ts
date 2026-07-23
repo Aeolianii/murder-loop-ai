@@ -185,6 +185,18 @@ assert(
   ),
   'Semantic Compiler prompt must not request clarification merely because an answer is unknown.',
 );
+assert(
+  calls[0].system.includes(
+    'Alternative choices are not sequential actions.',
+  ),
+  'Semantic Compiler must not execute every branch of an unresolved alternative.',
+);
+assert(
+  calls[0].system.includes(
+    'return clarification_required instead of placing every alternative in orderedActions',
+  ),
+  'State-changing alternatives without a selected branch must require clarification.',
+);
 assert.match(
   calls[0].system,
   /\bjson\b/,
@@ -412,6 +424,12 @@ assert(
     'Observations, clues, and display fragments cite proposal-local assertion IDs',
   ),
   'Proposal prompt must use structured assertion provenance instead of matching free-form text.',
+);
+assert(
+  calls.at(-1)?.system.includes(
+    'Every non-empty display fragment must cite at least one eventRefs item and at least one claimRefs item',
+  ),
+  'Proposal prompt must explicitly require complete display provenance.',
 );
 assert(
   calls.at(-1)?.system.includes('"claimAssertionIds":["assertion-1"]'),

@@ -7,6 +7,7 @@ import {
   type Fact,
   type Proposal,
   type ProposalDomain,
+  type ProposedEvent,
   type SemanticCompilerRequest,
   type SpecialistCandidate,
   type TurnBrief,
@@ -703,7 +704,7 @@ async function runCandidateCall(input: {
       errors.push(`item ${index}: specialist domain mismatch`);
       continue;
     }
-    valid.push(parsed.data);
+    valid.push(completeMissingDisplayClaimRefs(parsed.data));
   }
   if (rawItems.length === 0) errors.push(`response did not contain a non-empty ${input.specialist ? 'candidates' : 'proposals'} array`);
   const status: ShadowCallStatus = rawItems.length === 0
@@ -736,6 +737,43 @@ function extractCandidateArray(value: unknown, key: 'proposals' | 'candidates'):
     if (Array.isArray(candidate)) return candidate;
   }
   return [];
+}
+
+function completeMissingDisplayClaimRefs(
+  candidate: Proposal | SpecialistCandidate,
+): Proposal | SpecialistCandidate {
+  const eventsById = new Map(
+    candidate.proposedEvents.map((event) => [event.id, event]),
+  );
+  let changed = false;
+  const displayFragments = candidate.displayFragments.map((fragment) => {
+    if (fragment.claimRefs.length > 0 || fragment.eventRefs.length === 0) {
+      return fragment;
+    }
+
+    const referencedEvents = fragment.eventRefs
+      .map((eventId) => eventsById.get(eventId))
+      .filter((event): event is ProposedEvent => Boolean(event));
+    if (referencedEvents.length !== fragment.eventRefs.length) return fragment;
+
+    const claimRefs = [...new Set(referencedEvents.flatMap((event) => {
+      const eventIsVisible = event.visibility.includes('player')
+        || event.visibility.includes('public');
+      if (!eventIsVisible) return [];
+      return event.assertions
+        .filter((assertion) => (
+          assertion.visibleTo.includes('player')
+          || assertion.visibleTo.includes('public')
+        ))
+        .map((assertion) => assertion.id);
+    }))];
+    if (claimRefs.length === 0) return fragment;
+
+    changed = true;
+    return { ...fragment, claimRefs };
+  });
+
+  return changed ? { ...candidate, displayFragments } : candidate;
 }
 
 function projectionFor(

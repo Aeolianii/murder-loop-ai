@@ -307,6 +307,109 @@ function registrations(
 
 {
   const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
+  const playerCandidate = specialistCandidate(
+    turnEnvelope,
+    'player-specialist',
+    'player',
+  );
+  playerCandidate.displayFragments[0].claimRefs = [];
+
+  const wave = await runShadowCandidateWave({
+    state: createInitialGameState(),
+    rawInput: '尝试打开窗户',
+    envelope: turnEnvelope,
+    adapters: {
+      semanticCompiler: {
+        async compile() {
+          return { status: 'compiled' as const, brief: brief(turnEnvelope) };
+        },
+      },
+      mainWorldModel: async () => ({ proposals: [] }),
+      specialists: registrations(async (id, domain) => (
+        id === 'player-specialist'
+          ? { candidates: [playerCandidate] }
+          : { candidates: [specialistCandidate(turnEnvelope, id, domain)] }
+      )),
+    },
+    npcIds: ['lin_yue', 'police_dispatch'],
+    canonicalConstraints: [],
+    compilerTimeoutMs: 20,
+  });
+
+  const normalizedPlayerCandidate = wave.specialistCandidates.find(
+    (candidate) => candidate.id === playerCandidate.id,
+  );
+  assert.deepEqual(
+    normalizedPlayerCandidate?.displayFragments[0].claimRefs,
+    playerCandidate.proposedEvents[0].assertions.map((assertion) => assertion.id),
+    'missing display claim refs must be completed from the fragment referenced visible events',
+  );
+  assert.equal(
+    wave.arbitration?.transition.fallbackDomains.includes('player'),
+    false,
+    'a recoverable display reference omission must not discard the player outcome',
+  );
+  assert.equal(
+    wave.arbitration?.rejectedProposals.some((rejection) => (
+      rejection.proposalId === playerCandidate.id
+      && rejection.reasonCodes.includes('display_claim_reference_invalid')
+    )),
+    false,
+  );
+}
+
+{
+  const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
+  const hiddenClaimCandidate = specialistCandidate(
+    turnEnvelope,
+    'player-specialist',
+    'player',
+  );
+  hiddenClaimCandidate.proposedEvents[0].visibility = ['killer'];
+  hiddenClaimCandidate.proposedEvents[0].assertions[0].visibleTo = ['killer'];
+  hiddenClaimCandidate.displayFragments[0].claimRefs = [];
+
+  const wave = await runShadowCandidateWave({
+    state: createInitialGameState(),
+    rawInput: '等待',
+    envelope: turnEnvelope,
+    adapters: {
+      semanticCompiler: {
+        async compile() {
+          return { status: 'compiled' as const, brief: brief(turnEnvelope) };
+        },
+      },
+      mainWorldModel: async () => ({ proposals: [] }),
+      specialists: registrations(async (id, domain) => (
+        id === 'player-specialist'
+          ? { candidates: [hiddenClaimCandidate] }
+          : { candidates: [specialistCandidate(turnEnvelope, id, domain)] }
+      )),
+    },
+    npcIds: ['lin_yue', 'police_dispatch'],
+    canonicalConstraints: [],
+    compilerTimeoutMs: 20,
+  });
+
+  const parsedHiddenCandidate = wave.specialistCandidates.find(
+    (candidate) => candidate.id === hiddenClaimCandidate.id,
+  );
+  assert.deepEqual(
+    parsedHiddenCandidate?.displayFragments[0].claimRefs,
+    [],
+    'hidden assertions must never be promoted into player display claim refs',
+  );
+  assert(
+    wave.arbitration?.rejectedProposals.some((rejection) => (
+      rejection.proposalId === hiddenClaimCandidate.id
+      && rejection.reasonCodes.includes('display_claim_reference_invalid')
+    )),
+    'the existing arbiter must still reject fragments that have no visible grounded claim',
+  );
+}
+
+{
+  const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
   const controller = new AbortController();
   let observedAbort = false;
   let markStarted!: () => void;
