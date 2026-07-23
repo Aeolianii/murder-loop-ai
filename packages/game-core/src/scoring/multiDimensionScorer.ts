@@ -1,4 +1,5 @@
 import type { EndingTier, EndingTierResult, GameState } from '@murder-loop-ai/shared';
+import { ENDING_CATALOG, type EndingCatalogEntry } from '@murder-loop-ai/content';
 import { deriveTruth } from '../knowledge/knowledgeInference';
 import { hasConvictingEvidence } from '../rules/endingRules';
 
@@ -38,22 +39,10 @@ function scoreCycleCost(state: GameState): number {
   return -100;
 }
 
-const TIERS: { tier: EndingTier; min: number }[] = [{ tier: 'S', min: 90 }, { tier: 'A', min: 70 }, { tier: 'B', min: 50 }, { tier: 'C', min: 30 }, { tier: 'D', min: 0 }];
-
-const HINTS: Record<Exclude<EndingTier, 'S'>, string> = {
-  A: '雨声还在。她闭眼，又睁开——有一件事她还没想通。',
-  B: '陈怀民的脸她记住了。但她总觉得，那个电话号码后面还有别人。',
-  C: '她活到了天亮。但 403 那扇门后面是什么，她不知道。',
-  D: '她睁开眼。雨声落在窗外。又是 23:00。',
-};
-
-const NARRATIVES: Record<EndingTier, string> = {
-  S: '证据链完整公开，赵鸿远被逮捕，组织网络被摧毁。',
-  A: '警方拿到关键证据开始调查，但赵鸿远提前脱身。',
-  B: '陈怀民被逮捕，组织切割了他，真相只揭露了表层。',
-  C: '她知道了一切但证据不够，只能匿名举报后逃离。',
-  D: '活下来了——不再循环——但没人知道 503 发生了什么。',
-};
+export function resolveEndingTier(score: number): EndingCatalogEntry {
+  return ENDING_CATALOG.find((ending) => score >= ending.minScore)
+    ?? ENDING_CATALOG[ENDING_CATALOG.length - 1];
+}
 
 export function scoreEnding(state: GameState): EndingTierResult {
   const truthLayer = deriveTruth(state.activatedKnowledge).truthLayer;
@@ -62,6 +51,13 @@ export function scoreEnding(state: GameState): EndingTierResult {
   const survivors = scoreSurvivors(state);
   const cycleCost = scoreCycleCost(state);
   const totalScore = Math.max(0, Math.min(100, Math.round(truthLayer * 0.35 + evidenceStrength * 0.30 + externalReach * 0.25 + survivors * 0.15 + cycleCost * 0.05)));
-  const tier = TIERS.find((t) => totalScore >= t.min)?.tier ?? 'D';
-  return { tier, totalScore, breakdown: { truthLayer, evidenceStrength, externalReach, survivors, cycleCost }, narrative: NARRATIVES[tier], backtrackHint: tier === 'S' ? null : HINTS[tier] };
+  const ending = resolveEndingTier(totalScore);
+  const tier: EndingTier = ending.tier;
+  return {
+    tier,
+    totalScore,
+    breakdown: { truthLayer, evidenceStrength, externalReach, survivors, cycleCost },
+    narrative: ending.narrative,
+    backtrackHint: ending.backtrackHint,
+  };
 }

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ActionAudioCue } from '@murder-loop-ai/shared';
 import { Header } from './components/Header';
 import { StoryPanel } from './components/StoryPanel';
@@ -18,15 +18,22 @@ import { CinematicIntro } from './components/CinematicIntro';
 import { CinematicTransition } from './components/CinematicTransition';
 import { RainPlayer } from './components/RainPlayer';
 import { VolumeControl } from './components/VolumeControl';
+import { StartMenu } from './components/StartMenu';
+import { EndingArchive } from './components/EndingArchive';
 import { useGameAudio } from './audio/hooks';
 import { audio } from './audio/engine';
-import { Clue, GameState, type RecommendedAction } from './types';
+import { Clue, GameState, type PlayMode, type RecommendedAction } from './types';
 import { Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { getClueAsset } from './clueAssets';
 import { ClueReadMap, findFirstNewClue, markClueRead } from './clueRevealState';
 import { useGameStore } from './store/gameStore';
 import type { HarnessTurnResponse } from './api/harnessTurnClient';
+import {
+  loadPlayerProgress,
+  persistPlayerProgress,
+  unlockEnding,
+} from './playerProgress';
 
 interface EndingCinematicPayload {
   key: string;
@@ -36,7 +43,7 @@ interface EndingCinematicPayload {
   method?: string | null;
 }
 
-function shouldShowIntroCinematic(state: GameState) {
+export function shouldShowStartMenu(state: GameState) {
   return state.phase === 'intro' && !state.ending;
 }
 
@@ -47,8 +54,14 @@ export default function App() {
   const submitTruth = useGameStore(store => store.submitTruth);
   const rewind = useGameStore(store => store.rewind);
   const reset = useGameStore(store => store.reset);
+  const setPlayMode = useGameStore(store => store.setPlayMode);
   const setFrontendState = useGameStore(store => store.setFrontendState);
-  const [showCinematic, setShowCinematic] = useState(() => shouldShowIntroCinematic(useGameStore.getState().frontendState));
+  const [showStartMenu, setShowStartMenu] = useState(() =>
+    shouldShowStartMenu(useGameStore.getState().frontendState),
+  );
+  const [showCinematic, setShowCinematic] = useState(false);
+  const [showEndingArchive, setShowEndingArchive] = useState(false);
+  const [playerProgress, setPlayerProgress] = useState(loadPlayerProgress);
   const [endingCinematic, setEndingCinematic] = useState<EndingCinematicPayload | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [deductionWorkspaceMode, setDeductionWorkspaceMode] =
@@ -69,7 +82,11 @@ export default function App() {
     killerType: lastKillerType.current,
     actionIntents: lastActionIntents.current,
     actionAudioCue: lastActionAudioCue.current,
-    isCinematic: showCinematic || Boolean(endingCinematic),
+    isCinematic:
+      showStartMenu
+      || showCinematic
+      || showEndingArchive
+      || Boolean(endingCinematic),
     newClueAdded: Boolean(activeClueId),
     turnCompleted: lastTurnCompleted.current,
   });
@@ -98,12 +115,22 @@ export default function App() {
     }
 
     if (result.deductionEnding) {
-      const breakdown = result.deductionEnding.breakdown;
+      const deductionEnding = result.deductionEnding;
+      const breakdown = deductionEnding.breakdown;
+      setPlayerProgress(current => {
+        const next = unlockEnding(
+          current,
+          deductionEnding.tier,
+          deductionEnding.totalScore,
+        );
+        persistPlayerProgress(next);
+        return next;
+      });
       setEndingCinematic({
-        key: `deduction-${result.deductionEnding.tier}-${Date.now()}`,
+        key: `deduction-${deductionEnding.tier}-${Date.now()}`,
         kind: 'survived',
-        title: `${result.deductionEnding.tier} 级结局`,
-        summary: result.deductionEnding.narrative,
+        title: `${deductionEnding.tier} 级结局`,
+        summary: deductionEnding.narrative,
         method: `真相 ${breakdown.truthLayer} · 证据 ${breakdown.evidenceStrength} · 外传 ${breakdown.externalReach} · 生还 ${breakdown.survivors}`,
       });
     } else if (result.ending && result.ending !== previousState.ending) {
@@ -175,12 +202,21 @@ export default function App() {
 
   const handleRestart = () => {
     reset();
-    setShowCinematic(true);
+    setShowStartMenu(true);
+    setShowCinematic(false);
+    setShowEndingArchive(false);
     setEndingCinematic(null);
     setMobileMenuOpen(false);
     setDeductionWorkspaceMode(null);
     setActiveClueId(null);
     setReadClues({});
+  };
+
+  const handleStart = (mode: PlayMode) => {
+    setPlayMode(mode);
+    setShowStartMenu(false);
+    setShowEndingArchive(false);
+    setShowCinematic(true);
   };
 
   const handleClueSelect = (clue: Clue) => {
@@ -201,6 +237,13 @@ export default function App() {
       <RainPlayer />
 
       <AnimatePresence>
+        {showStartMenu && (
+          <StartMenu
+            key="start-menu"
+            onStart={handleStart}
+            onOpenEndings={() => setShowEndingArchive(true)}
+          />
+        )}
         {showCinematic && (
           <CinematicIntro key="cinematic" recap={state.recap} onComplete={() => setShowCinematic(false)} />
         )}
@@ -222,6 +265,13 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {showEndingArchive && (
+        <EndingArchive
+          progress={playerProgress}
+          onClose={() => setShowEndingArchive(false)}
+        />
+      )}
 
       <ClueRevealModal
         clue={activeClue}

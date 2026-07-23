@@ -7,7 +7,7 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/worldInfo.test.ts"
+    "test": "tsx src/worldInfo.test.ts && tsx src/endingArchive.test.ts"
   },
   "dependencies": {
     "@murder-loop-ai/shared": "0.1.0"
