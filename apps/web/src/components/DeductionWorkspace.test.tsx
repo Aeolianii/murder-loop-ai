@@ -22,6 +22,8 @@ assert.match(inferenceHtml, /结论推理/);
 assert.match(inferenceHtml, /原始线索/);
 assert.match(inferenceHtml, /残缺面单/);
 assert.match(inferenceHtml, /组合推理/);
+assert.match(inferenceHtml, /data-mobile-layout="single-scroll"/);
+assert.match(inferenceHtml, /data-mobile-action-bar="persistent"/);
 
 const truthKnowledge = Array.from({ length: 10 }, (_, index) => ({
   id: `knowledge-${index}`,
