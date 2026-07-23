@@ -99,41 +99,15 @@ function InferenceWorkspace({
       matched: KNOWLEDGE_DEFINITIONS.filter((item) => matchedIds.has(item.id)),
     });
   };
-  const renderActionButtons = () => (
-    <>
-      <button
-        type="button"
-        onClick={reset}
-        disabled={selectedCount === 0}
-        className="flex items-center justify-center rounded-lg border border-white/8 px-3 py-2 text-zinc-500 transition hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-30"
-        aria-label="清空选择"
-      >
-        <RotateCcw className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        onClick={evaluate}
-        disabled={selectedCount === 0}
-        className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-4 py-2.5 font-serif text-sm text-amber-100 transition hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-35"
-      >
-        <GitMerge className="h-4 w-4" />
-        组合推理
-      </button>
-    </>
-  );
 
   return (
-    <div
-      data-mobile-layout="single-scroll"
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain pb-3 lg:grid-cols-[minmax(0,1fr)_21rem] lg:grid-rows-[minmax(0,1fr)] lg:content-stretch lg:gap-5 lg:overflow-hidden lg:pb-0">
-      <div className="space-y-4 lg:min-h-0 lg:space-y-5 lg:overflow-y-auto lg:pr-1">
+    <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="min-h-0 space-y-5 overflow-y-auto pr-1">
         <section>
           <div className="mb-3 flex items-end justify-between gap-3">
             <div>
-              <h3 className="font-serif text-base text-zinc-100 md:text-lg">原始线索</h3>
-              <p className="mt-1 line-clamp-1 text-[11px] text-zinc-500 md:line-clamp-none md:text-xs">
+              <h3 className="font-serif text-lg text-zinc-100">原始线索</h3>
+              <p className="mt-1 text-xs text-zinc-500">
                 点击线索后，已发现的关联线索会自动高亮。
               </p>
             </div>
@@ -183,7 +157,7 @@ function InferenceWorkspace({
                           </span>
                         )}
                       </span>
-                      <span className="mt-1 line-clamp-1 block text-xs leading-relaxed text-zinc-500 md:line-clamp-2">
+                      <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-zinc-500">
                         {clue.description}
                       </span>
                     </span>
@@ -201,8 +175,8 @@ function InferenceWorkspace({
         <section>
           <div className="mb-3 flex items-end justify-between gap-3">
             <div>
-              <h3 className="font-serif text-base text-zinc-100 md:text-lg">已确认结论</h3>
-              <p className="mt-1 line-clamp-1 text-[11px] text-zinc-500 md:line-clamp-none md:text-xs">
+              <h3 className="font-serif text-lg text-zinc-100">已确认结论</h3>
+              <p className="mt-1 text-xs text-zinc-500">
                 深层推理可以继续使用已经成立的结论。
               </p>
             </div>
@@ -243,14 +217,14 @@ function InferenceWorkspace({
               })}
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-white/10 p-4 text-center text-xs leading-relaxed text-zinc-600 md:p-6 md:text-sm">
+            <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-zinc-600">
               当前还没有已确认结论；先尝试组合原始线索。
             </div>
           )}
         </section>
       </div>
 
-      <aside className="flex shrink-0 flex-col rounded-2xl border border-white/8 bg-black/25 p-3 lg:min-h-0 lg:p-4">
+      <aside className="flex min-h-[18rem] flex-col rounded-2xl border border-white/8 bg-black/25 p-4 lg:min-h-0">
         <div className="flex items-center gap-2">
           <Link2 className="h-4 w-4 text-amber-300/70" />
           <h3 className="font-mono text-xs uppercase tracking-widest text-zinc-400">
@@ -261,9 +235,9 @@ function InferenceWorkspace({
           </span>
         </div>
 
-        <div className="mt-3 lg:mt-4 lg:flex-1">
+        <div className="mt-4 flex-1">
           {!feedback && (
-            <div className="rounded-xl border border-dashed border-white/8 p-3 text-xs leading-relaxed text-zinc-500 lg:p-4 lg:text-sm">
+            <div className="rounded-xl border border-dashed border-white/8 p-4 text-sm leading-relaxed text-zinc-500">
               选中线索或既有结论后进行组合。系统只检查固定规则，不会根据叙述猜测真相。
             </div>
           )}
@@ -323,18 +297,27 @@ function InferenceWorkspace({
           )}
         </div>
 
-        <div className="mt-4 hidden gap-2 lg:flex">
-          {renderActionButtons()}
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={reset}
+            disabled={selectedCount === 0}
+            className="flex items-center justify-center rounded-lg border border-white/8 px-3 py-2 text-zinc-500 transition hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-30"
+            aria-label="清空选择"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={evaluate}
+            disabled={selectedCount === 0}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-4 py-2.5 font-serif text-sm text-amber-100 transition hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <GitMerge className="h-4 w-4" />
+            组合推理
+          </button>
         </div>
       </aside>
-      </div>
-
-      <div
-        data-mobile-action-bar="persistent"
-        className="-mx-3 flex shrink-0 gap-2 border-t border-white/7 bg-[#0b0b0e]/95 px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur md:-mx-6 md:px-6 lg:hidden"
-      >
-        {renderActionButtons()}
-      </div>
     </div>
   );
 }
@@ -476,17 +459,17 @@ export function DeductionWorkspace({
             exit={{ opacity: 0, y: 18, scale: 0.985 }}
             className="flex h-full w-full max-w-6xl flex-col overflow-hidden border-white/8 bg-[#0b0b0e] shadow-2xl md:h-[min(50rem,92vh)] md:rounded-2xl md:border"
           >
-            <header className="flex items-start gap-3 border-b border-white/7 px-4 py-3.5 md:gap-4 md:px-7 md:py-5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-300/15 bg-amber-300/5 text-amber-200/70 md:h-10 md:w-10">
+            <header className="flex items-start gap-4 border-b border-white/7 px-5 py-4 md:px-7 md:py-5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-300/15 bg-amber-300/5 text-amber-200/70">
                 {mode === 'truth'
                   ? <Scale className="h-5 w-5" />
                   : <GitMerge className="h-5 w-5" />}
               </div>
               <div className="min-w-0">
-                <h2 className="font-serif text-lg tracking-wide text-zinc-100 md:text-xl">
+                <h2 className="font-serif text-xl tracking-wide text-zinc-100">
                   {title}
                 </h2>
-                <p className="mt-0.5 line-clamp-1 text-[11px] leading-relaxed text-zinc-500 md:mt-1 md:line-clamp-none md:text-xs">
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">
                   {subtitle}
                 </p>
               </div>
@@ -499,9 +482,7 @@ export function DeductionWorkspace({
                 <X className="h-4 w-4" />
               </button>
             </header>
-            <div className={`flex min-h-0 flex-1 flex-col ${
-              mode === 'inference' ? 'px-3 pt-3 md:p-6' : 'p-4 md:p-6'
-            }`}>
+            <div className="flex min-h-0 flex-1 flex-col p-4 md:p-6">
               {mode === 'inference' ? (
                 <InferenceWorkspace clues={clues} knowledge={knowledge} />
               ) : (
