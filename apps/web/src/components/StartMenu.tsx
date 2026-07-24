@@ -40,7 +40,7 @@ export function StartMenu({
             aria-pressed={audioEnabled}
             title={audioEnabled ? '关闭雨声' : '开启雨声'}
             onClick={onToggleAudio}
-            className={`start-menu-rain-toggle mx-auto mt-6 flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.16em] transition ${
+            className={`start-menu-rain-toggle mx-auto mt-6 flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.16em] transition ${
               audioEnabled
                 ? 'start-menu-rain-toggle-active border-cyan-200/30 bg-sky-200/[0.065] text-cyan-50/85 hover:border-cyan-100/45 hover:bg-sky-200/[0.1] hover:text-white'
                 : 'border-cyan-200/15 bg-cyan-200/[0.035] text-cyan-100/70 hover:border-cyan-200/30 hover:bg-cyan-200/[0.07] hover:text-cyan-100/90'
@@ -57,7 +57,7 @@ export function StartMenu({
           <button
             type="button"
             onClick={() => onStart('easy')}
-            className="group flex min-h-44 flex-col rounded-2xl border border-amber-200/14 bg-amber-200/[0.035] p-5 text-left transition hover:-translate-y-1 hover:border-amber-200/30 hover:bg-amber-200/[0.065] md:min-h-52 md:p-6"
+            className="start-menu-mode-card group flex min-h-44 flex-col rounded-2xl border border-amber-200/14 bg-amber-200/[0.035] p-5 text-left transition hover:-translate-y-1 hover:border-amber-200/30 hover:bg-amber-200/[0.065] md:min-h-52 md:p-6"
           >
             <Compass className="h-5 w-5 text-amber-200/65" />
             <span className="mt-7 font-serif text-xl text-zinc-100">简单模式</span>
@@ -72,7 +72,7 @@ export function StartMenu({
           <button
             type="button"
             onClick={() => onStart('hard')}
-            className="group flex min-h-44 flex-col rounded-2xl border border-rose-200/12 bg-rose-950/[0.08] p-5 text-left transition hover:-translate-y-1 hover:border-rose-200/25 hover:bg-rose-950/[0.14] md:min-h-52 md:p-6"
+            className="start-menu-mode-card group flex min-h-44 flex-col rounded-2xl border border-rose-200/12 bg-rose-950/[0.08] p-5 text-left transition hover:-translate-y-1 hover:border-rose-200/25 hover:bg-rose-950/[0.14] md:min-h-52 md:p-6"
           >
             <LockKeyhole className="h-5 w-5 text-rose-200/55" />
             <span className="mt-7 font-serif text-xl text-zinc-100">硬核模式</span>
@@ -87,7 +87,7 @@ export function StartMenu({
           <button
             type="button"
             onClick={onOpenEndings}
-            className="group flex min-h-44 flex-col rounded-2xl border border-cyan-200/12 bg-cyan-950/[0.06] p-5 text-left transition hover:-translate-y-1 hover:border-cyan-200/25 hover:bg-cyan-950/[0.12] md:min-h-52 md:p-6"
+            className="start-menu-mode-card group flex min-h-44 flex-col rounded-2xl border border-cyan-200/12 bg-cyan-950/[0.06] p-5 text-left transition hover:-translate-y-1 hover:border-cyan-200/25 hover:bg-cyan-950/[0.12] md:min-h-52 md:p-6"
           >
             <BookOpen className="h-5 w-5 text-cyan-200/55" />
             <span className="mt-7 font-serif text-xl text-zinc-100">结局一览</span>
