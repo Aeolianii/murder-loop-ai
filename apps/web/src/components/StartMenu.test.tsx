@@ -23,6 +23,8 @@ assert.match(html, /无推荐行动/);
 assert.match(html, /耗时可能较长/);
 assert.match(html, /开启雨声/);
 assert.match(html, /aria-pressed="false"/);
+assert.match(html, /start-menu-rain-toggle/);
+assert.doesNotMatch(html, /start-menu-rain-toggle-active/);
 
 const audioEnabledHtml = renderToStaticMarkup(
   <StartMenu
@@ -34,4 +36,5 @@ const audioEnabledHtml = renderToStaticMarkup(
 );
 assert.match(audioEnabledHtml, /雨声已开启/);
 assert.match(audioEnabledHtml, /aria-pressed="true"/);
+assert.match(audioEnabledHtml, /start-menu-rain-toggle-active/);
 assert.doesNotMatch(audioEnabledHtml, /aria-pressed="true" disabled/);
