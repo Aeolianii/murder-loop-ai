@@ -59,10 +59,10 @@ export function StartMenu({
           >
             <Compass className="h-5 w-5 text-amber-200/65" />
             <span className="mt-7 font-serif text-xl text-zinc-100">简单模式</span>
-            <span className="mt-3 text-xs leading-6 text-zinc-400">
+            <span className="mt-3 text-xs leading-6 text-zinc-500">
               支持自然语言输入，也会根据已确认事实提供推荐行动。
             </span>
-            <span className="mt-auto pt-5 font-mono text-[10px] uppercase tracking-widest text-amber-200/65">
+            <span className="mt-auto pt-5 font-mono text-[10px] uppercase tracking-widest text-amber-200/45">
               适合初次调查
             </span>
           </button>
@@ -74,10 +74,10 @@ export function StartMenu({
           >
             <LockKeyhole className="h-5 w-5 text-rose-200/55" />
             <span className="mt-7 font-serif text-xl text-zinc-100">硬核模式</span>
-            <span className="mt-3 text-xs leading-6 text-zinc-400">
+            <span className="mt-3 text-xs leading-6 text-zinc-500">
               完全依靠自然语言行动与自己的判断推进调查。
             </span>
-            <span className="mt-auto pt-5 text-[10px] leading-5 text-rose-200/65">
+            <span className="mt-auto pt-5 text-[10px] leading-5 text-rose-200/45">
               硬核模式无推荐行动，耗时可能较长。
             </span>
           </button>
@@ -89,10 +89,10 @@ export function StartMenu({
           >
             <BookOpen className="h-5 w-5 text-cyan-200/55" />
             <span className="mt-7 font-serif text-xl text-zinc-100">结局一览</span>
-            <span className="mt-3 text-xs leading-6 text-zinc-400">
+            <span className="mt-3 text-xs leading-6 text-zinc-500">
               查看五种结局的解锁档案，并进入完整剧本复盘。
             </span>
-            <span className="mt-auto flex items-center gap-2 pt-5 font-mono text-[10px] uppercase tracking-widest text-cyan-200/60">
+            <span className="mt-auto flex items-center gap-2 pt-5 font-mono text-[10px] uppercase tracking-widest text-cyan-200/40">
               <Feather className="h-3 w-3" />
               档案室
             </span>
