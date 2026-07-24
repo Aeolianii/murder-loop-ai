@@ -14,6 +14,7 @@ import {
   type TurnEnvelope,
 } from '@murder-loop-ai/ai-contracts';
 import type { ActionPlan, GameState } from '@murder-loop-ai/shared';
+import { listPlayerAvailableAssets } from '../assets/gameAssets';
 import type { TurnFreshnessSnapshot } from '../commit/atomicTurnCommit';
 import { buildFactLedgerFromGameState, buildKnowledgeProjections, type KnowledgeProjections } from '../facts/knowledgeProjection';
 import { projectTurnIntent, type ConditionalIntentSignal, type IntentProjections } from '../intent/IntentProjector';
@@ -470,6 +471,7 @@ function buildCompactPlayerContext(
   }
   return {
     facts: knowledge.player.facts,
+    availableAssets: listPlayerAvailableAssets(state),
     accessibleEntityIds: [...new Set([
       'player',
       ...knowledge.player.facts.map((fact) => fact.subject),

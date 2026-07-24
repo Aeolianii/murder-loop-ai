@@ -153,9 +153,24 @@ export const TurnBriefSchema = TurnEnvelopeSchema.extend({
   ambiguities: z.array(TurnAmbiguitySchema),
 }).strict();
 
+export const AvailableAssetSchema = z.object({
+  id: IdSchema,
+  kind: z.enum(['physical', 'image', 'audio', 'document']),
+  label: z.string().min(1),
+  aliases: z.array(z.string().min(1)),
+  ownerId: IdSchema,
+  location: IdSchema,
+  sourceEntityIds: z.array(IdSchema),
+  createdAt: z.object({
+    run: z.number().int().positive(),
+    minute: z.number().int().nonnegative(),
+  }).strict(),
+}).strict();
+
 export const CompactPlayerContextSchema = z.object({
   facts: z.array(FactSchema),
   accessibleEntityIds: z.array(IdSchema),
+  availableAssets: z.array(AvailableAssetSchema).optional(),
   capabilities: z.array(IdSchema),
   activeCommunicationActorIds: z.array(IdSchema),
   recentConfirmedEventIds: z.array(IdSchema),

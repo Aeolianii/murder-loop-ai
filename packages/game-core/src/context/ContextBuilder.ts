@@ -83,6 +83,12 @@ export interface NpcVisibleContext {
   subjectiveState: ReturnType<typeof buildSubjectiveState>;
   knownFactIds: string[];
   receivedPlayerMessage: string;
+  visibleAssets: Array<{
+    id: string;
+    kind: GameState['assets'][string]['kind'];
+    label: string;
+    sourceEntityIds: string[];
+  }>;
   recentPublicEvents: Array<{
     type: string;
     facts: string[];
@@ -264,6 +270,21 @@ export function buildNpcVisibleContext(
   const subjectiveState = buildSubjectiveState(world, characterId);
   const knownFactIds = Object.keys(subjectiveState.knowledge);
   const hasFact = (id: string) => knownFactIds.includes(id);
+  const visibleAssetActorIds = speaker === 'linyue'
+    ? ['linyue', 'lin_yue']
+    : speaker === 'police_dispatch'
+      ? ['police_dispatch', 'real_police']
+      : ['chen_huaimin'];
+  const visibleAssets = Object.values(state.assets)
+    .filter((asset) => visibleAssetActorIds.some((actorId) => (
+      asset.accessibleToActorIds.includes(actorId)
+    )))
+    .map((asset) => ({
+      id: asset.id,
+      kind: asset.kind,
+      label: asset.label,
+      sourceEntityIds: [...asset.sourceEntityIds],
+    }));
 
   return {
     speaker,
@@ -272,6 +293,7 @@ export function buildNpcVisibleContext(
     subjectiveState,
     knownFactIds,
     receivedPlayerMessage: input,
+    visibleAssets,
     recentPublicEvents: world.events
       .slice(-5)
       .filter((event) => event.visibility === 'public')
@@ -281,7 +303,9 @@ export function buildNpcVisibleContext(
         minute: event.minute,
       })),
     canReference: {
-      packagePhoto: hasFact('package_photo'),
+      packagePhoto: visibleAssets.some((asset) => (
+        asset.kind === 'image' && asset.sourceEntityIds.includes('package')
+      )) || hasFact('package_photo'),
       doorActivity: hasFact('player_reported_door_activity') || hasFact('door_coordination_quote'),
       policeReport: hasFact('report_received'),
       fakePoliceSuspicion: hasFact('reported_fake_police') || hasFact('fake_police_suspicion'),

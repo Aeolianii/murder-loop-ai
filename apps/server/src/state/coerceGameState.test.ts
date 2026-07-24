@@ -11,5 +11,6 @@ const state = coerceGameState({
 assert.deepEqual(state.activatedKnowledge, []);
 assert.deepEqual(state.currentRunKnowledge, []);
 assert.deepEqual(state.discoveredClueIds, []);
+assert.equal(state.assets['asset.physical.phone']?.ownerId, 'player');
 assert.doesNotThrow(() => activatePlayerKnowledge(state));
 assert.equal(deriveTruth(state.activatedKnowledge).stage, 'L0');

@@ -280,7 +280,7 @@ assert.equal(openActionNarration.actionNarration?.text, openActionNarratorText);
 const splitCommunicationState = createInitialGameState();
 splitCommunicationState.room.package.state.photographed = true;
 let capturedNpcInboundMessage: unknown;
-const splitCommunicationNarration = await narrateConfirmedTurn({
+const splitCommunicationResolution: TurnResolution = {
   ...resolution,
   plan: {
     id: 'split-photo-question-plan',
@@ -348,7 +348,8 @@ const splitCommunicationNarration = await narrateConfirmedTurn({
     domainEvents: Array<{ eventType: string; subject: string; facts: string[] }>;
   },
   finalState: splitCommunicationState,
-}, {
+};
+const splitCommunicationNarration = await narrateConfirmedTurn(splitCommunicationResolution, {
   narrateAction: async () => ({
     title: '照片和消息已送达',
     text: '你拍下包裹照片并发送给林越，询问这个包裹是不是他的。',
@@ -365,6 +366,7 @@ const splitCommunicationNarration = await narrateConfirmedTurn({
       intent: 'identify_package',
       riskWarning: '包裹来源仍未确认。',
       suggestedExternalAction: '保留照片并核对寄件信息。',
+      observedAssetIds: ['package_photo'],
     };
   },
 });
@@ -378,3 +380,36 @@ assert.match(structuredNpcInboundMessage.text, /发送包裹照片/);
 assert.match(structuredNpcInboundMessage.text, /这个包裹是不是他的/);
 assert.ok(structuredNpcInboundMessage.attachments.some((attachment) => attachment.id === 'package_photo'));
 assert.match(splitCommunicationNarration.actionNarration?.text ?? '', /不是我的/);
+
+let ungroundedNpcCalls = 0;
+const guardedNpcNarration = await narrateConfirmedTurn(splitCommunicationResolution, {
+  narrateAction: async () => ({
+    title: '照片和消息已送达',
+    text: '你拍下包裹照片并发送给林越，询问这个包裹是不是他的。',
+  }),
+  narrateAmbient: async () => ({
+    title: '雨声仍在',
+    text: '窗外的雨声没有停。',
+  }),
+  npcReply: async () => {
+    ungroundedNpcCalls += 1;
+    return {
+      speaker: 'linyue',
+      text: '我已经看过那个并不存在的附件。',
+      intent: 'invalid_asset_reference',
+      riskWarning: '',
+      suggestedExternalAction: '',
+      observedAssetIds: ['asset.image.invented'],
+    };
+  },
+});
+assert.equal(ungroundedNpcCalls, 1, 'asset validation must not add a second Agent call');
+assert.doesNotMatch(
+  guardedNpcNarration.npcReply?.text ?? '',
+  /并不存在的附件/,
+  'an NPC reply may only reference confirmed inbound assets',
+);
+assert(
+  guardedNpcNarration.warnings.some((warning) => warning.includes('ungrounded')),
+  'an invalid asset reference must fall back immediately with a local warning',
+);

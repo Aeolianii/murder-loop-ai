@@ -243,11 +243,17 @@ async function runConfirmedNpcReply(
     const parsed = NpcReplySchema.safeParse(
       await adapters.npcReply(message.speaker, message, resolution.finalState),
     );
-    if (parsed.success && isChineseUiText(parsed.data.text)) return { reply: parsed.data, warnings: [] };
+    if (
+      parsed.success
+      && isChineseUiText(parsed.data.text)
+      && hasValidObservedAssets(parsed.data, message)
+    ) {
+      return { reply: parsed.data, warnings: [] };
+    }
     return {
       reply: fallbackNpcReply(message.speaker, message.text, resolution.finalState),
       warnings: [parsed.success
-        ? 'post-commit npcReply returned non-Chinese display text; deterministic fallback used.'
+        ? 'post-commit npcReply returned ungrounded display text or asset references; deterministic fallback used.'
         : 'post-commit npcReply failed schema validation; deterministic fallback used.'],
     };
   } catch (error) {
@@ -258,6 +264,18 @@ async function runConfirmedNpcReply(
       }`],
     };
   }
+}
+
+function hasValidObservedAssets(
+  reply: NpcReply,
+  message: ReturnType<typeof buildNpcInboundMessages>[number],
+): boolean {
+  const confirmedAssetIds = new Set(message.attachments.map((attachment) => attachment.id));
+  const observedAssetIds = reply.observedAssetIds ?? [];
+  if (message.attachments.length > 0 && observedAssetIds.length === 0) return false;
+  if (observedAssetIds.length !== new Set(observedAssetIds).size) return false;
+  return observedAssetIds.every((assetId) => confirmedAssetIds.has(assetId))
+    && confirmedAssetIds.size === new Set(observedAssetIds).size;
 }
 
 function appendNpcReply(narration: Narration, reply: NpcReply): Narration {

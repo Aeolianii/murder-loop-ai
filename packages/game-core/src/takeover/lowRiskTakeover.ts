@@ -5,7 +5,19 @@ import type {
   TurnBrief,
   TurnEnvelope,
 } from '@murder-loop-ai/ai-contracts';
-import { DEADLINE_MINUTE, type ActionPlan, type GameState, type RuleEvent, type RuleResult } from '@murder-loop-ai/shared';
+import {
+  DEADLINE_MINUTE,
+  type ActionPlan,
+  type GameAsset,
+  type GameState,
+  type RuleEvent,
+  type RuleResult,
+} from '@murder-loop-ai/shared';
+import {
+  bindTurnAssets,
+  createProducedAsset,
+  grantAssetAccess,
+} from '../assets/gameAssets';
 import {
   atomicTurnCommit,
   type AtomicTurnCommitOutcome,
@@ -108,48 +120,36 @@ export function prepareLowRiskTurn(input: {
   aiPlayerOutcomes?: ProposedEvent[];
   allowHighRiskContinuation?: boolean;
 }): LowRiskTakeoverPreparation {
+  const brief = bindTurnAssets(input.state, input.brief);
   const eligibility = validateTurnEligibility(
     input.state,
-    input.brief,
+    brief,
     input.aiPlayerOutcomes ?? [],
   );
   if (eligibility) return { status: 'not_eligible', reason: eligibility };
   if (
     !input.allowHighRiskContinuation
-    && crossesLegacyHighRiskBoundary(input.state, input.brief)
+    && crossesLegacyHighRiskBoundary(input.state, brief)
   ) {
     return { status: 'not_eligible', reason: 'high_risk_boundary' };
   }
 
   const state = structuredClone(input.state) as GameState;
-  const plan = buildActionPlan(input.brief);
+  const plan = buildActionPlan(brief);
   const actionEvents: AppliedLowRiskAction[] = [];
   const eventIdByActionId = new Map<string, string>();
-  const actionById = new Map(input.brief.orderedActions.map((action) => [action.actionId, action]));
-  const packagePhotoHandleIds = new Set(input.brief.candidateHandles.flatMap((handle) => {
-    const producer = actionById.get(handle.producedByActionId);
-    return producer
-      && LOW_RISK_OPERATIONS.get(producer.operation) === 'preserve_evidence'
-      && producer.targetIds.includes('package')
-      ? [handle.id]
-      : [];
-  }));
   const communicationByActionId = new Map(
-    input.brief.communications.map((communication) => [communication.actionId, communication]),
+    brief.communications.map((communication) => [communication.actionId, communication]),
   );
   let chargerUsed = false;
 
-  for (const action of input.brief.orderedActions) {
+  for (const action of brief.orderedActions) {
     const operation = LOW_RISK_OPERATIONS.get(action.operation)!;
-    const eventId = `event.low-risk.${input.brief.turnId}.${action.actionId}`;
+    const eventId = `event.low-risk.${brief.turnId}.${action.actionId}`;
     const causalParentIds = action.dependsOnActionIds
       .map((actionId) => eventIdByActionId.get(actionId))
       .filter((id): id is string => Boolean(id));
     const communication = communicationByActionId.get(action.actionId);
-    const attachmentHandleIds = new Set([
-      ...action.inputHandleIds,
-      ...(communication?.attachmentHandleIds ?? []),
-    ]);
     const applied = applyLowRiskAction({
       state,
       action,
@@ -157,10 +157,9 @@ export function prepareLowRiskTurn(input: {
       communication,
       eventId,
       causalParentIds,
-      envelope: input.brief,
+      envelope: brief,
       aiOutcome: aiOutcomeForAction(input.aiPlayerOutcomes ?? [], action),
-      sharesPackagePhoto: state.room.package.state.photographed === true
-        && [...attachmentHandleIds].some((handleId) => packagePhotoHandleIds.has(handleId)),
+      attachmentAssetIds: [...(communication?.attachmentHandleIds ?? [])],
     });
     actionEvents.push(applied);
     eventIdByActionId.set(action.actionId, eventId);
@@ -169,11 +168,11 @@ export function prepareLowRiskTurn(input: {
       && state.playerHolding === 'phone_charger';
   }
 
-  const timePassed = Math.max(1, Math.min(5, input.brief.orderedActions.length));
+  const timePassed = Math.max(1, Math.min(5, brief.orderedActions.length));
   const minuteBefore = state.minute;
   state.minute += timePassed;
   const supplementalEvents = [createTimeEvent(
-    input.brief,
+    brief,
     state.run,
     minuteBefore,
     state.minute,
@@ -189,7 +188,7 @@ export function prepareLowRiskTurn(input: {
   if (state.room.phone?.state) state.room.phone.state.battery = state.phoneBattery;
   if (state.phoneBattery !== batteryBefore) {
     supplementalEvents.push(createBatteryEvent(
-      input.brief,
+      brief,
       state.run,
       state.minute,
       batteryBefore,
@@ -208,9 +207,9 @@ export function prepareLowRiskTurn(input: {
     { run: state.run, minute: state.minute },
   );
   const text = actionEvents.map((event) => event.summary).join(' ');
-  const executionAuthorityId = deterministicTurnBriefAuthorityId(input.brief.turnId);
+  const executionAuthorityId = deterministicTurnBriefAuthorityId(brief.turnId);
   state.log.push({
-    id: `log-low-risk-${input.brief.turnId}`,
+    id: `log-low-risk-${brief.turnId}`,
     run: state.run,
     minute: state.minute,
     title: '行动已确认',
@@ -221,7 +220,7 @@ export function prepareLowRiskTurn(input: {
 
   return {
     status: 'prepared',
-    envelope: envelopeFromBrief(input.brief),
+    envelope: envelopeFromBrief(brief),
     executionAuthorityId,
     plan,
     playerResult: {
@@ -416,24 +415,6 @@ function buildActionPlan(brief: TurnBrief): ActionPlan {
   const communicationByActionId = new Map(
     brief.communications.map((communication) => [communication.actionId, communication]),
   );
-  const orderedActionById = new Map(
-    brief.orderedActions.map((action) => [action.actionId, action]),
-  );
-  const handleById = new Map(
-    brief.candidateHandles.map((handle) => [handle.id, handle]),
-  );
-  const canonicalAttachmentId = (handleId: string) => {
-    const handle = handleById.get(handleId);
-    const producer = handle ? orderedActionById.get(handle.producedByActionId) : undefined;
-    if (
-      handle?.kind === 'photograph'
-      && producer?.operation === 'photograph'
-      && producer.targetIds.includes('package')
-    ) {
-      return 'package_photo';
-    }
-    return handleId;
-  };
   const actions = brief.orderedActions.map((action) => {
     const operation = LOW_RISK_OPERATIONS.get(action.operation)!;
     const targetIds = operation === 'inspect' ? effectiveInspectTargetIds(action) : action.targetIds;
@@ -453,9 +434,9 @@ function buildActionPlan(brief: TurnBrief): ActionPlan {
         : undefined,
       itemKind: operation === 'pick_up' ? 'utility' as const : undefined,
       communication: communication
-        ? {
+          ? {
             content: communication.contentSummary,
-            attachmentIds: communication.attachmentHandleIds.map(canonicalAttachmentId),
+            attachmentIds: [...communication.attachmentHandleIds],
             channel: communication.channel,
           }
         : undefined,
@@ -480,7 +461,7 @@ function applyLowRiskAction(input: {
   causalParentIds: string[];
   envelope: TurnEnvelope;
   aiOutcome?: ProposedEvent;
-  sharesPackagePhoto: boolean;
+  attachmentAssetIds: string[];
 }): AppliedLowRiskAction {
   const { state, action, operation } = input;
   const targetIds = operation === 'inspect' ? effectiveInspectTargetIds(action) : action.targetIds;
@@ -491,6 +472,9 @@ function applyLowRiskAction(input: {
   let status: ProposedEvent['status'] = 'completed';
   let ruleKind: RuleEvent['kind'] = 'action';
   let eventKind: ProposedEvent['kind'] = 'action';
+  let payload: Record<string, unknown> | undefined;
+  let additionalAssertions: Array<Omit<ProposedEvent['assertions'][number], 'id'>> = [];
+  let evidenceRefs: string[] = [];
 
   if (operation === 'act') {
     const resourceFailure = genericResourceFailure(state, action);
@@ -547,6 +531,39 @@ function applyLowRiskAction(input: {
         `photographed:${targetId}`,
         `fact.${targetId}.exterior.photo_captured`,
       ]);
+      const producedAssets = action.outputHandleIds.map((assetId) => createProducedAsset({
+        id: assetId,
+        kind: 'image',
+        label: `${action.targetIds.map(actionTargetLabel).join('、')}照片`,
+        ownerId: 'player',
+        location: 'player.phone',
+        aliases: [
+          `${action.targetIds.map(actionTargetLabel).join('、')}照片`,
+          ...action.targetIds.map((targetId) => `${targetId} photo`),
+        ],
+        sourceEntityIds: [...action.targetIds],
+        createdAt: { run: state.run, minute: state.minute },
+        createdByActionId: action.actionId,
+        createdByEventId: input.eventId,
+      }));
+      for (const asset of producedAssets) state.assets[asset.id] = asset;
+      facts.push(...producedAssets.map((asset) => `asset_created:${asset.id}`));
+      evidenceRefs = producedAssets.map((asset) => asset.id);
+      payload = { createdAssets: producedAssets.map(assetEventPayload) };
+      additionalAssertions = producedAssets.flatMap((asset) => [
+        {
+          subject: asset.id,
+          predicate: 'kind',
+          value: asset.kind,
+          visibleTo: ['player'],
+        },
+        ...asset.sourceEntityIds.map((sourceEntityId) => ({
+          subject: asset.id,
+          predicate: 'source_entity',
+          value: sourceEntityId,
+          visibleTo: ['player'],
+        })),
+      ]);
     }
   } else if (operation === 'communicate') {
     ruleKind = 'message';
@@ -562,16 +579,47 @@ function applyLowRiskAction(input: {
       ];
     } else if (state.phoneFunctional) {
       eventKind = 'information_transfer';
-      eventType = 'message_delivered';
-      summary = input.sharesPackagePhoto
-        ? `你已将包裹照片和消息发送给${actionTargetLabel(subject)}。`
+      const deliveredAssets = [...new Set(input.attachmentAssetIds)]
+        .map((assetId) => state.assets[assetId])
+        .filter((asset) => (
+          asset
+          && (asset.ownerId === 'player' || asset.accessibleToActorIds.includes('player'))
+        ));
+      for (const asset of deliveredAssets) {
+        state.assets[asset.id] = grantAssetAccess(asset, subject);
+      }
+      eventType = deliveredAssets.length > 0 ? 'asset_transferred' : 'message_delivered';
+      summary = deliveredAssets.length > 0
+        ? `你已将${deliveredAssets.map((asset) => asset.label).join('、')}和消息发送给${actionTargetLabel(subject)}。`
         : `你已将消息发送给${actionTargetLabel(subject)}。`;
       facts = [
         `message_delivered:${subject}`,
-        ...(input.sharesPackagePhoto && subject === 'linyue'
-          ? ['fact.lin_yue.package_photo_received']
-          : []),
+        ...deliveredAssets.map((asset) => `asset_transferred:${asset.id}:${subject}`),
       ];
+      evidenceRefs = deliveredAssets.map((asset) => asset.id);
+      payload = deliveredAssets.length > 0
+        ? { deliveredAssets: deliveredAssets.map(assetEventPayload) }
+        : undefined;
+      additionalAssertions = deliveredAssets.flatMap((asset) => [
+        {
+          subject,
+          predicate: 'asset_received',
+          value: asset.id,
+          visibleTo: ['player', subject],
+        },
+        {
+          subject: asset.id,
+          predicate: 'kind',
+          value: asset.kind,
+          visibleTo: ['player', subject],
+        },
+        ...asset.sourceEntityIds.map((sourceEntityId) => ({
+          subject: asset.id,
+          predicate: 'source_entity',
+          value: sourceEntityId,
+          visibleTo: ['player', subject],
+        })),
+      ]);
     } else {
       eventKind = 'information_transfer';
       eventType = 'message_delivery_failed';
@@ -594,6 +642,19 @@ function applyLowRiskAction(input: {
   } else if (operation === 'pick_up') {
     const itemId = action.targetIds[0];
     state.playerHolding = itemId;
+    const assetId = `asset.physical.${itemId}`;
+    state.assets[assetId] = createProducedAsset({
+      id: assetId,
+      kind: 'physical',
+      label: actionTargetLabel(itemId),
+      ownerId: 'player',
+      location: 'player',
+      aliases: [actionTargetLabel(itemId), itemId],
+      sourceEntityIds: [itemId],
+      createdAt: { run: state.run, minute: state.minute },
+      createdByActionId: action.actionId,
+      createdByEventId: input.eventId,
+    });
     eventType = 'item_picked_up';
     subject = itemId;
     summary = `你拿起了${actionTargetLabel(itemId)}。`;
@@ -642,6 +703,9 @@ function applyLowRiskAction(input: {
     envelope: input.envelope,
     createdAt: { run: state.run, minute: state.minute },
     ruleKind,
+    payload,
+    additionalAssertions,
+    evidenceRefs,
   });
 }
 
@@ -810,6 +874,15 @@ function effectiveInspectTargetIds(action: TurnBrief['orderedActions'][number]):
   return packageChild ? [packageChild] : action.targetIds;
 }
 
+function assetEventPayload(asset: GameAsset) {
+  return {
+    id: asset.id,
+    kind: asset.kind,
+    label: asset.label,
+    sourceActionIds: [asset.createdByActionId],
+  };
+}
+
 function createTimeEvent(
   envelope: TurnEnvelope,
   run: number,
@@ -877,7 +950,20 @@ function makeAppliedEvent(input: {
   envelope: TurnEnvelope;
   createdAt: { run: number; minute: number };
   ruleKind: RuleEvent['kind'];
+  payload?: Record<string, unknown>;
+  additionalAssertions?: Array<Omit<ProposedEvent['assertions'][number], 'id'>>;
+  evidenceRefs?: string[];
 }): AppliedLowRiskAction {
+  const baseAssertions = assertionsFromLegacyFacts(
+    input.eventId,
+    input.subject,
+    input.facts,
+    ['player'],
+  );
+  const additionalAssertions = (input.additionalAssertions ?? []).map((assertion, index) => ({
+    id: `assertion.${input.eventId}.extra.${index}`,
+    ...assertion,
+  }));
   return {
     proposedEvent: {
       id: input.eventId,
@@ -888,15 +974,10 @@ function makeAppliedEvent(input: {
       targetIds: input.targetIds,
       status: input.status,
       summary: input.summary,
-      assertions: assertionsFromLegacyFacts(
-        input.eventId,
-        input.subject,
-        input.facts,
-        ['player'],
-      ),
+      assertions: [...baseAssertions, ...additionalAssertions],
       visibility: ['player'],
       riskClass: 'reversible',
-      evidenceRefs: [],
+      evidenceRefs: input.evidenceRefs ?? [],
       causalParentIds: input.causalParentIds,
     },
     domainEvent: {
@@ -912,7 +993,7 @@ function makeAppliedEvent(input: {
       summary: input.summary,
       facts: input.facts,
       visibility: 'player',
-      payload: { turnId: input.envelope.turnId },
+      payload: { turnId: input.envelope.turnId, ...(input.payload ?? {}) },
     },
     ruleEvent: {
       kind: input.ruleKind,

@@ -23,6 +23,22 @@ export function createInitialGameState(): GameState {
     combatTriggered: false,
     clues: [],
     observations: [],
+    assets: {
+      'asset.physical.phone': {
+        id: 'asset.physical.phone',
+        kind: 'physical',
+        label: '手机',
+        ownerId: 'player',
+        location: 'player',
+        aliases: ['手机', '我的手机', 'phone'],
+        sourceEntityIds: ['phone'],
+        accessibleToActorIds: ['player'],
+        createdAt: { run: 1, minute: START_MINUTE },
+        createdByActionId: 'initial',
+        createdByEventId: 'event.initial.asset.phone',
+        flags: { functional: true },
+      },
+    },
     room: structuredClone(initialRoomObjects),
     killerKnowledge: {
       knowsPackageAt503: true,

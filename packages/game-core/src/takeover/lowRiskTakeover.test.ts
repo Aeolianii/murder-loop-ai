@@ -130,14 +130,142 @@ assert.equal(
   preparedPhotoMessage?.communication?.content,
   photoShareBrief.communications[0].contentSummary,
 );
-assert.deepEqual(preparedPhotoMessage?.communication?.attachmentIds, ['package_photo']);
+assert.deepEqual(preparedPhotoMessage?.communication?.attachmentIds, ['handle-package-photo']);
 const deliveredPhotoEvent = preparedPhotoShare.playerResult.domainEvents.find((event) => (
-  event.eventType === 'message_delivered'
+  event.eventType === 'asset_transferred'
 ));
-assert(deliveredPhotoEvent?.facts.includes('fact.lin_yue.package_photo_received'));
+assert(deliveredPhotoEvent?.facts.includes('asset_transferred:handle-package-photo:linyue'));
 assert(preparedPhotoShare.knowledgeClueCandidates.knowledgeUpdates.some((update) => (
   update.characterId === 'lin_yue' && update.factId === 'package_photo'
 )));
+
+const autoBoundPhotoBrief = brief([
+  action('photo-without-ai-handle', 'photograph', ['package']),
+  {
+    ...action('send-auto-bound-photo', 'communicate', ['lin_yue']),
+    dependsOnActionIds: ['photo-without-ai-handle'],
+  },
+]);
+autoBoundPhotoBrief.communications = [{
+  id: 'communication-auto-bound-photo',
+  actionId: 'send-auto-bound-photo',
+  senderId: 'player',
+  recipientIds: ['lin_yue'],
+  channel: 'phone',
+  contentSummary: '把刚拍摄的照片发给林越',
+  attachmentHandleIds: [],
+  intendedAudience: ['lin_yue'],
+}];
+const autoBoundPhoto = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: autoBoundPhotoBrief,
+});
+assert.equal(autoBoundPhoto.status, 'prepared');
+if (autoBoundPhoto.status !== 'prepared') throw new Error('expected automatic asset binding');
+const createdImageAsset = Object.values(autoBoundPhoto.playerResult.state.assets).find((asset) => (
+  asset.kind === 'image' && asset.sourceEntityIds.includes('package')
+));
+assert.ok(createdImageAsset, 'a confirmed photograph must create a durable image asset');
+assert.deepEqual(
+  autoBoundPhoto.plan.actions.find((candidate) => candidate.id === 'send-auto-bound-photo')
+    ?.communication?.attachmentIds,
+  [createdImageAsset.id],
+  'a dependent communication must consume the image produced earlier in the same turn',
+);
+assert(
+  autoBoundPhoto.playerResult.domainEvents.some((event) => (
+    event.eventType === 'asset_transferred'
+    && event.subject === 'linyue'
+    && event.facts.includes(`asset_transferred:${createdImageAsset.id}:linyue`)
+  )),
+  'the authoritative event stream must confirm the transferred asset',
+);
+
+const crossTurnPhotoState = structuredClone(autoBoundPhoto.playerResult.state);
+const crossTurnSendBrief = brief([
+  {
+    ...action('send-existing-photo', 'communicate', ['lin_yue']),
+    inputHandleIds: [createdImageAsset.id],
+  },
+]);
+crossTurnSendBrief.communications = [{
+  id: 'communication-existing-photo',
+  actionId: 'send-existing-photo',
+  senderId: 'player',
+  recipientIds: ['lin_yue'],
+  channel: 'phone',
+  contentSummary: '把刚才的照片发给林越',
+  attachmentHandleIds: [createdImageAsset.id],
+  intendedAudience: ['lin_yue'],
+}];
+const crossTurnPhoto = prepareLowRiskTurn({
+  state: crossTurnPhotoState,
+  brief: crossTurnSendBrief,
+});
+assert.equal(crossTurnPhoto.status, 'prepared');
+if (crossTurnPhoto.status !== 'prepared') throw new Error('expected cross-turn asset transfer');
+assert(
+  crossTurnPhoto.playerResult.domainEvents.some((event) => (
+    event.eventType === 'asset_transferred'
+    && event.facts.includes(`asset_transferred:${createdImageAsset.id}:linyue`)
+  )),
+  'an existing asset must remain transferable in a later turn',
+);
+
+const policePhotoBrief = structuredClone(crossTurnSendBrief);
+policePhotoBrief.turnId = 'takeover-turn-police-asset';
+policePhotoBrief.orderedActions[0].actionId = 'send-existing-photo-police';
+policePhotoBrief.orderedActions[0].targetIds = ['police_dispatch'];
+policePhotoBrief.communications[0].actionId = 'send-existing-photo-police';
+policePhotoBrief.communications[0].recipientIds = ['police_dispatch'];
+policePhotoBrief.communications[0].intendedAudience = ['police_dispatch'];
+const policePhoto = prepareLowRiskTurn({
+  state: crossTurnPhotoState,
+  brief: policePhotoBrief,
+});
+assert.equal(policePhoto.status, 'prepared');
+if (policePhoto.status !== 'prepared') throw new Error('expected generic recipient asset transfer');
+assert(
+  policePhoto.playerResult.domainEvents.some((event) => (
+    event.eventType === 'asset_transferred'
+    && event.subject === 'police_dispatch'
+    && event.facts.includes(`asset_transferred:${createdImageAsset.id}:police_dispatch`)
+  )),
+  'asset delivery must not be hard-coded to Lin Yue',
+);
+
+const phoneAsToolBrief = brief([{
+  ...action('message-using-phone', 'communicate', ['lin_yue']),
+  inputHandleIds: ['asset.physical.phone'],
+}]);
+phoneAsToolBrief.communications = [{
+  id: 'communication-using-phone',
+  actionId: 'message-using-phone',
+  senderId: 'player',
+  recipientIds: ['lin_yue'],
+  channel: 'phone',
+  contentSummary: '用手机问林越包裹是不是他的',
+  attachmentHandleIds: ['asset.physical.phone'],
+  intendedAudience: ['lin_yue'],
+}];
+const phoneAsTool = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: phoneAsToolBrief,
+});
+assert.equal(phoneAsTool.status, 'prepared');
+if (phoneAsTool.status !== 'prepared') throw new Error('expected phone communication');
+assert.deepEqual(
+  phoneAsTool.plan.actions[0].communication?.attachmentIds,
+  [],
+  'an input resource used to send a message must not become an attachment',
+);
+assert(
+  phoneAsTool.playerResult.domainEvents.some((event) => (
+    event.eventType === 'message_delivered'
+    && !event.facts.some((fact) => fact.includes('asset.physical.phone'))
+  )),
+  'the player phone must remain a tool rather than a transferred asset',
+);
 
 const projectedPhotoShare = projectConfirmedKnowledgeAndClues({
   baselineState: state,

@@ -1221,13 +1221,15 @@ async function testLegacyMainPathExitPublishesConfirmedNpcReply() {
     npcReplyCalls += 1;
     assert.equal(speaker, 'linyue');
     assert.match(input.text, /林越|包裹/);
-    assert.ok(input.attachments.some((attachment) => attachment.id === 'package_photo'));
+    assert.equal(input.attachments.length, 1);
+    assert.equal(input.attachments[0]?.kind, 'image');
     return {
       speaker: 'linyue',
       text: '这不是我的包裹。你别开门，把照片留好。',
       intent: 'deny_package_and_assist',
       riskWarning: '不要让林越上楼。',
       suggestedExternalAction: '让林越在楼下报警。',
+      observedAssetIds: input.attachments.map((attachment) => attachment.id),
     };
   };
   await registerTestHarnessRoute(app, {

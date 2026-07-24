@@ -111,6 +111,7 @@ const brief: TurnBrief = {
 const targetContext = {
   facts: [],
   accessibleEntityIds: ['player', 'front_door', 'chair'],
+  availableAssets: [],
   capabilities: ['secure_entry'],
   activeCommunicationActorIds: [],
   recentConfirmedEventIds: [],
@@ -122,6 +123,45 @@ const targetContext = {
   recentReferenceCandidates: [],
   phaseSummary: 'investigation at minute 2',
 };
+
+{
+  const existingAssetBrief = structuredClone(brief);
+  existingAssetBrief.orderedActions = [{
+    ...existingAssetBrief.orderedActions[1],
+    actionId: 'action-send-existing-asset',
+    operation: 'communicate',
+    dependsOnActionIds: [],
+    inputHandleIds: ['asset.image.previous-turn'],
+    originalSpan: { start: 0, end: 8, text: '把刚才照片发给林越' },
+  }];
+  existingAssetBrief.communications = [{
+    ...existingAssetBrief.communications[0],
+    actionId: 'action-send-existing-asset',
+    attachmentHandleIds: ['asset.image.previous-turn'],
+  }];
+  existingAssetBrief.candidateHandles = [];
+  const contextWithAsset = {
+    ...targetContext,
+    accessibleEntityIds: ['player'],
+    activeCommunicationActorIds: ['lin_yue'],
+    availableAssets: [{
+      id: 'asset.image.previous-turn',
+      kind: 'image' as const,
+      label: '上一回合拍摄的照片',
+      aliases: ['刚才的照片'],
+      ownerId: 'player',
+      location: 'player.phone',
+      sourceEntityIds: ['package'],
+      createdAt: { run: 1, minute: 2 },
+    }],
+  };
+  const validation = validateTurnBrief(existingAssetBrief, {
+    ...existingAssetBrief,
+    playerContext: contextWithAsset,
+  });
+  assert.equal(validation.valid, true, validation.issues.join('\n'));
+  assert.deepEqual(validateTurnBriefTargetContract(existingAssetBrief, contextWithAsset), []);
+}
 const barricadeBrief: TurnBrief = {
   ...brief,
   orderedActions: [{

@@ -52,7 +52,9 @@ const SECURE_ENTRY_OPERATIONS = new Set(['secure_entry', 'secure', 'lock']);
 
 export function validateTurnBrief(
   input: unknown,
-  expectedEnvelope: Pick<TurnEnvelope, 'loopId' | 'turnId' | 'inputStateVersion' | 'deadlineAt'>,
+  expectedEnvelope: Pick<TurnEnvelope, 'loopId' | 'turnId' | 'inputStateVersion' | 'deadlineAt'> & {
+    playerContext?: SemanticCompilerRequest['playerContext'];
+  },
 ): TurnBriefValidationResult {
   const parsed = TurnBriefSchema.safeParse(input);
   if (!parsed.success) {
@@ -67,7 +69,11 @@ export function validateTurnBrief(
   validateEnvelope(brief, expectedEnvelope, issues);
   validateUtteranceMode(brief, issues);
   validateActionGraph(brief, issues);
-  validateCandidateHandles(brief, issues);
+  validateCandidateHandles(
+    brief,
+    issues,
+    new Set(expectedEnvelope.playerContext?.availableAssets?.map((asset) => asset.id) ?? []),
+  );
   validateReferences(brief, issues);
 
   return issues.length > 0
@@ -317,7 +323,11 @@ function validateActionGraph(brief: TurnBrief, issues: string[]) {
   });
 }
 
-function validateCandidateHandles(brief: TurnBrief, issues: string[]) {
+function validateCandidateHandles(
+  brief: TurnBrief,
+  issues: string[],
+  availableAssetIds: Set<string>,
+) {
   const actionIds = new Set(brief.orderedActions.map((action) => action.actionId));
   const handles = new Map<string, string>();
 
@@ -338,7 +348,7 @@ function validateCandidateHandles(brief: TurnBrief, issues: string[]) {
 
   for (const action of brief.orderedActions) {
     for (const handleId of [...action.inputHandleIds, ...action.outputHandleIds]) {
-      if (!handles.has(handleId)) {
+      if (!handles.has(handleId) && !availableAssetIds.has(handleId)) {
         issues.push(`Action ${action.actionId} references an unknown candidate handle: ${handleId}.`);
       }
     }
@@ -346,7 +356,7 @@ function validateCandidateHandles(brief: TurnBrief, issues: string[]) {
 
   for (const communication of brief.communications) {
     for (const handleId of communication.attachmentHandleIds) {
-      if (!handles.has(handleId)) {
+      if (!handles.has(handleId) && !availableAssetIds.has(handleId)) {
         issues.push(`Communication ${communication.id} references an unknown candidate handle: ${handleId}.`);
       }
     }

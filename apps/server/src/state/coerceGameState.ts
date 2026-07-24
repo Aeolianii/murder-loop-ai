@@ -63,6 +63,7 @@ export function coerceGameState(rawState: unknown): GameState {
     log: Array.isArray(raw.log) ? raw.log : fallback.log,
     clues: coerceClues(raw.clues, { ...fallback, run: raw.run ?? fallback.run, minute: raw.minute ?? fallback.minute }),
     observations: Array.isArray(raw.observations) ? raw.observations : fallback.observations,
+    assets: coerceAssets(raw.assets, fallback.assets),
     killerStatus: raw.killerStatus ?? fallback.killerStatus,
     playerHolding: raw.playerHolding ?? fallback.playerHolding,
     combatTriggered: raw.combatTriggered ?? fallback.combatTriggered,
@@ -88,6 +89,61 @@ export function coerceGameState(rawState: unknown): GameState {
   }
 
   return state;
+}
+
+function coerceAssets(
+  rawAssets: unknown,
+  fallbackAssets: GameState['assets'],
+): GameState['assets'] {
+  if (!rawAssets || typeof rawAssets !== 'object' || Array.isArray(rawAssets)) {
+    return structuredClone(fallbackAssets);
+  }
+
+  const assets: GameState['assets'] = structuredClone(fallbackAssets);
+  for (const [id, value] of Object.entries(rawAssets)) {
+    if (!value || typeof value !== 'object') continue;
+    const candidate = value as Partial<GameState['assets'][string]>;
+    if (
+      candidate.id !== id
+      || !['physical', 'image', 'audio', 'document'].includes(candidate.kind ?? '')
+      || typeof candidate.label !== 'string'
+      || typeof candidate.ownerId !== 'string'
+      || typeof candidate.location !== 'string'
+    ) continue;
+    assets[id] = {
+      id,
+      kind: candidate.kind as GameState['assets'][string]['kind'],
+      label: candidate.label,
+      ownerId: candidate.ownerId,
+      location: candidate.location,
+      aliases: Array.isArray(candidate.aliases)
+        ? candidate.aliases.filter((alias): alias is string => typeof alias === 'string')
+        : [],
+      sourceEntityIds: Array.isArray(candidate.sourceEntityIds)
+        ? candidate.sourceEntityIds.filter((entityId): entityId is string => typeof entityId === 'string')
+        : [],
+      accessibleToActorIds: Array.isArray(candidate.accessibleToActorIds)
+        ? candidate.accessibleToActorIds.filter((actorId): actorId is string => typeof actorId === 'string')
+        : [candidate.ownerId],
+      createdAt: candidate.createdAt
+        && Number.isInteger(candidate.createdAt.run)
+        && Number.isInteger(candidate.createdAt.minute)
+        ? candidate.createdAt
+        : { run: fallbackAssets['asset.physical.phone'].createdAt.run, minute: 0 },
+      createdByActionId: typeof candidate.createdByActionId === 'string'
+        ? candidate.createdByActionId
+        : 'migrated',
+      createdByEventId: typeof candidate.createdByEventId === 'string'
+        ? candidate.createdByEventId
+        : 'event.migrated.asset',
+      flags: candidate.flags
+        && typeof candidate.flags === 'object'
+        && !Array.isArray(candidate.flags)
+        ? structuredClone(candidate.flags)
+        : {},
+    };
+  }
+  return assets;
 }
 
 function coerceRoom(rawRoom: unknown, fallbackRoom: GameState['room']): GameState['room'] {

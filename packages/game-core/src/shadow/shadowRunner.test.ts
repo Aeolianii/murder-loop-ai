@@ -173,6 +173,13 @@ function registrations(
     async compile(request: SemanticCompilerRequest, context?: { signal: AbortSignal }) {
       assert.equal('state' in request, false);
       assert(!JSON.stringify(request).includes('killerKnowledge'));
+      assert(
+        request.playerContext.availableAssets?.some((asset) => (
+          asset.id === 'asset.physical.phone'
+          && asset.ownerId === 'player'
+        )),
+        'Semantic Compiler must receive a read-only projection of the player assets.',
+      );
       assert(context?.signal);
       return { status: 'compiled' as const, brief: brief(turnEnvelope) };
     },

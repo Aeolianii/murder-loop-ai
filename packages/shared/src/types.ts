@@ -212,6 +212,23 @@ export interface RoomObjectState {
   state: Record<string, boolean | number | string | null>;
 }
 
+export type GameAssetKind = 'physical' | 'image' | 'audio' | 'document';
+
+export interface GameAsset {
+  id: string;
+  kind: GameAssetKind;
+  label: string;
+  ownerId: string;
+  location: string;
+  aliases: string[];
+  sourceEntityIds: string[];
+  accessibleToActorIds: string[];
+  createdAt: { run: number; minute: number };
+  createdByActionId: string;
+  createdByEventId: string;
+  flags: Record<string, boolean | number | string | null>;
+}
+
 export interface KillerKnowledge {
   knowsPackageAt503: boolean;
   knowsPlayerOpenedPackage: boolean | 'uncertain';
@@ -251,6 +268,8 @@ export interface GameState {
   clues: ClueRecord[];
   /** Confirmed player-visible observations used as the only source of phase-four clues. */
   observations: ObservationRecord[];
+  /** Loop-scoped physical and digital assets available to agents through a read-only projection. */
+  assets: Record<string, GameAsset>;
   room: Record<string, RoomObjectState>;
   killerKnowledge: KillerKnowledge;
   memory: LoopMemory;
@@ -380,6 +399,8 @@ export interface NpcReply {
   intent: string;
   riskWarning: string;
   suggestedExternalAction: string;
+  /** Asset ids explicitly acknowledged from the confirmed inbound message. */
+  observedAssetIds?: string[];
 }
 
 export interface KillerStrategy {

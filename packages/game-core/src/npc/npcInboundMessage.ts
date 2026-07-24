@@ -55,7 +55,33 @@ function isConfirmedDelivery(
   speaker: NpcReply['speaker'],
 ): boolean {
   return eventTargetsSpeaker(event, speaker)
-    && (event.eventType === 'message_delivered' || event.eventType === 'photo_sent_to_linyue');
+    && (
+      event.eventType === 'message_delivered'
+      || event.eventType === 'asset_transferred'
+      || event.eventType === 'photo_sent_to_linyue'
+    );
+}
+
+function deliveredAssets(event: NpcInboundDomainEvent): NpcInboundAttachment[] {
+  const payload = event.payload?.deliveredAssets;
+  if (!Array.isArray(payload)) return [];
+  return payload.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return [];
+    const value = candidate as Record<string, unknown>;
+    if (
+      typeof value.id !== 'string'
+      || !['image', 'audio', 'document'].includes(String(value.kind))
+      || typeof value.label !== 'string'
+      || !Array.isArray(value.sourceActionIds)
+    ) return [];
+    return [{
+      id: value.id,
+      kind: value.kind as NpcInboundAttachment['kind'],
+      label: value.label,
+      sourceActionIds: value.sourceActionIds.filter((id): id is string => typeof id === 'string'),
+      confirmedByEventTypes: [event.eventType],
+    }];
+  });
 }
 
 function mentionsPackagePhoto(text: string): boolean {
@@ -110,6 +136,11 @@ export function buildNpcInboundMessages(
     ) || plan.raw;
     const deliveryEvents = confirmedEvents.filter((event) => isConfirmedDelivery(event, speaker));
     const deliveryConfirmed = deliveryEvents.length > 0;
+    const genericAttachments = [...new Map(
+      deliveryEvents
+        .flatMap(deliveredAssets)
+        .map((attachment) => [attachment.id, attachment]),
+    ).values()];
     const photoActionIds = plan.actions
       .filter((action) => (
         action.intent === 'preserve_evidence'
@@ -132,7 +163,7 @@ export function buildNpcInboundMessages(
       && photoActionIds.length > 0
       && photoCommunicationActionIds.length > 0
       && confirmedEvents.some(confirmsPackagePhoto);
-    const attachments: NpcInboundAttachment[] = explicitlyConfirmedPhoto || inferredConfirmedPhoto
+    const legacyAttachments: NpcInboundAttachment[] = explicitlyConfirmedPhoto || inferredConfirmedPhoto
       ? [{
           id: 'package_photo',
           kind: 'image',
@@ -147,6 +178,9 @@ export function buildNpcInboundMessages(
             .map((event) => event.eventType))],
         }]
       : [];
+    const attachments = genericAttachments.length > 0
+      ? genericAttachments
+      : legacyAttachments;
 
     return {
       speaker,

@@ -122,6 +122,15 @@ assert(
   'Semantic Compiler prompt must keep message content inside the communication action.',
 );
 assert(
+  calls[0].system.includes('playerContext.availableAssets')
+  && calls[0].system.includes('communication attachmentHandleIds'),
+  'Semantic Compiler must resolve existing assets and attach them in the same compilation call.',
+);
+assert(
+  calls[0].system.includes('A photograph produces kind="image"'),
+  'Semantic Compiler must expose newly produced assets to later actions in the same turn.',
+);
+assert(
   calls[0].system.includes(
     'Physical staging around speech remains a separate ordered action.',
   ),

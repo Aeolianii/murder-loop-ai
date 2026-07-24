@@ -88,3 +88,48 @@ assert.deepEqual(
   unconfirmed.find((message) => message.speaker === 'linyue')?.attachments,
   [],
 );
+
+const genericAssetPlan: ActionPlan = {
+  id: 'generic-asset-plan',
+  raw: '把录音发给警方',
+  summary: '发送已有录音',
+  actions: [{
+    id: 'action-send-recording',
+    raw: '把录音发给警方',
+    intent: 'communicate',
+    target: 'police_dispatch',
+    communication: {
+      content: '这是刚才保存的录音',
+      attachmentIds: ['asset.audio.recording-1'],
+      channel: 'phone',
+    },
+    confidence: 1,
+    timeCost: 1,
+    noise: 0,
+    risk: 'low',
+  }],
+  confidence: 1,
+  warnings: [],
+};
+const policeAssetMessage = buildNpcInboundMessages(genericAssetPlan, [{
+  eventType: 'asset_transferred',
+  subject: 'police_dispatch',
+  facts: ['asset_transferred:asset.audio.recording-1:police_dispatch'],
+  payload: {
+    deliveredAssets: [{
+      id: 'asset.audio.recording-1',
+      kind: 'audio',
+      label: '走廊录音',
+      sourceActionIds: ['action-record-hallway'],
+    }],
+  },
+}]).find((message) => message.speaker === 'police_dispatch');
+assert.ok(policeAssetMessage);
+assert.equal(policeAssetMessage.deliveryConfirmed, true);
+assert.deepEqual(policeAssetMessage.attachments, [{
+  id: 'asset.audio.recording-1',
+  kind: 'audio',
+  label: '走廊录音',
+  sourceActionIds: ['action-record-hallway'],
+  confirmedByEventTypes: ['asset_transferred'],
+}]);

@@ -76,11 +76,24 @@ export function buildLowRiskKnowledgeClueCandidates(
       const recipientId = event.targetIds[0];
       const characterId = canonicalCharacterId(recipientId);
       if (characterId) {
-        const packagePhotoAssertion = event.assertions.find((assertion) => (
+        const receivedAssetAssertions = event.assertions.filter((assertion) => (
+          canonicalCharacterId(assertion.subject) === characterId
+          && assertion.predicate === 'asset_received'
+          && typeof assertion.value === 'string'
+        ));
+        const packagePhotoAssertion = receivedAssetAssertions.find((assertion) => (
           characterId === 'lin_yue'
-          && assertion.subject === 'lin_yue'
-          && assertion.predicate === 'package_photo_received'
-          && assertion.value === true
+          && typeof assertion.value === 'string'
+          && event.assertions.some((candidate) => (
+            candidate.subject === assertion.value
+            && candidate.predicate === 'kind'
+            && candidate.value === 'image'
+          ))
+          && event.assertions.some((candidate) => (
+            candidate.subject === assertion.value
+            && candidate.predicate === 'source_entity'
+            && candidate.value === 'package'
+          ))
         ));
         candidates.knowledgeUpdates.push({
           characterId,
@@ -92,6 +105,16 @@ export function buildLowRiskKnowledgeClueCandidates(
             canonicalFactIdForAssertion(event.id, assertion.id)
           )),
         });
+        for (const assetAssertion of receivedAssetAssertions) {
+          candidates.knowledgeUpdates.push({
+            characterId,
+            factId: `asset:${assetAssertion.value}`,
+            confidence: 1,
+            source: 'message',
+            sourceEventId: event.id,
+            basedOnFactIds: [canonicalFactIdForAssertion(event.id, assetAssertion.id)],
+          });
+        }
         if (packagePhotoAssertion) {
           const packagePhotoFactId = canonicalFactIdForAssertion(event.id, packagePhotoAssertion.id);
           const observationId = `observation.${event.id}.package-photo-delivery`;
@@ -284,7 +307,10 @@ const PHASE_FOUR_CLUE_DEFINITIONS: Record<string, {
     detail: '包裹照片已通过手机发送给林越，他成为这份证据的外部知情人。',
     weight: 18,
     isPersistent: true,
-    allowedAssertions: [{ subject: 'lin_yue', predicate: 'package_photo_received', value: true }],
+    allowedAssertions: [
+      { subject: 'lin_yue', predicate: 'package_photo_received', value: true },
+      { subject: 'linyue', predicate: 'asset_received', value: '*' },
+    ],
   },
 };
 
@@ -440,7 +466,9 @@ export function supportedSpecialistClueDefinitions(): Array<{
 }> {
   return Object.entries(PHASE_FOUR_CLUE_DEFINITIONS).map(([id, definition]) => ({
     id,
-    allowedAssertions: definition.allowedAssertions.map((assertion) => ({ ...assertion })),
+    allowedAssertions: definition.allowedAssertions
+      .filter((assertion) => assertion.value !== '*')
+      .map((assertion) => ({ ...assertion })),
   }));
 }
 
@@ -630,7 +658,7 @@ function validateClues(
       return !fact || !definition.allowedAssertions.some((allowed) => (
         allowed.subject === fact.subject
         && allowed.predicate === fact.predicate
-        && allowed.value === fact.value
+        && (allowed.value === '*' || allowed.value === fact.value)
       ));
     })) {
       return 'clue_definition_unsupported';

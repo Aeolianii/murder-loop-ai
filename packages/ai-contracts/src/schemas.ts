@@ -153,6 +153,20 @@ export const GameStateContractSchema = z.object({
   combatTriggered: z.boolean(),
   clues: z.array(ClueRecordSchema),
   observations: z.array(ObservationRecordSchema),
+  assets: z.record(z.string(), z.object({
+    id: z.string(),
+    kind: z.enum(['physical', 'image', 'audio', 'document']),
+    label: z.string(),
+    ownerId: z.string(),
+    location: z.string(),
+    aliases: z.array(z.string()),
+    sourceEntityIds: z.array(z.string()),
+    accessibleToActorIds: z.array(z.string()),
+    createdAt: z.object({ run: z.number(), minute: z.number() }),
+    createdByActionId: z.string(),
+    createdByEventId: z.string(),
+    flags: z.record(z.string(), z.union([z.boolean(), z.number(), z.string(), z.null()])),
+  })),
   room: z.record(z.string(), z.unknown()),
   killerKnowledge: z.record(z.string(), z.unknown()),
   memory: z.unknown(),
@@ -292,6 +306,7 @@ export const NpcReplySchema = z.object({
   intent: z.string(),
   riskWarning: z.string(),
   suggestedExternalAction: z.string(),
+  observedAssetIds: z.array(z.string()).optional(),
 });
 
 export const NarrationSchema = z.object({

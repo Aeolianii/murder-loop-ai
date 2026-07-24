@@ -1,6 +1,7 @@
 // 现有导出（保持不变）
 export * from './state/createInitialState';
 export * from './actions/fallbackParser';
+export * from './assets/gameAssets';
 export * from './rules/applyPlayerActions';
 export * from './killer/knowledge';
 export * from './killer/fallbackStrategy';
