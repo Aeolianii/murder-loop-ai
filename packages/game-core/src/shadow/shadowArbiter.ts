@@ -12,6 +12,7 @@ import {
   type TurnEnvelope,
 } from '@murder-loop-ai/ai-contracts';
 import { evaluateTurnWorkFreshness, type TurnDiscardReason, type TurnFreshnessSnapshot } from '../commit/atomicTurnCommit';
+import { evaluateOrderedActionCoverage } from './actionCoverage';
 
 export type ShadowFactAuthorizationMode = 'strict' | 'advisory_for_reversible_player';
 
@@ -509,10 +510,11 @@ function validateProposal(
   ))) {
     reasons.add('event_action_reference_invalid');
   }
-  const resolvedActionIds = new Set(proposal.proposedEvents.flatMap((event) => (
-    event.status === 'attempted' ? [] : event.sourceActionIds
-  )));
-  if (requiredActionIds.some((id) => !resolvedActionIds.has(id))) {
+  const actionCoverage = evaluateOrderedActionCoverage(
+    requiredActionIds,
+    proposal.proposedEvents,
+  );
+  if (actionCoverage.unresolvedActionIds.length > 0) {
     reasons.add('turn_action_unresolved');
   }
 

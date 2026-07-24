@@ -27,6 +27,7 @@ import {
 import type { DomainEvent } from '../domain/domainEvents';
 import { assertionIds } from '../facts/eventAssertions';
 import { reconcileGamePhase } from '../machines/gamePhaseMachine';
+import { evaluateOrderedActionCoverage } from '../shadow/actionCoverage';
 import {
   buildLowRiskKnowledgeClueCandidates,
   type KnowledgeClueProjectionCandidates,
@@ -121,10 +122,14 @@ export function prepareLowRiskTurn(input: {
   allowHighRiskContinuation?: boolean;
 }): LowRiskTakeoverPreparation {
   const brief = bindTurnAssets(input.state, input.brief);
+  const aiPlayerOutcomes = completeTerminallyInterruptedOutcomes(
+    brief,
+    input.aiPlayerOutcomes ?? [],
+  );
   const eligibility = validateTurnEligibility(
     input.state,
     brief,
-    input.aiPlayerOutcomes ?? [],
+    aiPlayerOutcomes,
   );
   if (eligibility) return { status: 'not_eligible', reason: eligibility };
   if (
@@ -158,7 +163,8 @@ export function prepareLowRiskTurn(input: {
       eventId,
       causalParentIds,
       envelope: brief,
-      aiOutcome: aiOutcomeForAction(input.aiPlayerOutcomes ?? [], action),
+      aiOutcome: aiOutcomeForAction(aiPlayerOutcomes, action),
+      terminalInterruption: terminalInterruptionForAction(aiPlayerOutcomes, action),
       attachmentAssetIds: [...(communication?.attachmentHandleIds ?? [])],
     });
     actionEvents.push(applied);
@@ -248,6 +254,40 @@ export function prepareLowRiskTurn(input: {
     })),
     knowledgeClueCandidates,
   };
+}
+
+function completeTerminallyInterruptedOutcomes(
+  brief: TurnBrief,
+  outcomes: ProposedEvent[],
+): ProposedEvent[] {
+  const requiredActionIds = brief.orderedActions.map((action) => action.actionId);
+  const coverage = evaluateOrderedActionCoverage(requiredActionIds, outcomes);
+  if (coverage.interruptedActionIds.size === 0) return outcomes;
+
+  const actionById = new Map(
+    brief.orderedActions.map((action) => [action.actionId, action]),
+  );
+  const interrupted = [...coverage.interruptedActionIds].flatMap((actionId) => {
+    const action = actionById.get(actionId);
+    const terminalEvent = coverage.terminalEventByInterruptedActionId.get(actionId);
+    if (!action || !terminalEvent) return [];
+    return [{
+      id: `${terminalEvent.id}.interrupted.${actionId}`,
+      kind: 'action' as const,
+      sourceActionIds: [actionId],
+      actorId: action.actorId,
+      operation: action.operation,
+      targetIds: [...action.targetIds],
+      status: 'blocked' as const,
+      summary: '前序行动已经终止本轮，因此后续行动没有执行。',
+      assertions: [],
+      visibility: ['player'],
+      riskClass: terminalEvent.riskClass,
+      evidenceRefs: [...terminalEvent.evidenceRefs],
+      causalParentIds: [terminalEvent.id],
+    }];
+  });
+  return [...outcomes, ...interrupted];
 }
 
 export function deterministicTurnBriefAuthorityId(turnId: string): string {
@@ -461,10 +501,35 @@ function applyLowRiskAction(input: {
   causalParentIds: string[];
   envelope: TurnEnvelope;
   aiOutcome?: ProposedEvent;
+  terminalInterruption?: ProposedEvent;
   attachmentAssetIds: string[];
 }): AppliedLowRiskAction {
   const { state, action, operation } = input;
   const targetIds = operation === 'inspect' ? effectiveInspectTargetIds(action) : action.targetIds;
+  if (input.terminalInterruption) {
+    const interruptedTargetIds = targetIds.length > 0 ? targetIds : ['player'];
+    return makeAppliedEvent({
+      eventId: input.eventId,
+      eventType: 'player_action_interrupted',
+      kind: 'action',
+      sourceActionIds: [action.actionId],
+      actorId: 'player',
+      operation,
+      targetIds: interruptedTargetIds,
+      status: 'blocked',
+      subject: canonicalActionTarget(interruptedTargetIds),
+      summary: input.terminalInterruption.summary,
+      facts: [`action_interrupted:${action.actionId}`],
+      causalParentIds: [
+        ...input.causalParentIds,
+        ...input.terminalInterruption.causalParentIds,
+      ],
+      envelope: input.envelope,
+      createdAt: { run: state.run, minute: state.minute },
+      ruleKind: 'action',
+      evidenceRefs: [...input.terminalInterruption.evidenceRefs],
+    });
+  }
   let eventType = 'low_risk_action_confirmed';
   let subject = canonicalActionTarget(targetIds);
   let summary = '行动已经确认。';
@@ -831,9 +896,28 @@ function aiOutcomeForAction(
     && outcome.operation === 'act'
     && outcome.status !== 'attempted'
     && outcome.sourceActionIds.includes(action.actionId)
-    && action.targetIds.every((targetId) => outcome.targetIds.includes(targetId))
+    && (
+      action.targetIds.length === 0
+      || outcome.targetIds.some((targetId) => action.targetIds.includes(targetId))
+    )
     && (outcome.visibility.includes('player') || outcome.visibility.includes('public'))
     && isChineseDisplayText(outcome.summary)
+  ));
+}
+
+function terminalInterruptionForAction(
+  outcomes: ProposedEvent[],
+  action: TurnBrief['orderedActions'][number],
+): ProposedEvent | undefined {
+  const eventById = new Map(outcomes.map((outcome) => [outcome.id, outcome]));
+  return outcomes.find((outcome) => (
+    outcome.actorId === 'player'
+    && outcome.status === 'blocked'
+    && outcome.sourceActionIds.includes(action.actionId)
+    && outcome.causalParentIds.some((parentId) => {
+      const parent = eventById.get(parentId);
+      return parent?.kind === 'ending' && parent.status === 'completed';
+    })
   ));
 }
 

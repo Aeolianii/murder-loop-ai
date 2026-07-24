@@ -376,6 +376,63 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
 }
 
 {
+  const terminallyInterruptedProposal = proposal({
+    id: 'proposal.main.player.terminal-interruption',
+    sourceAgent: 'main-world-model',
+    domain: 'player',
+    events: [
+      proposedEvent(
+        'event.shadow.terminal-action',
+        'act',
+        'reversible',
+        [],
+        [],
+        'player',
+        ['action-1'],
+      ),
+      proposedEvent(
+        'event.shadow.terminal-ending',
+        'resolve_ending',
+        'reversible',
+        [],
+        ['event.shadow.terminal-action'],
+        'player',
+        ['action-1'],
+      ),
+    ],
+  });
+  terminallyInterruptedProposal.turnBriefActionIds = ['action-1', 'action-2'];
+
+  const terminalReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [terminallyInterruptedProposal],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    requiredActionIdsByDomain: {
+      player: ['action-1', 'action-2'],
+    },
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: [],
+      },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+
+  assert.deepEqual(
+    terminalReport.transition.fallbackDomains,
+    [],
+    'a confirmed ending must causally stop later ordered actions instead of invalidating the whole proposal',
+  );
+  assert(terminalReport.selectedProposalIds.includes(terminallyInterruptedProposal.id));
+}
+
+{
   const factGroundedRecommendation = specialist(proposal({
     id: 'proposal.specialist.recommendation.fact-grounded',
     sourceAgent: 'recommendation-specialist',

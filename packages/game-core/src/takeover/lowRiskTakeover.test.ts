@@ -513,6 +513,26 @@ assert(aiApprovedOpenAction.playerResult.domainEvents.some((event) => (
   && event.subject === 'phone'
 )));
 
+const multiTargetAction = action(
+  'multi-target-open-action',
+  'act',
+  ['phone', 'player'],
+);
+const partiallyRepeatedTargets = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: brief([multiTargetAction]),
+  aiPlayerOutcomes: [aiActionOutcome(
+    multiTargetAction.actionId,
+    'completed',
+    '你完成了这个行动，主要变化发生在手机上。',
+  )],
+});
+assert.equal(
+  partiallyRepeatedTargets.status,
+  'prepared',
+  'an event bound to the exact action ID may omit contextual targets when at least one target still matches',
+);
+
 const aiRejectedOpenAction = prepareLowRiskTurn({
   state: createInitialGameState(),
   brief: brief([browseAction]),
@@ -586,6 +606,63 @@ const missingAiOpenAction = prepareLowRiskTurn({
 assert.equal(missingAiOpenAction.status, 'not_eligible');
 if (missingAiOpenAction.status === 'not_eligible') {
   assert.equal(missingAiOpenAction.reason, 'ai_outcome_required');
+}
+
+const terminalFirstAction = action('terminal-first', 'act', ['phone']);
+const interruptedSecondAction = action('interrupted-second', 'inspect', ['package']);
+const terminalFirstOutcome = aiActionOutcome(
+  terminalFirstAction.actionId,
+  'completed',
+  '第一个行动已经完成，并触发了本轮终止结果。',
+  'irreversible',
+);
+const terminalEndingOutcome: ProposedEvent = {
+  id: 'event.ai-action.terminal-ending',
+  kind: 'ending',
+  sourceActionIds: [terminalFirstAction.actionId],
+  actorId: 'player',
+  operation: 'resolve_ending',
+  targetIds: ['ending'],
+  status: 'completed',
+  summary: '本轮已经结束，后续行动不再执行。',
+  assertions: [{
+    id: 'assertion.ai-action.terminal-ending',
+    subject: 'game',
+    predicate: 'ending',
+    value: 'terminal',
+    visibleTo: ['player'],
+  }],
+  visibility: ['player'],
+  riskClass: 'irreversible',
+  evidenceRefs: [terminalFirstOutcome.id],
+  causalParentIds: [terminalFirstOutcome.id],
+};
+const terminallyInterruptedTurn = prepareLowRiskTurn({
+  state: createInitialGameState(),
+  brief: brief([terminalFirstAction, interruptedSecondAction]),
+  aiPlayerOutcomes: [terminalFirstOutcome, terminalEndingOutcome],
+  allowHighRiskContinuation: true,
+});
+assert.equal(
+  terminallyInterruptedTurn.status,
+  'prepared',
+  `later actions must become generically blocked when an earlier confirmed event ends the turn: ${
+    terminallyInterruptedTurn.status === 'not_eligible'
+      ? terminallyInterruptedTurn.reason
+      : 'prepared'
+  }`,
+);
+if (terminallyInterruptedTurn.status === 'prepared') {
+  const interruptedEvent = terminallyInterruptedTurn.eventCandidates
+    .map(({ event }) => event)
+    .find((event) => event.sourceActionIds.includes(interruptedSecondAction.actionId));
+  assert.equal(interruptedEvent?.status, 'blocked');
+  assert.match(interruptedEvent?.summary ?? '', /没有执行/);
+  assert.equal(
+    terminallyInterruptedTurn.playerResult.state.room.package.inspected,
+    false,
+    'terminal interruption must stop later deterministic operations as well as open-ended acts',
+  );
 }
 
 const depletedBatteryState = structuredClone(state);

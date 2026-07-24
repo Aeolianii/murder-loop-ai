@@ -434,7 +434,11 @@ const missingOpenAction = await missingOpenActionService.prepare(
 assert.equal(missingOpenAction.status, 'bypassed');
 if (missingOpenAction.status === 'bypassed') {
   assert.equal(missingOpenAction.reason, 'ai_outcome_required');
-  assert.equal(missingOpenAction.fallbackMode, 'ai_unavailable');
+  assert.equal(
+    missingOpenAction.fallbackMode,
+    'formal_rejection',
+    'an unusable AI outcome is a visible adjudication failure, not an offline-service fallback',
+  );
 }
 
 function clueProposal(

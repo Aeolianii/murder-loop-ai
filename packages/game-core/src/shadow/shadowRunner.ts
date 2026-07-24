@@ -691,11 +691,11 @@ async function runCandidateCall(input: {
   const rawItems = extractCandidateArray(outcome.value, input.specialist ? 'candidates' : 'proposals');
   const valid: Array<Proposal | SpecialistCandidate> = [];
   const errors: string[] = [];
-  const schema = input.specialist ? SpecialistCandidateSchema : ProposalSchema;
+  let recoveredCount = 0;
   for (const [index, item] of rawItems.entries()) {
-    const parsed = schema.safeParse(item);
-    if (!parsed.success) {
-      errors.push(`item ${index}: ${parsed.error.issues.map((issue) => issue.message).join('; ')}`);
+    const parsed = recoverCandidateContract(item, input.specialist);
+    if (!parsed.data) {
+      errors.push(`item ${index}: ${parsed.issues.join('; ')}`);
       continue;
     }
     if (parsed.data.sourceAgent !== input.sourceAgent) {
@@ -706,12 +706,16 @@ async function runCandidateCall(input: {
       errors.push(`item ${index}: specialist domain mismatch`);
       continue;
     }
+    if (parsed.repairs.length > 0) {
+      recoveredCount += 1;
+      errors.push(`item ${index}: contract recovery: ${parsed.repairs.join('; ')}`);
+    }
     valid.push(completeMissingDisplayClaimRefs(parsed.data));
   }
   if (rawItems.length === 0) errors.push(`response did not contain a non-empty ${input.specialist ? 'candidates' : 'proposals'} array`);
   const status: ShadowCallStatus = rawItems.length === 0
     ? 'schema_invalid'
-    : valid.length === rawItems.length
+    : valid.length === rawItems.length && recoveredCount === 0
       ? 'completed'
       : valid.length > 0
         ? 'partial'
@@ -730,6 +734,159 @@ async function runCandidateCall(input: {
     proposals: input.specialist ? [] : valid as Proposal[],
     candidates: input.specialist ? valid as SpecialistCandidate[] : [],
   };
+}
+
+const RECOVERABLE_ENRICHMENT_FIELDS = new Set([
+  'observations',
+  'clueCandidates',
+  'recommendations',
+  'displayFragments',
+]);
+
+function recoverCandidateContract(
+  item: unknown,
+  specialist: boolean,
+): {
+  data?: Proposal | SpecialistCandidate;
+  repairs: string[];
+  issues: string[];
+} {
+  const schema = specialist ? SpecialistCandidateSchema : ProposalSchema;
+  if (!item || typeof item !== 'object') {
+    return { repairs: [], issues: ['candidate must be an object'] };
+  }
+  const candidate = structuredClone(item) as Record<string, unknown>;
+  const repairs: string[] = [];
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const parsed = schema.safeParse(candidate);
+    if (parsed.success) {
+      const normalized = enforceDomainPayloadOwnership(parsed.data);
+      return {
+        data: normalized.data,
+        repairs: [...repairs, ...normalized.repairs],
+        issues: [],
+      };
+    }
+
+    const changed = repairNonAuthoritativeContractFields(
+      candidate,
+      parsed.error.issues,
+      repairs,
+    );
+    if (!changed) {
+      return {
+        repairs,
+        issues: parsed.error.issues.map(formatContractIssue),
+      };
+    }
+  }
+
+  const final = schema.safeParse(candidate);
+  if (final.success) {
+    const normalized = enforceDomainPayloadOwnership(final.data);
+    return {
+      data: normalized.data,
+      repairs: [...repairs, ...normalized.repairs],
+      issues: [],
+    };
+  }
+  return {
+    repairs,
+    issues: final.error.issues.map(formatContractIssue),
+  };
+}
+
+function enforceDomainPayloadOwnership<T extends Proposal | SpecialistCandidate>(
+  candidate: T,
+): { data: T; repairs: string[] } {
+  const repairs: string[] = [];
+  let data = candidate;
+  if (candidate.domain !== 'recommendation' && candidate.recommendations.length > 0) {
+    data = { ...data, recommendations: [] };
+    repairs.push('removed recommendations outside recommendation domain');
+  }
+  if (candidate.domain !== 'clue' && candidate.clueCandidates.length > 0) {
+    data = { ...data, clueCandidates: [] };
+    repairs.push('removed clue candidates outside clue domain');
+  }
+  return { data, repairs };
+}
+
+function repairNonAuthoritativeContractFields(
+  candidate: Record<string, unknown>,
+  issues: Array<{
+    code: string;
+    path: Array<string | number>;
+    message: string;
+    keys?: string[];
+  }>,
+  repairs: string[],
+): boolean {
+  let changed = false;
+  const enrichmentIndexes = new Map<string, Set<number>>();
+
+  for (const issue of issues) {
+    if (issue.code === 'unrecognized_keys' && issue.keys?.length) {
+      const container = valueAtPath(candidate, issue.path);
+      if (container && typeof container === 'object' && !Array.isArray(container)) {
+        for (const key of issue.keys) {
+          if (key in container) {
+            delete (container as Record<string, unknown>)[key];
+            repairs.push(`removed unknown field ${[...issue.path, key].join('.')}`);
+            changed = true;
+          }
+        }
+      }
+      continue;
+    }
+
+    const [field, index] = issue.path;
+    if (typeof field !== 'string' || !RECOVERABLE_ENRICHMENT_FIELDS.has(field)) {
+      continue;
+    }
+    if (typeof index === 'number') {
+      const indexes = enrichmentIndexes.get(field) ?? new Set<number>();
+      indexes.add(index);
+      enrichmentIndexes.set(field, indexes);
+    } else if (!Array.isArray(candidate[field])) {
+      candidate[field] = [];
+      repairs.push(`reset invalid enrichment collection ${field}`);
+      changed = true;
+    }
+  }
+
+  for (const [field, indexes] of enrichmentIndexes) {
+    const values = candidate[field];
+    if (!Array.isArray(values)) continue;
+    for (const index of [...indexes].sort((left, right) => right - left)) {
+      if (index < 0 || index >= values.length) continue;
+      values.splice(index, 1);
+      repairs.push(`removed invalid enrichment item ${field}.${index}`);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function valueAtPath(
+  root: Record<string, unknown>,
+  path: Array<string | number>,
+): unknown {
+  let current: unknown = root;
+  for (const segment of path) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = (current as Record<string | number, unknown>)[segment];
+  }
+  return current;
+}
+
+function formatContractIssue(issue: {
+  path: Array<string | number>;
+  message: string;
+}): string {
+  const path = issue.path.length > 0 ? `${issue.path.join('.')}: ` : '';
+  return `${path}${issue.message}`;
 }
 
 function extractCandidateArray(value: unknown, key: 'proposals' | 'candidates'): unknown[] {

@@ -157,9 +157,7 @@ export function createLowRiskTakeoverService(
         return {
           status: 'bypassed',
           reason: preparation.reason,
-          fallbackMode: preparation.reason === 'ai_outcome_required'
-            ? 'ai_unavailable'
-            : 'formal_rejection',
+          fallbackMode: 'formal_rejection',
         };
       }
 

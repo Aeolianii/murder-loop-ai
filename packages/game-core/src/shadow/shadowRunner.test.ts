@@ -486,6 +486,72 @@ function registrations(
 
 {
   const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
+  const specialists = registrations(async (id, domain) => {
+    const candidate = specialistCandidate(turnEnvelope, id, domain) as SpecialistCandidate & {
+      scope?: string;
+    };
+    if (id === 'player-specialist') {
+      candidate.scope = 'model-only-extra-field';
+      candidate.observations = [{
+        id: 'observation.invalid-enrichment',
+        subject: 'room_503',
+        predicate: 'looked_at',
+        value: true,
+        scope: 'visible',
+        basedOnEffectIds: [],
+        basedOnEventIds: [],
+        visibleAssertionIds: [],
+      }];
+      candidate.recommendations = [{
+        id: 'recommendation.out-of-domain',
+        label: '无权威的建议',
+        rationale: '这个字段不属于玩家结果域。',
+        basedOnFactIds: ['fact.not-authorized'],
+        basedOnEventIds: [],
+      }];
+    }
+    return [candidate];
+  });
+  const wave = await runShadowCandidateWave({
+    state: createInitialGameState(),
+    rawInput: '等待',
+    envelope: turnEnvelope,
+    adapters: {
+      semanticCompiler: {
+        async compile() {
+          return { status: 'compiled' as const, brief: brief(turnEnvelope) };
+        },
+      },
+      mainWorldModel: async () => ({}),
+      specialists,
+    },
+    npcIds: ['lin_yue', 'police_dispatch'],
+    canonicalConstraints: [],
+    compilerTimeoutMs: 1_000,
+  });
+
+  const playerRecord = wave.callRecords.find(
+    (record) => record.sourceAgent === 'player-specialist',
+  );
+  assert.equal(
+    playerRecord?.status,
+    'partial',
+    'safe contract recovery must remain visible in telemetry',
+  );
+  assert.equal(playerRecord?.schemaValidCount, 1);
+  assert(
+    wave.specialistCandidates.some((candidate) => (
+      candidate.sourceAgent === 'player-specialist'
+      && !('scope' in candidate)
+      && candidate.observations.length === 0
+      && candidate.recommendations.length === 0
+    )),
+    'invalid non-authoritative enrichment must be removed without discarding the event graph',
+  );
+}
+
+{
+  const turnEnvelope = envelope(new Date(Date.now() + 2_000).toISOString());
   const fallbackRawInput = 'fallback-secret-raw-input';
   let mainProjection: unknown;
   const specialistProjections: Array<{ id: string; projection: unknown }> = [];
