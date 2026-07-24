@@ -13,6 +13,7 @@ import {
   runShadowArbiter,
   simulateShadowCommit,
 } from './shadowArbiter';
+import { evaluateOrderedActionCoverage } from './actionCoverage';
 
 const envelope: TurnEnvelope = {
   loopId: 'loop-1',
@@ -105,6 +106,89 @@ function specialist(base: Proposal, specialistId: string): SpecialistCandidate {
     candidateType: 'specialist',
     specialistId,
   };
+}
+
+{
+  const statusEvent = (status: string): ProposedEvent => {
+    const event = proposedEvent(
+      `event.shadow.status.${status}`,
+      'change_status',
+      'reversible',
+      [],
+      [],
+      'player',
+      ['action-1'],
+    );
+    event.kind = 'state_transition';
+    event.assertions = [{
+      id: `assertion.shadow.status.${status}`,
+      subject: 'player',
+      predicate: 'status',
+      value: status,
+      visibleTo: ['player'],
+    }];
+    return event;
+  };
+
+  for (const status of ['dead', 'incapacitated', 'unconscious', 'arrested', 'fled']) {
+    const coverage = evaluateOrderedActionCoverage(
+      ['action-1', 'action-2'],
+      [statusEvent(status)],
+    );
+    assert.deepEqual(
+      coverage.unresolvedActionIds,
+      [],
+      `${status} must terminate later ordered actions`,
+    );
+    assert(coverage.interruptedActionIds.has('action-2'));
+  }
+
+  const incapable = statusEvent('injured');
+  incapable.assertions = [{
+    id: 'assertion.shadow.can-act.false',
+    subject: 'player',
+    predicate: 'can_act',
+    value: false,
+    visibleTo: ['player'],
+  }];
+  assert.deepEqual(
+    evaluateOrderedActionCoverage(
+      ['action-1', 'action-2'],
+      [incapable],
+    ).unresolvedActionIds,
+    [],
+  );
+
+  assert.deepEqual(
+    evaluateOrderedActionCoverage(
+      ['action-1', 'action-2'],
+      [statusEvent('injured')],
+    ).unresolvedActionIds,
+    ['action-2'],
+    'injury alone must not imply loss of action capability',
+  );
+
+  const explicitlyBlocked = proposedEvent(
+    'event.shadow.action-2-blocked',
+    'act',
+    'reversible',
+    [],
+    [],
+    'player',
+    ['action-2'],
+  );
+  explicitlyBlocked.status = 'blocked';
+  assert.deepEqual(
+    evaluateOrderedActionCoverage(
+      ['action-1', 'action-2'],
+      [
+        proposedEvent('event.shadow.action-1-completed', 'act'),
+        explicitlyBlocked,
+      ],
+    ).unresolvedActionIds,
+    [],
+    'an explicit blocked result is a valid resolution, not an unresolved action',
+  );
 }
 
 const mainPlayer = proposal({
@@ -430,6 +514,72 @@ assert.equal(report.transition.acceptedEvents.some((event) => event.id === 'even
     'a confirmed ending must causally stop later ordered actions instead of invalidating the whole proposal',
   );
   assert(terminalReport.selectedProposalIds.includes(terminallyInterruptedProposal.id));
+}
+
+{
+  const incapacitatingEvent = proposedEvent(
+    'event.shadow.player-incapacitated',
+    'change_status',
+    'reversible',
+    [],
+    ['event.shadow.incapacitating-action'],
+    'player',
+    ['action-1'],
+  );
+  incapacitatingEvent.kind = 'state_transition';
+  incapacitatingEvent.assertions = [{
+    id: 'assertion.shadow.player-incapacitated',
+    subject: 'player',
+    predicate: 'status',
+    value: 'incapacitated',
+    visibleTo: ['player'],
+  }];
+  const incapacitatedProposal = proposal({
+    id: 'proposal.main.player.incapacitated-interruption',
+    sourceAgent: 'main-world-model',
+    domain: 'player',
+    events: [
+      proposedEvent(
+        'event.shadow.incapacitating-action',
+        'act',
+        'reversible',
+        [],
+        [],
+        'player',
+        ['action-1'],
+      ),
+      incapacitatingEvent,
+    ],
+  });
+  incapacitatedProposal.turnBriefActionIds = ['action-1', 'action-2'];
+
+  const incapacitatedReport = runShadowArbiter({
+    envelope,
+    compilerVersion: 'semantic-compiler-v1',
+    schemaVersion: 'world-model-v1',
+    mainProposals: [incapacitatedProposal],
+    specialistCandidates: [],
+    requiredDomains: ['player'],
+    requiredActionIdsByDomain: {
+      player: ['action-1', 'action-2'],
+    },
+    sourcePolicies: {
+      'main-world-model': {
+        allowedDomains: ['player'],
+        authorizedFactIds: [],
+      },
+    },
+    availableEvidenceRefs: [],
+    availableObservationIds: [],
+    visibleConfirmedEventIds: [],
+  });
+
+  assert.deepEqual(
+    incapacitatedReport.transition.fallbackDomains,
+    [],
+    'loss of action capability must resolve later ordered actions as causally interrupted',
+  );
+  assert(incapacitatedReport.selectedProposalIds.includes(incapacitatedProposal.id));
 }
 
 {

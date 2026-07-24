@@ -616,20 +616,20 @@ const terminalFirstOutcome = aiActionOutcome(
   '第一个行动已经完成，并触发了本轮终止结果。',
   'irreversible',
 );
-const terminalEndingOutcome: ProposedEvent = {
-  id: 'event.ai-action.terminal-ending',
-  kind: 'ending',
+const terminalStateOutcome: ProposedEvent = {
+  id: 'event.ai-action.terminal-incapacitated',
+  kind: 'state_transition',
   sourceActionIds: [terminalFirstAction.actionId],
   actorId: 'player',
-  operation: 'resolve_ending',
-  targetIds: ['ending'],
+  operation: 'change_status',
+  targetIds: ['player'],
   status: 'completed',
-  summary: '本轮已经结束，后续行动不再执行。',
+  summary: '你已经失去行动能力，后续行动不再执行。',
   assertions: [{
-    id: 'assertion.ai-action.terminal-ending',
-    subject: 'game',
-    predicate: 'ending',
-    value: 'terminal',
+    id: 'assertion.ai-action.terminal-incapacitated',
+    subject: 'player',
+    predicate: 'status',
+    value: 'incapacitated',
     visibleTo: ['player'],
   }],
   visibility: ['player'],
@@ -640,7 +640,7 @@ const terminalEndingOutcome: ProposedEvent = {
 const terminallyInterruptedTurn = prepareLowRiskTurn({
   state: createInitialGameState(),
   brief: brief([terminalFirstAction, interruptedSecondAction]),
-  aiPlayerOutcomes: [terminalFirstOutcome, terminalEndingOutcome],
+  aiPlayerOutcomes: [terminalFirstOutcome, terminalStateOutcome],
   allowHighRiskContinuation: true,
 });
 assert.equal(

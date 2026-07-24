@@ -27,7 +27,10 @@ import {
 import type { DomainEvent } from '../domain/domainEvents';
 import { assertionIds } from '../facts/eventAssertions';
 import { reconcileGamePhase } from '../machines/gamePhaseMachine';
-import { evaluateOrderedActionCoverage } from '../shadow/actionCoverage';
+import {
+  evaluateOrderedActionCoverage,
+  isActionTerminatingEvent,
+} from '../shadow/actionCoverage';
 import {
   buildLowRiskKnowledgeClueCandidates,
   type KnowledgeClueProjectionCandidates,
@@ -916,7 +919,7 @@ function terminalInterruptionForAction(
     && outcome.sourceActionIds.includes(action.actionId)
     && outcome.causalParentIds.some((parentId) => {
       const parent = eventById.get(parentId);
-      return parent?.kind === 'ending' && parent.status === 'completed';
+      return parent ? isActionTerminatingEvent(parent) : false;
     })
   ));
 }

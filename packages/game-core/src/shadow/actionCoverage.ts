@@ -1,5 +1,19 @@
 import type { ProposedEvent } from '@murder-loop-ai/ai-contracts';
 
+const NON_ACTIONABLE_CHARACTER_STATUSES = new Set([
+  'dead',
+  'incapacitated',
+  'unconscious',
+  'arrested',
+  'fled',
+]);
+
+const ACTION_CAPABILITY_PREDICATES = new Set([
+  'can_act',
+  'action_capable',
+  'action_capability',
+]);
+
 export interface OrderedActionCoverage {
   resolvedActionIds: Set<string>;
   interruptedActionIds: Set<string>;
@@ -8,9 +22,9 @@ export interface OrderedActionCoverage {
 }
 
 /**
- * Evaluates action coverage from the contract itself. A completed ending event
- * terminates every later ordered action, regardless of the story-specific
- * action or ending involved.
+ * Evaluates action coverage from the contract itself. A completed scene ending
+ * or a structured loss of action capability terminates every later ordered
+ * action, regardless of the story-specific event involved.
  */
 export function evaluateOrderedActionCoverage(
   requiredActionIds: string[],
@@ -26,7 +40,7 @@ export function evaluateOrderedActionCoverage(
   const terminalEventByInterruptedActionId = new Map<string, ProposedEvent>();
 
   const terminalBoundaries = events
-    .filter((event) => event.kind === 'ending' && event.status === 'completed')
+    .filter(isActionTerminatingEvent)
     .flatMap((event) => {
       const sourceIndexes = event.sourceActionIds
         .map((actionId) => requiredIndex.get(actionId))
@@ -53,4 +67,24 @@ export function evaluateOrderedActionCoverage(
     )),
     terminalEventByInterruptedActionId,
   };
+}
+
+export function isActionTerminatingEvent(event: ProposedEvent): boolean {
+  if (event.status !== 'completed') return false;
+  if (event.kind === 'ending') return true;
+
+  return event.assertions.some((assertion) => {
+    const concernsActor = assertion.subject === event.actorId
+      || event.targetIds.includes(assertion.subject);
+    if (!concernsActor) return false;
+    if (
+      assertion.predicate === 'status'
+      && typeof assertion.value === 'string'
+      && NON_ACTIONABLE_CHARACTER_STATUSES.has(assertion.value)
+    ) {
+      return true;
+    }
+    return ACTION_CAPABILITY_PREDICATES.has(assertion.predicate)
+      && assertion.value === false;
+  });
 }
