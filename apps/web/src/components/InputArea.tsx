@@ -102,7 +102,7 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
                       handleSubmit(e);
                     }
                   }}
-                  className="max-h-24 flex-1 resize-none overflow-y-auto border-none bg-transparent py-2 font-serif text-xl leading-[1.35] tracking-wide text-[#e2e2e2] outline-none transition-all duration-500 placeholder:font-serif placeholder:text-zinc-700/60 md:max-h-28 md:py-3 md:text-3xl"
+                  className="max-h-24 flex-1 resize-none overflow-y-auto border-none bg-transparent py-2 font-serif text-xl leading-[1.35] tracking-wide text-[#e2e2e2] outline-none transition-all duration-500 placeholder:font-serif placeholder:text-zinc-500/90 md:max-h-28 md:py-3 md:text-3xl"
                   style={{ minHeight: '44px' }}
                 />
                 
@@ -115,7 +115,7 @@ export function InputArea({ onActionSubmit, onConfirmAction, onCancelAction, isP
                     }}
                     onClick={(event) => event.preventDefault()}
                     disabled={!input.trim() || isParsing}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-800/50 text-zinc-500 transition-all duration-500 hover:border-zinc-600 hover:bg-zinc-800/30 hover:text-zinc-200 disabled:opacity-30 disabled:hover:border-zinc-800/50 disabled:hover:bg-transparent disabled:hover:text-zinc-500 md:h-12 md:w-12"
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700/70 text-zinc-300 transition-all duration-500 hover:border-zinc-600 hover:bg-zinc-800/30 hover:text-zinc-100 disabled:border-zinc-800/80 disabled:text-zinc-500 disabled:opacity-100 disabled:hover:border-zinc-800/80 disabled:hover:bg-transparent disabled:hover:text-zinc-500 md:h-12 md:w-12"
                   >
                     {isParsing ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="font-serif text-lg tracking-widest ml-1">写</span>}
                   </button>
