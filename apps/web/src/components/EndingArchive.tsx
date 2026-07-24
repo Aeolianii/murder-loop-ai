@@ -61,7 +61,7 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
                       : 'border-white/5 bg-black/25 text-zinc-700 saturate-0'
                   }`}
                 >
-                  <span className={`font-serif text-4xl ${unlocked ? 'text-amber-100/70' : 'text-zinc-800'}`}>
+                  <span className={`font-serif text-4xl ${unlocked ? 'text-amber-100/70' : 'text-zinc-700'}`}>
                     {ending.tier}
                   </span>
                   {unlocked && unlock ? (
@@ -79,11 +79,11 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
                     </>
                   ) : (
                     <div className="mt-12 flex flex-col items-center text-center">
-                      <LockKeyhole className="h-5 w-5 text-zinc-800" />
-                      <h3 className="mt-4 font-serif text-base text-zinc-700">
+                      <LockKeyhole className="h-5 w-5 text-zinc-700" />
+                      <h3 className="mt-4 font-serif text-base text-zinc-600">
                         未解锁结局
                       </h3>
-                      <p className="mt-2 text-[10px] leading-5 text-zinc-800">
+                      <p className="mt-2 text-[10px] leading-5 text-zinc-700">
                         继续调查，抵达不同的真相评分。
                       </p>
                     </div>
