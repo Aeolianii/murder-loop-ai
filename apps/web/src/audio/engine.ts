@@ -12,6 +12,7 @@ let initPromise: Promise<void> | null = null;
 const soundPool = new Map<string, Howl[]>();
 // BGM instance
 let bgmInstance: Howl | null = null;
+let bgmStopTimer: ReturnType<typeof setTimeout> | null = null;
 
 const REPO_BASE = '/audio/repository';
 
@@ -100,6 +101,12 @@ function applyBgmVolume() {
   if (bgmInstance) bgmInstance.volume(bgmEffectiveVolume());
 }
 
+function cancelPendingBgmStop() {
+  if (bgmStopTimer === null) return;
+  clearTimeout(bgmStopTimer);
+  bgmStopTimer = null;
+}
+
 export const audio = {
   async init() {
     await init();
@@ -124,18 +131,26 @@ export const audio = {
   // ---- BGM ----
   startBgm() {
     if (muted || !bgmInstance) return false;
+    cancelPendingBgmStop();
+    const targetVolume = bgmEffectiveVolume();
     if (!bgmInstance.playing()) {
       bgmInstance.volume(0);
       bgmInstance.play();
-      bgmInstance.fade(0, bgmEffectiveVolume(), 3000);
+      bgmInstance.fade(0, targetVolume, 3000);
+    } else {
+      bgmInstance.fade(bgmInstance.volume() as number, targetVolume, 300);
     }
     return true;
   },
 
   stopBgm() {
     if (!bgmInstance) return;
+    cancelPendingBgmStop();
     bgmInstance.fade(bgmInstance.volume() as number, 0, 2000);
-    setTimeout(() => bgmInstance?.stop(), 2000);
+    bgmStopTimer = setTimeout(() => {
+      bgmInstance?.stop();
+      bgmStopTimer = null;
+    }, 2000);
   },
 
   setRainLevel(level: 'muffled' | 'normal' | 'loud') {
@@ -205,6 +220,7 @@ export const audio = {
   },
 
   destroy() {
+    cancelPendingBgmStop();
     for (const howls of soundPool.values()) {
       for (const h of howls) h.unload();
     }

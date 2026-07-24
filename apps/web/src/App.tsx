@@ -92,11 +92,20 @@ export default function App() {
     void audio.init();
   }, []);
 
-  const enableAudio = () => {
+  const startAudio = () => {
     audio.unlock();
     void audio.init().then(() => {
       if (audio.startBgm()) setAudioEnabled(true);
     });
+  };
+
+  const toggleAudio = () => {
+    if (audioEnabled) {
+      audio.stopBgm();
+      setAudioEnabled(false);
+      return;
+    }
+    startAudio();
   };
 
   const presentResolvedResult = (
@@ -220,7 +229,7 @@ export default function App() {
   };
 
   const handleStart = (mode: PlayMode) => {
-    enableAudio();
+    startAudio();
     setPlayMode(mode);
     setShowStartMenu(false);
     setShowEndingArchive(false);
@@ -247,10 +256,10 @@ export default function App() {
           <StartMenu
             key="start-menu"
             audioEnabled={audioEnabled}
-            onEnableAudio={enableAudio}
+            onToggleAudio={toggleAudio}
             onStart={handleStart}
             onOpenEndings={() => {
-              enableAudio();
+              startAudio();
               setShowEndingArchive(true);
             }}
           />

@@ -5,14 +5,14 @@ import type { PlayMode } from '../types';
 
 interface StartMenuProps {
   audioEnabled: boolean;
-  onEnableAudio: () => void;
+  onToggleAudio: () => void;
   onStart: (mode: PlayMode) => void;
   onOpenEndings: () => void;
 }
 
 export function StartMenu({
   audioEnabled,
-  onEnableAudio,
+  onToggleAudio,
   onStart,
   onOpenEndings,
 }: StartMenuProps) {
@@ -41,9 +41,13 @@ export function StartMenu({
           <button
             type="button"
             aria-pressed={audioEnabled}
-            disabled={audioEnabled}
-            onClick={onEnableAudio}
-            className="mx-auto mt-6 flex items-center gap-2 rounded-full border border-cyan-200/15 bg-cyan-200/[0.035] px-4 py-2 font-mono text-[11px] tracking-[0.16em] text-cyan-100/55 transition hover:border-cyan-200/30 hover:bg-cyan-200/[0.07] hover:text-cyan-100/80 disabled:cursor-default disabled:border-emerald-200/10 disabled:bg-emerald-200/[0.025] disabled:text-emerald-100/45"
+            title={audioEnabled ? '关闭雨声' : '开启雨声'}
+            onClick={onToggleAudio}
+            className={`mx-auto mt-6 flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.16em] transition ${
+              audioEnabled
+                ? 'border-emerald-200/15 bg-emerald-200/[0.035] text-emerald-100/55 hover:border-emerald-200/30 hover:bg-emerald-200/[0.07] hover:text-emerald-100/80'
+                : 'border-cyan-200/15 bg-cyan-200/[0.035] text-cyan-100/55 hover:border-cyan-200/30 hover:bg-cyan-200/[0.07] hover:text-cyan-100/80'
+            }`}
           >
             <Volume2 className="h-3.5 w-3.5" />
             {audioEnabled ? '雨声已开启' : '开启雨声'}

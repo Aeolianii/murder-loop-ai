@@ -6,7 +6,7 @@ import { StartMenu } from './StartMenu';
 const html = renderToStaticMarkup(
   <StartMenu
     audioEnabled={false}
-    onEnableAudio={() => undefined}
+    onToggleAudio={() => undefined}
     onStart={() => undefined}
     onOpenEndings={() => undefined}
   />,
@@ -26,10 +26,11 @@ assert.match(html, /aria-pressed="false"/);
 const audioEnabledHtml = renderToStaticMarkup(
   <StartMenu
     audioEnabled
-    onEnableAudio={() => undefined}
+    onToggleAudio={() => undefined}
     onStart={() => undefined}
     onOpenEndings={() => undefined}
   />,
 );
 assert.match(audioEnabledHtml, /雨声已开启/);
 assert.match(audioEnabledHtml, /aria-pressed="true"/);
+assert.doesNotMatch(audioEnabledHtml, /aria-pressed="true" disabled/);
