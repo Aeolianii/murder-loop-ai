@@ -13,7 +13,9 @@ const html = renderToStaticMarkup(
 );
 
 assert.match(html, /简单模式/);
-assert.match(html, /困难模式/);
+assert.match(html, /Murder Loop/);
+assert.match(html, /硬核模式/);
+assert.doesNotMatch(html, /困难模式/);
 assert.match(html, /结局一览/);
 assert.match(html, /自然语言输入/);
 assert.match(html, /无推荐行动/);

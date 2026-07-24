@@ -33,7 +33,7 @@ export function StartMenu({
             青荷公寓 · 23:47
           </p>
           <h1 className="mt-4 font-serif text-3xl tracking-[0.18em] text-zinc-100 md:text-5xl">
-            雨夜回环
+            Murder Loop
           </h1>
           <p className="mx-auto mt-4 max-w-lg font-serif text-sm leading-7 text-zinc-500 md:text-base">
             每一次醒来，都带回一块尚未拼合的真相。
@@ -72,12 +72,12 @@ export function StartMenu({
             className="group flex min-h-44 flex-col rounded-2xl border border-rose-200/12 bg-rose-950/[0.08] p-5 text-left transition hover:-translate-y-1 hover:border-rose-200/25 hover:bg-rose-950/[0.14] md:min-h-52 md:p-6"
           >
             <LockKeyhole className="h-5 w-5 text-rose-200/55" />
-            <span className="mt-7 font-serif text-xl text-zinc-100">困难模式</span>
+            <span className="mt-7 font-serif text-xl text-zinc-100">硬核模式</span>
             <span className="mt-3 text-xs leading-6 text-zinc-500">
               完全依靠自然语言行动与自己的判断推进调查。
             </span>
             <span className="mt-auto pt-5 text-[10px] leading-5 text-rose-200/45">
-              困难模式无推荐行动，耗时可能较长。
+              硬核模式无推荐行动，耗时可能较长。
             </span>
           </button>
 
