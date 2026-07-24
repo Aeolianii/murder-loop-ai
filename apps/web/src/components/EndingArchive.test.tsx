@@ -20,3 +20,31 @@ assert.match(html, /最佳评分 78/);
 assert.doesNotMatch(html, /雨停之后/);
 assert.match(html, /未解锁结局/);
 assert.match(html, /剧本浏览/);
+assert.equal((html.match(/data-ending-visual="封存档案"/g) ?? []).length, 4);
+assert.match(html, /data-ending-visual="调查报告"/);
+assert.equal((html.match(/>封存档案</g) ?? []).length, 4);
+assert.match(html, />调查报告</);
+assert.doesNotMatch(html, />完整案卷</);
+assert.doesNotMatch(html, />断裂证据链</);
+assert.doesNotMatch(html, />匿名举报信</);
+assert.doesNotMatch(html, />503 房门</);
+
+const allUnlockedProgress = (['S', 'A', 'B', 'C', 'D'] as const).reduce(
+  (currentProgress, tier, index) =>
+    unlockEnding(
+      currentProgress,
+      tier,
+      100 - index * 10,
+      `2026-07-${String(19 + index).padStart(2, '0')}T08:00:00.000Z`,
+    ),
+  createEmptyPlayerProgress(),
+);
+const allUnlockedHtml = renderToStaticMarkup(
+  <EndingArchive progress={allUnlockedProgress} onClose={() => undefined} />,
+);
+
+for (const visualTitle of ['完整案卷', '调查报告', '断裂证据链', '匿名举报信', '503 房门']) {
+  assert.match(allUnlockedHtml, new RegExp(`data-ending-visual="${visualTitle}"`));
+  assert.match(allUnlockedHtml, new RegExp(`>${visualTitle}<`));
+}
+assert.doesNotMatch(allUnlockedHtml, /封存档案/);

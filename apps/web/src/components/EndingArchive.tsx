@@ -1,8 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { ENDING_CATALOG } from '@murder-loop-ai/content';
-import { BookOpen, LockKeyhole, Trophy, X } from 'lucide-react';
+import {
+  Archive,
+  BookOpen,
+  DoorClosed,
+  FileCheck2,
+  FileClock,
+  LockKeyhole,
+  MailQuestion,
+  Trophy,
+  Unlink2,
+  X,
+} from 'lucide-react';
 import type { PlayerProgress } from '../playerProgress';
 import { ScriptBrowser } from './ScriptBrowser';
+
+const ENDING_VISUALS = {
+  S: { Icon: FileCheck2, title: '完整案卷' },
+  A: { Icon: FileClock, title: '调查报告' },
+  B: { Icon: Unlink2, title: '断裂证据链' },
+  C: { Icon: MailQuestion, title: '匿名举报信' },
+  D: { Icon: DoorClosed, title: '503 房门' },
+} as const;
 
 interface EndingArchiveProps {
   progress: PlayerProgress;
@@ -50,20 +69,29 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
             {ENDING_CATALOG.map((ending) => {
               const unlock = progress.unlockedEndings[ending.tier];
               const unlocked = Boolean(unlock);
+              const endingVisual = ENDING_VISUALS[ending.tier];
+              const VisualIcon = unlocked ? endingVisual.Icon : Archive;
+              const visualTitle = unlocked ? endingVisual.title : '封存档案';
               return (
                 <article
                   key={ending.tier}
                   data-ending-tier={ending.tier}
                   data-ending-state={unlocked ? 'unlocked' : 'locked'}
+                  data-ending-visual={visualTitle}
                   className={`relative min-h-64 overflow-hidden rounded-2xl border p-5 ${
                     unlocked
                       ? 'border-amber-200/18 bg-amber-200/[0.045]'
                       : 'border-white/5 bg-black/25 text-zinc-700 saturate-0'
                   }`}
                 >
-                  <span className={`font-serif text-4xl ${unlocked ? 'text-amber-100/70' : 'text-zinc-700'}`}>
-                    {ending.tier}
-                  </span>
+                  <div
+                    className={`flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] ${
+                      unlocked ? 'text-amber-100/70' : 'text-zinc-500'
+                    }`}
+                  >
+                    <VisualIcon aria-hidden className="h-4 w-4" />
+                    <span>{visualTitle}</span>
+                  </div>
                   {unlocked && unlock ? (
                     <>
                       <h3 className="mt-7 font-serif text-xl text-zinc-100">
