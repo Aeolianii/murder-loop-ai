@@ -18,16 +18,15 @@ assert.equal((html.match(/data-ending-tier=/g) ?? []).length, 5);
 assert.match(html, /迟到的正义/);
 assert.match(html, /最佳评分 78/);
 assert.doesNotMatch(html, /雨停之后/);
-assert.match(html, /未解锁结局/);
 assert.match(html, /剧本浏览/);
-assert.equal((html.match(/data-ending-visual="封存档案"/g) ?? []).length, 4);
-assert.match(html, /data-ending-visual="调查报告"/);
 assert.equal((html.match(/>封存档案</g) ?? []).length, 4);
-assert.match(html, />调查报告</);
-assert.doesNotMatch(html, />完整案卷</);
-assert.doesNotMatch(html, />断裂证据链</);
-assert.doesNotMatch(html, />匿名举报信</);
-assert.doesNotMatch(html, />503 房门</);
+assert.doesNotMatch(html, /未解锁结局/);
+assert.doesNotMatch(html, /lucide-archive/);
+
+for (const visualTitle of ['完整案卷', '调查报告', '断裂证据链', '匿名举报信', '503 房门']) {
+  assert.match(html, new RegExp(`data-ending-visual="${visualTitle}"`));
+  assert.match(html, new RegExp(`>${visualTitle}<`));
+}
 
 const allUnlockedProgress = (['S', 'A', 'B', 'C', 'D'] as const).reduce(
   (currentProgress, tier, index) =>

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ENDING_CATALOG } from '@murder-loop-ai/content';
 import {
-  Archive,
   BookOpen,
   DoorClosed,
   FileCheck2,
@@ -70,8 +69,8 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
               const unlock = progress.unlockedEndings[ending.tier];
               const unlocked = Boolean(unlock);
               const endingVisual = ENDING_VISUALS[ending.tier];
-              const VisualIcon = unlocked ? endingVisual.Icon : Archive;
-              const visualTitle = unlocked ? endingVisual.title : '封存档案';
+              const VisualIcon = endingVisual.Icon;
+              const visualTitle = endingVisual.title;
               return (
                 <article
                   key={ending.tier}
@@ -109,7 +108,7 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
                     <div className="mt-12 flex flex-col items-center text-center">
                       <LockKeyhole className="h-5 w-5 text-zinc-700" />
                       <h3 className="mt-4 font-serif text-base text-zinc-500">
-                        未解锁结局
+                        封存档案
                       </h3>
                       <p className="mt-2 text-[10px] leading-5 text-zinc-500">
                         继续调查，抵达不同的真相评分。
