@@ -40,16 +40,14 @@ export function StartMenu({
             aria-pressed={audioEnabled}
             title={audioEnabled ? '关闭雨声' : '开启雨声'}
             onClick={onToggleAudio}
-            className={`start-menu-rain-toggle mx-auto mt-6 flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.16em] transition ${
+            className={`mx-auto mt-6 flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.16em] transition ${
               audioEnabled
-                ? 'start-menu-rain-toggle-active border-cyan-200/30 bg-sky-200/[0.065] text-cyan-50/85 hover:border-cyan-100/45 hover:bg-sky-200/[0.1] hover:text-white'
+                ? 'border-emerald-200/15 bg-emerald-200/[0.035] text-emerald-100/70 hover:border-emerald-200/30 hover:bg-emerald-200/[0.07] hover:text-emerald-100/90'
                 : 'border-cyan-200/15 bg-cyan-200/[0.035] text-cyan-100/70 hover:border-cyan-200/30 hover:bg-cyan-200/[0.07] hover:text-cyan-100/90'
             }`}
           >
-            <Volume2 className="relative z-10 h-3.5 w-3.5" />
-            <span className="relative z-10">
-              {audioEnabled ? '雨声已开启' : '开启雨声'}
-            </span>
+            <Volume2 className="h-3.5 w-3.5" />
+            {audioEnabled ? '雨声已开启' : '开启雨声'}
           </button>
         </div>
 
