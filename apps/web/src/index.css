@@ -69,7 +69,7 @@ body {
     black 90%,
     transparent 100%
   );
-  animation: startMenuLightRain 4.6s linear infinite;
+  animation: startMenuLightRain 3.2s linear infinite;
   will-change: background-position;
 }
 
@@ -102,7 +102,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .start-menu-atmosphere::after {
-    animation-duration: 9.2s;
+    animation-duration: 6.4s;
   }
 }
 
