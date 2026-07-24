@@ -14,12 +14,12 @@ import {
 import type { PlayerProgress } from '../playerProgress';
 import { ScriptBrowser } from './ScriptBrowser';
 
-const ENDING_VISUALS = {
-  S: { Icon: FileCheck2, title: '完整案卷' },
-  A: { Icon: FileClock, title: '调查报告' },
-  B: { Icon: Unlink2, title: '断裂证据链' },
-  C: { Icon: MailQuestion, title: '匿名举报信' },
-  D: { Icon: DoorClosed, title: '503 房门' },
+const ENDING_ICONS = {
+  S: FileCheck2,
+  A: FileClock,
+  B: Unlink2,
+  C: MailQuestion,
+  D: DoorClosed,
 } as const;
 
 interface EndingArchiveProps {
@@ -68,9 +68,8 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
             {ENDING_CATALOG.map((ending) => {
               const unlock = progress.unlockedEndings[ending.tier];
               const unlocked = Boolean(unlock);
-              const endingVisual = ENDING_VISUALS[ending.tier];
-              const VisualIcon = endingVisual.Icon;
-              const visualTitle = endingVisual.title;
+              const VisualIcon = ENDING_ICONS[ending.tier];
+              const visualTitle = ending.title;
               return (
                 <article
                   key={ending.tier}
@@ -93,10 +92,7 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
                   </div>
                   {unlocked && unlock ? (
                     <>
-                      <h3 className="mt-7 font-serif text-xl text-zinc-100">
-                        {ending.title}
-                      </h3>
-                      <p className="mt-3 text-xs leading-6 text-zinc-500">
+                      <p className="mt-7 text-xs leading-6 text-zinc-500">
                         {ending.narrative}
                       </p>
                       <div className="mt-5 border-t border-white/7 pt-4 font-mono text-[10px] leading-5 text-zinc-600">
