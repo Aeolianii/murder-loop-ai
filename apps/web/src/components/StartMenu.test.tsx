@@ -14,6 +14,7 @@ const html = renderToStaticMarkup(
 
 assert.match(html, /简单模式/);
 assert.match(html, /Murder Loop/);
+assert.doesNotMatch(html, /lucide-eye/);
 assert.match(html, /硬核模式/);
 assert.doesNotMatch(html, /困难模式/);
 assert.match(html, /结局一览/);

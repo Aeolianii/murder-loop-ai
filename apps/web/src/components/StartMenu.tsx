@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Compass, Eye, Feather, LockKeyhole, Volume2 } from 'lucide-react';
+import { BookOpen, Compass, Feather, LockKeyhole, Volume2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { PlayMode } from '../types';
 
@@ -24,11 +24,8 @@ export function StartMenu({
       exit={{ opacity: 0 }}
     >
       <div className="start-menu-atmosphere pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(120,113,108,0.14),transparent_36%),linear-gradient(to_bottom,#050507_0%,#08080a_58%,#030304_100%)]" />
-      <main className="relative mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col justify-center px-4 py-[max(2rem,env(safe-area-inset-top))] md:px-8">
+      <main className="relative mx-auto flex min-h-[100svh] w-full max-w-5xl -translate-y-3 flex-col justify-center px-4 py-[max(2rem,env(safe-area-inset-top))] md:-translate-y-4 md:px-8">
         <div className="mb-8 text-center md:mb-12">
-          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.025] text-zinc-500">
-            <Eye className="h-5 w-5" />
-          </div>
           <p className="font-mono text-[10px] uppercase tracking-[0.42em] text-zinc-400/80">
             青荷公寓 · 23:47
           </p>
