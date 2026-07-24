@@ -30,7 +30,7 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
             <Trophy className="h-5 w-5 text-amber-200/55" />
             <div>
               <h2 className="font-serif text-xl text-zinc-100">结局一览</h2>
-              <p className="mt-1 font-mono text-[10px] tracking-widest text-zinc-600">
+              <p className="mt-1 font-mono text-[10px] tracking-widest text-zinc-500">
                 已解锁 {unlockedCount} / 5
               </p>
             </div>
@@ -80,10 +80,10 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
                   ) : (
                     <div className="mt-12 flex flex-col items-center text-center">
                       <LockKeyhole className="h-5 w-5 text-zinc-700" />
-                      <h3 className="mt-4 font-serif text-base text-zinc-600">
+                      <h3 className="mt-4 font-serif text-base text-zinc-500">
                         未解锁结局
                       </h3>
-                      <p className="mt-2 text-[10px] leading-5 text-zinc-700">
+                      <p className="mt-2 text-[10px] leading-5 text-zinc-500">
                         继续调查，抵达不同的真相评分。
                       </p>
                     </div>
@@ -101,7 +101,7 @@ export function EndingArchive({ progress, onClose }: EndingArchiveProps) {
             <BookOpen className="h-4 w-4" />
             剧本浏览
           </button>
-          <p className="mt-3 text-center text-[10px] tracking-wide text-zinc-700">
+          <p className="mt-3 text-center text-[10px] tracking-wide text-zinc-500">
             包含体验过程中无法从玩家视角直接获得的完整幕后信息
           </p>
         </main>
