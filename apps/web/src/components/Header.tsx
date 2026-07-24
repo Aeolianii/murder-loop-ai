@@ -1,4 +1,4 @@
-import { Clock, MapPin, RotateCcw } from 'lucide-react';
+import { Clock, House, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import { VolumeControl } from './VolumeControl';
@@ -51,11 +51,11 @@ export function Header({ time, location, onRestart }: HeaderProps) {
                 ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                 : 'text-zinc-500 hover:text-zinc-300 border border-transparent hover:border-white/10'
             }`}
-            title="清除游戏上下文，重新开始"
-            aria-label="重新开始游戏"
+            title={confirming ? '再次点击返回主界面' : '返回主界面'}
+            aria-label={confirming ? '确认返回主界面' : '返回主界面'}
           >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">{confirming ? '确认重置？' : '重新开始'}</span>
+            <House className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">{confirming ? '确认返回？' : '主界面'}</span>
           </button>
         )}
       </div>

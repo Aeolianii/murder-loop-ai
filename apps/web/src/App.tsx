@@ -45,6 +45,14 @@ export function shouldShowStartMenu(state: GameState) {
   return state.phase === 'intro' && !state.ending;
 }
 
+export function shouldShowMobileSidebarToggle(
+  showStartMenu: boolean,
+  showCinematic: boolean,
+  hasEndingCinematic: boolean,
+) {
+  return !showStartMenu && !showCinematic && !hasEndingCinematic;
+}
+
 export default function App() {
   const state = useGameStore(store => store.frontendState);
   const submitAction = useGameStore(store => store.submitAction);
@@ -316,15 +324,21 @@ export default function App() {
       />
 
       {/* Mobile Sidebar Toggle */}
-      <div className="absolute right-3 top-3 z-50 lg:hidden">
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-black/55 text-zinc-300 backdrop-blur transition-colors hover:text-white"
-          aria-label={mobileMenuOpen ? '关闭情报面板' : '打开情报面板'}
-        >
-          {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
-      </div>
+      {shouldShowMobileSidebarToggle(
+        showStartMenu,
+        showCinematic,
+        Boolean(endingCinematic),
+      ) && (
+        <div className="absolute right-3 top-3 z-50 lg:hidden">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-black/55 text-zinc-300 backdrop-blur transition-colors hover:text-white"
+            aria-label={mobileMenuOpen ? '关闭情报面板' : '打开情报面板'}
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      )}
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Main Content Area */}
