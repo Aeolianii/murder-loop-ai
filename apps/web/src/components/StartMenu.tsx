@@ -23,8 +23,9 @@ export function StartMenu({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      <div className="start-menu-atmosphere pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(120,113,108,0.14),transparent_36%),linear-gradient(to_bottom,#050507_0%,#08080a_58%,#030304_100%)]" />
-      <main className="relative mx-auto flex min-h-[100svh] w-full max-w-5xl -translate-y-3 flex-col justify-center px-4 py-[max(2rem,env(safe-area-inset-top))] md:-translate-y-4 md:px-8">
+      <div className="start-menu-background pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(120,113,108,0.14),transparent_36%),linear-gradient(to_bottom,#050507_0%,#08080a_58%,#030304_100%)]" />
+      <div className="start-menu-atmosphere pointer-events-none fixed inset-0 z-[1] overflow-hidden" />
+      <main className="relative z-0 mx-auto flex min-h-[100svh] w-full max-w-5xl -translate-y-3 flex-col justify-center px-4 py-[max(2rem,env(safe-area-inset-top))] md:-translate-y-4 md:px-8">
         <div className="mb-8 text-center md:mb-12">
           <p className="font-mono text-[10px] uppercase tracking-[0.42em] text-zinc-400/80">
             青荷公寓 · 23:47
@@ -55,7 +56,7 @@ export function StartMenu({
           <button
             type="button"
             onClick={() => onStart('easy')}
-            className="start-menu-mode-card group flex min-h-44 flex-col rounded-2xl border border-amber-200/14 bg-amber-200/[0.035] p-5 text-left transition hover:-translate-y-1 hover:border-amber-200/30 hover:bg-amber-200/[0.065] md:min-h-52 md:p-6"
+            className="group flex min-h-44 flex-col rounded-2xl border border-amber-200/14 bg-amber-200/[0.035] p-5 text-left transition hover:-translate-y-1 hover:border-amber-200/30 hover:bg-amber-200/[0.065] md:min-h-52 md:p-6"
           >
             <Compass className="h-5 w-5 text-amber-200/65" />
             <span className="mt-7 font-serif text-xl text-zinc-100">简单模式</span>
@@ -70,7 +71,7 @@ export function StartMenu({
           <button
             type="button"
             onClick={() => onStart('hard')}
-            className="start-menu-mode-card group flex min-h-44 flex-col rounded-2xl border border-rose-200/12 bg-rose-950/[0.08] p-5 text-left transition hover:-translate-y-1 hover:border-rose-200/25 hover:bg-rose-950/[0.14] md:min-h-52 md:p-6"
+            className="group flex min-h-44 flex-col rounded-2xl border border-rose-200/12 bg-rose-950/[0.08] p-5 text-left transition hover:-translate-y-1 hover:border-rose-200/25 hover:bg-rose-950/[0.14] md:min-h-52 md:p-6"
           >
             <LockKeyhole className="h-5 w-5 text-rose-200/55" />
             <span className="mt-7 font-serif text-xl text-zinc-100">硬核模式</span>
@@ -85,7 +86,7 @@ export function StartMenu({
           <button
             type="button"
             onClick={onOpenEndings}
-            className="start-menu-mode-card group flex min-h-44 flex-col rounded-2xl border border-cyan-200/12 bg-cyan-950/[0.06] p-5 text-left transition hover:-translate-y-1 hover:border-cyan-200/25 hover:bg-cyan-950/[0.12] md:min-h-52 md:p-6"
+            className="group flex min-h-44 flex-col rounded-2xl border border-cyan-200/12 bg-cyan-950/[0.06] p-5 text-left transition hover:-translate-y-1 hover:border-cyan-200/25 hover:bg-cyan-950/[0.12] md:min-h-52 md:p-6"
           >
             <BookOpen className="h-5 w-5 text-cyan-200/55" />
             <span className="mt-7 font-serif text-xl text-zinc-100">结局一览</span>

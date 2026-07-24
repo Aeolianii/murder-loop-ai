@@ -71,51 +71,11 @@ body {
 @media (max-width: 640px) {
   .start-menu-atmosphere::before {
     background-size: 176px 176px;
-    opacity: 0.052;
+    opacity: 0.072;
   }
 
   .start-menu-atmosphere::after {
-    opacity: 0.46;
-  }
-
-  .start-menu-mode-card {
-    position: relative;
-    isolation: isolate;
-    overflow: hidden;
-  }
-
-  .start-menu-mode-card::after {
-    position: absolute;
-    z-index: 0;
-    inset: -4% -2%;
-    border-radius: inherit;
-    background:
-      linear-gradient(
-        90deg,
-        transparent 10%,
-        rgb(255 255 255 / 0.022) 11%,
-        transparent 12%
-      ),
-      linear-gradient(
-        90deg,
-        transparent 44%,
-        rgb(186 230 253 / 0.016) 45%,
-        transparent 46%
-      ),
-      linear-gradient(
-        90deg,
-        transparent 79%,
-        rgb(255 255 255 / 0.028) 80%,
-        transparent 81%
-      );
-    content: "";
-    pointer-events: none;
-    transform: skewX(-2deg);
-  }
-
-  .start-menu-mode-card > * {
-    position: relative;
-    z-index: 1;
+    opacity: 0.82;
   }
 }
 

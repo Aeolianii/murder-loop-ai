@@ -24,7 +24,10 @@ assert.match(html, /耗时可能较长/);
 assert.match(html, /开启雨声/);
 assert.match(html, /aria-pressed="false"/);
 assert.match(html, /min-h-11/);
-assert.match(html, /start-menu-mode-card/);
+assert.match(html, /start-menu-background/);
+assert.match(html, /start-menu-atmosphere/);
+assert.match(html, /z-\[1\]/);
+assert.doesNotMatch(html, /start-menu-mode-card/);
 assert.doesNotMatch(html, /start-menu-rain-toggle/);
 
 const audioEnabledHtml = renderToStaticMarkup(
