@@ -35,21 +35,21 @@ body {
   inset: -6% -10%;
   background-image:
     radial-gradient(
-      ellipse 0.9px 38px at 50% 18%,
-      rgb(226 232 240 / 0.24) 0%,
-      rgb(148 163 184 / 0.12) 44%,
+      ellipse 1.05px 38px at 50% 18%,
+      rgb(226 232 240 / 0.3) 0%,
+      rgb(148 163 184 / 0.15) 44%,
       transparent 78%
     ),
     radial-gradient(
-      ellipse 0.65px 24px at 50% 24%,
-      rgb(186 230 253 / 0.2) 0%,
-      rgb(125 211 252 / 0.08) 48%,
+      ellipse 0.75px 24px at 50% 24%,
+      rgb(186 230 253 / 0.25) 0%,
+      rgb(125 211 252 / 0.1) 48%,
       transparent 82%
     ),
     radial-gradient(
-      ellipse 1.1px 52px at 50% 15%,
-      rgb(203 213 225 / 0.17) 0%,
-      rgb(71 85 105 / 0.08) 52%,
+      ellipse 1.2px 52px at 50% 15%,
+      rgb(203 213 225 / 0.21) 0%,
+      rgb(71 85 105 / 0.09) 52%,
       transparent 84%
     );
   background-position:
@@ -69,7 +69,7 @@ body {
     black 90%,
     transparent 100%
   );
-  animation: startMenuLightRain 3.2s linear infinite;
+  animation: startMenuLightRain 2.8s linear infinite;
   will-change: background-position;
 }
 
@@ -102,7 +102,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .start-menu-atmosphere::after {
-    animation-duration: 6.4s;
+    animation-duration: 5.6s;
   }
 }
 
