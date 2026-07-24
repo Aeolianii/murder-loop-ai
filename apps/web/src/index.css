@@ -34,37 +34,33 @@ body {
 .start-menu-atmosphere::after {
   inset: -6% -10%;
   background-image:
-    repeating-linear-gradient(
-      91deg,
-      transparent 0 56px,
-      rgb(203 213 225 / 0.05) 57px,
-      rgb(148 163 184 / 0.13) 58px 59px,
-      rgb(71 85 105 / 0.06) 60px,
-      transparent 63px 137px
+    radial-gradient(
+      ellipse 0.9px 38px at 50% 18%,
+      rgb(226 232 240 / 0.24) 0%,
+      rgb(148 163 184 / 0.12) 44%,
+      transparent 78%
     ),
-    repeating-linear-gradient(
-      89deg,
-      transparent 0 167px,
-      rgb(186 230 253 / 0.09) 168px,
-      rgb(125 211 252 / 0.045) 169px 170px,
-      transparent 173px 263px
+    radial-gradient(
+      ellipse 0.65px 24px at 50% 24%,
+      rgb(186 230 253 / 0.2) 0%,
+      rgb(125 211 252 / 0.08) 48%,
+      transparent 82%
     ),
-    repeating-linear-gradient(
-      90.5deg,
-      transparent 0 241px,
-      rgb(0 0 0 / 0.28) 242px 244px,
-      rgb(71 85 105 / 0.1) 245px,
-      transparent 248px 381px
+    radial-gradient(
+      ellipse 1.1px 52px at 50% 15%,
+      rgb(203 213 225 / 0.17) 0%,
+      rgb(71 85 105 / 0.08) 52%,
+      transparent 84%
     );
   background-position:
-    center 6%,
-    center 32%,
-    center 18%;
-  background-repeat: no-repeat;
+    0 -180px,
+    31px -240px,
+    79px -300px;
+  background-repeat: repeat;
   background-size:
-    100% 82%,
-    100% 58%,
-    100% 72%;
+    86px 180px,
+    127px 240px,
+    173px 300px;
   opacity: 0.76;
   mask-image: linear-gradient(
     to bottom,
@@ -73,6 +69,24 @@ body {
     black 90%,
     transparent 100%
   );
+  animation: startMenuLightRain 4.6s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes startMenuLightRain {
+  from {
+    background-position:
+      0 -180px,
+      31px -240px,
+      79px -300px;
+  }
+
+  to {
+    background-position:
+      0 0,
+      31px 0,
+      79px 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -83,6 +97,12 @@ body {
 
   .start-menu-atmosphere::after {
     opacity: 0.86;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-menu-atmosphere::after {
+    animation-duration: 9.2s;
   }
 }
 
